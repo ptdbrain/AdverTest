@@ -34,3 +34,10 @@
 | Phan Trong Dat | Verify team repo setup and AI Usage Logging | Done | AI Log smoke test accepted with HTTP 202; local tests and lint passed | - |
 
 Summary: Restored the checkout to the team repository and verified the local AI logging submission flow.
+## [2026-07-27]
+
+| Member | Task | Status | Output | Time |
+|--------|------|--------|--------|------|
+| Phan Trong Dat | Implement Chapter 4 LangGraph foundation | Done | Added state routing, calculation/search tools, graceful tool errors, and agent tests | - |
+
+Summary: Replaced the placeholder graph with a deterministic, testable multi-route LangGraph flow.

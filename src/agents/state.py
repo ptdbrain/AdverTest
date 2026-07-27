@@ -15,4 +15,6 @@ class AgentState(TypedDict, total=False):
     analysis: str
     response: str
     error: str
+    route: str
+    tool_result: str
     metadata: dict
