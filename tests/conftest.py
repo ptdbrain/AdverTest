@@ -1,10 +1,17 @@
-from unittest.mock import AsyncMock
-
+import numpy as np
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from src.adapters import get_adapter
+from src.adapters.base import ModelAdapter
+from src.attacks.base import AttackContext
+from src.core.types import Sample
+from src.datasets import get_dataset
 from src.main import app
+
+#: Fixed so every test compares against the same pixels.
+TEST_SEED = 4242
 
 
 @pytest_asyncio.fixture
@@ -16,14 +23,23 @@ async def client():
 
 
 @pytest.fixture
-def mock_llm():
-    """Mock LLM to avoid calling OpenAI during tests.
+def adapter() -> ModelAdapter:
+    """Reference detector: no weights, no GPU, gradients available."""
+    return get_adapter("blob_detector")
 
-    Usage in test:
-        def test_something(mock_llm):
-            # LLM calls will return mock response instead of hitting OpenAI
-            ...
-    """
-    mock = AsyncMock()
-    mock.ainvoke.return_value = AsyncMock(content="Mocked LLM response")
-    return mock
+
+@pytest.fixture
+def samples() -> list[Sample]:
+    """Small deterministic batch from the reference dataset."""
+    return get_dataset("synthetic_shapes", n_samples=4, seed=TEST_SEED).load()
+
+
+@pytest.fixture
+def sample(samples: list[Sample]) -> Sample:
+    return samples[0]
+
+
+@pytest.fixture
+def context(adapter: ModelAdapter) -> AttackContext:
+    """Attack context with a seeded generator and the reference model."""
+    return AttackContext(rng=np.random.default_rng(TEST_SEED), model=adapter)
