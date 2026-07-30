@@ -1,24 +1,39 @@
-# Core
+# ---- Core (must stay light: CI installs exactly this file) ----
 fastapi>=0.115.0
 uvicorn[standard]>=0.34.0
 pydantic>=2.10.0
 pydantic-settings>=2.7.0
 python-dotenv>=1.0.0
 
-# AI / LangChain
-langchain>=0.3.0
-langchain-openai>=0.3.0
-langgraph>=0.2.0
+# ---- Numerics: attack generation + metrics ----
+numpy>=1.26.0
 
-# Database (uncomment as needed)
+# ---- Optional extras: install per role, never in CI ----
+# Real models (adapters)
+# torch>=2.4.0
+# ultralytics>=8.3.0            # M1 YOLO11s / M3 RT-DETR
+# mmdet>=3.3.0                  # M2 Faster R-CNN
+# mmdet3d>=1.4.0                # M5 PointPillars / M6 BEVFusion
+#
+# Attacks
+# torchattacks>=3.5.1           # FGSM / PGD / MI-FGSM / C&W references
+# imagecorruptions>=1.1.2       # group A: the 19 ImageNet-C corruptions
+# kornia>=0.7.3                 # GPU corruptions (plan §5)
+# opencv-python-headless>=4.10  # image ops for weather / patch rendering
+#
+# Metrics, search, tracking
+# pycocotools>=2.0.8            # official AP@[.50:.95]
+# optuna>=4.0.0                 # Auto Red-Team Search (plan §5)
+# wandb>=0.18.0                 # experiment tracking
+#
+# Storage / queue (plan §4)
 # sqlalchemy>=2.0.0
 # alembic>=1.14.0
 # psycopg2-binary>=2.9.0
+# celery>=5.4.0
+# redis>=5.2.0
 
-# Vector Store (uncomment as needed)
-# chromadb>=0.5.0
-
-# Dev tools
+# ---- Dev tools ----
 ruff>=0.8.0
 pytest>=8.0.0
 pytest-asyncio>=0.24.0
