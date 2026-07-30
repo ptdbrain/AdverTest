@@ -1,8 +1,4 @@
-# 🛡️ AEGIS — Nền tảng Kiểm thử Độ bền vững cho Mô hình Perception
-
-**A**dversarial **E**valuation & **G**uard for **I**ntelligent perception **S**ystems
-
-> *"Để thực tế không phải là nơi đầu tiên mô hình của bạn gặp sương mù, mưa lớn, hay một miếng patch dán trên biển báo."*
+# 🛡️ AdverTest - Nền tảng Kiểm thử Độ bền vững cho Mô hình Perception
 
 **Giả định làm việc:** Đề bài có định dạng như một thử thách kỹ thuật/hackathon. Tài liệu này được xây dựng để dùng được ngay cho hai mục đích: (a) làm đề xuất/thuyết trình dự án, và (b) làm bản đặc tả đủ chi tiết để bắt tay triển khai thật theo từng giai đoạn.
 
@@ -11,9 +7,9 @@
 ## 📋 Mục lục
 
 1. Phân tích đề bài
-2. Tầm nhìn sản phẩm — AEGIS
+2. Tầm nhìn sản phẩm
 3. Kiến trúc hệ thống
-4. Danh sách chức năng đầy đủ (Cơ bản → Nâng cao → Đột phá)
+4. Danh sách chức năng đầy đủ (Cơ bản → Nâng cao → Mở rộng)
 5. Mô tả chi tiết giao diện (10 màn hình)
 6. Chỉ số đo lường & KPI
 7. Lộ trình phát triển
@@ -29,7 +25,7 @@
 
 Đề bài xoay quanh một khoảng trống rất thực tế trong quy trình phát triển AI cho perception (nhận diện, phát hiện vật thể, phân đoạn, 3D detection): mô hình thường được đánh giá kỹ trên tập test "sạch", nhưng gần như không được kiểm chứng có hệ thống trước các điều kiện bất lợi của thế giới thực — sương mù, mưa, nhiễu cảm biến, vật cản, hay tệ hơn là các tấn công adversarial được thiết kế có chủ đích. Đó là khoảng trống giữa "model hoạt động tốt trên benchmark" và "model đủ an toàn để triển khai" — với các hệ thống an toàn cao (xe tự hành, robot, giám sát), khoảng trống này có thể trả giá rất đắt.
 
-Có thể ví bài toán này như **"crash test" hoặc "penetration test" dành riêng cho mô hình perception**: thay vì chờ thực tế "kiểm định" mô hình bằng một tình huống thật sự nguy hiểm, đội kỹ sư chủ động tấn công mô hình của chính mình trong môi trường mô phỏng để tìm điểm yếu trước.
+Đây là quy trình kiểm thử có kiểm soát dành cho mô hình perception: thay vì chờ lỗi xuất hiện trong môi trường thực, đội kỹ sư chủ động tạo điều kiện bất lợi trong môi trường mô phỏng để xác định điểm yếu trước.
 
 ### 1.2 Phân rã 3 trụ cột của đề bài
 
@@ -49,7 +45,7 @@ Có thể ví bài toán này như **"crash test" hoặc "penetration test" dàn
 
 ### 1.4 Từ ràng buộc đến giải pháp thiết kế
 
-| Ràng buộc trong đề bài | AEGIS đáp ứng như thế nào |
+| Ràng buộc trong đề bài | đáp ứng như thế nào |
 |---|---|
 | Human-in-the-loop | Không bước nào tự động "quyết định triển khai" — mọi Robustness Score thấp đều bị đẩy vào **hàng đợi Review** bắt buộc con người xác nhận |
 | Chỉ test simulation, chưa validate thì không triển khai thật | Banner **"SIMULATION ONLY"** cố định trên mọi màn hình; hệ thống không có bất kỳ kết nối kỹ thuật nào tới pipeline triển khai production |
@@ -59,25 +55,23 @@ Có thể ví bài toán này như **"crash test" hoặc "penetration test" dàn
 
 ---
 
-## 2. 🎯 Tầm nhìn sản phẩm — AEGIS
+## 2. 🎯 Mục tiêu hệ thống
 
-### Tên & định vị
+### Tên hệ thống
 
-**AEGIS** — mượn hình ảnh chiếc khiên thần trong thần thoại Hy Lạp: một lớp khiên chắn đứng giữa mô hình AI và thế giới thực, nơi mọi điểm yếu được phơi bày và xử lý *trước khi* gây hậu quả thật.
+**AdverTest** là nền tảng kiểm thử độ bền vững cho mô hình perception trong môi trường mô phỏng.
 
-**Tagline:** *"Kiểm định độ bền vững AI — trước khi thực tế kiểm định bạn."*
+### Phạm vi kỹ thuật
 
-### Tuyên bố giá trị
-
-AEGIS cho phép đội kỹ sư perception **tự động sinh hàng trăm biến thể tấn công/nhiễu**, chạy qua mô hình đang phát triển, và nhận về một con số duy nhất đáng tin cậy (Robustness Score) cùng bằng chứng chi tiết — thay vì tự viết script rời rạc, tự đoán nên test bằng gì, và tự tổng hợp kết quả bằng tay.
+AdverTest cung cấp pipeline để sinh biến thể tấn công/nhiễu, chạy đánh giá trên mô hình đang phát triển, tính các chỉ số robustness, và lưu toàn bộ bằng chứng phục vụ phân tích hoặc review. Mục tiêu là chuẩn hóa quy trình kiểm thử thay cho cách dùng script rời rạc và tổng hợp kết quả thủ công.
 
 ### Nguyên tắc thiết kế cốt lõi
 
-1. **Safety-first, không có đường tắt** — không gì bỏ qua được human-in-the-loop hay ẩn danh hóa
-2. **Model-agnostic** — kiến trúc adapter cho phép cắm thêm model mới ngoài YOLO/SAM2/MMDetection3D mà không sửa core
-3. **Cost-aware theo mặc định** — mọi Test Run ước tính chi phí *trước khi* chạy, không phải sau
-4. **Explainable, không phải hộp đen** — mọi con số suy giảm đều truy vết được về ảnh cụ thể, tấn công cụ thể
-5. **Tiến hóa được** — từ quét thủ công (MVP) đến tự tìm kiếm thông minh (đột phá), trên cùng một kiến trúc dữ liệu
+1. **Bắt buộc human-in-the-loop và ẩn danh hóa** — không có đường đi bỏ qua review thủ công hoặc bước xử lý dữ liệu nhạy cảm
+2. **Model-agnostic** — kiến trúc adapter cho phép tích hợp thêm model mới ngoài YOLO/SAM2/MMDetection3D mà không sửa phần lõi
+3. **Cost-aware theo mặc định** — mọi Test Run đều có ước tính tài nguyên trước khi chạy
+4. **Truy vết được** — mọi chỉ số suy giảm đều liên kết được với ảnh, biến thể tấn công, và lần chạy cụ thể
+5. **Mở rộng theo giai đoạn** — cùng một kiến trúc dữ liệu hỗ trợ từ MVP đến các chiến lược tìm kiếm tự động phức tạp hơn
 
 ---
 
@@ -165,16 +159,16 @@ flowchart TB
 | F15 | Chỉ số chi tiết theo mức độ | Robustness Accuracy & Attack Success Rate theo từng ngưỡng severity |
 | F16 | Export báo cáo | Xuất PDF/Excel phục vụ lưu hồ sơ, trình bày |
 
-### 4.3 Nhóm ĐỘT PHÁ (Điểm khác biệt)
+### 4.3 Nhóm MỞ RỘNG
 
-| ID | Chức năng | Vì sao đột phá |
+| ID | Chức năng | Giá trị kỹ thuật |
 |---|---|---|
-| F17 | **Auto Red-Team Search Agent** | Thay vì brute-force toàn bộ tổ hợp (rất tốn GPU), dùng Bayesian Optimization/thuật toán tiến hóa trên không gian tham số (loại tấn công, cường độ, vị trí patch...) để hội tụ nhanh về tổ hợp gây suy giảm mAP/IoU lớn nhất chỉ sau vài chục lần thử — **giải đồng thời cả bài toán tìm điểm yếu lẫn tối ưu chi phí** |
-| F18 | **Robustness Score & Certification** | Gộp toàn bộ kết quả thành 1 điểm 0-100 theo từng danh mục (tính từ tỷ lệ giữ được mAP/IoU so với baseline, trung bình có trọng số theo mức độ severity) — giống "xếp hạng an toàn va chạm", dễ so sánh giữa các phiên bản, dễ trình bày với người không chuyên |
-| F19 | **Explainable Failure Clustering** | Tự động phân cụm case lỗi theo pattern chung (VD: "fail khi sương mù + che khuất >30%"), overlay Grad-CAM chỉ đúng vùng ảnh đánh lừa model — rút ngắn thời gian tìm root cause từ hàng giờ xuống vài phút |
-| F20 | **CI/CD Robustness Gate** | Tích hợp như unit test bắt buộc: model mới tự động chạy bộ test rút gọn, dưới ngưỡng → chặn merge, đẩy sang Reviewer — tự động hóa bước sàng lọc nhưng vẫn giữ con người ở khâu quyết định cuối |
-| F21 | **Active Sampling tiết kiệm chi phí** | Dùng độ bất định (uncertainty) của model để chọn tập ảnh "dễ gây lỗi nhất" thay vì test toàn bộ ngẫu nhiên — ước tính giảm đáng kể chi phí GPU mà vẫn giữ độ tin cậy phát hiện lỗi cao |
-| F22 | **Digital-Twin Scenario Replay** *(mở rộng)* | Kết nối simulator (kiểu CARLA) để test trên chuỗi video/tình huống lái xe, đo ảnh hưởng lỗi perception lên hành vi điều khiển — vượt ra ngoài ảnh tĩnh, tới gần với kiểm định hệ thống thật hơn |
+| F17 | **Auto Red-Team Search Agent** | Dùng Bayesian Optimization hoặc thuật toán tiến hóa để tìm nhanh tổ hợp tham số gây suy giảm mAP/IoU lớn nhất, thay cho brute-force toàn bộ không gian tìm kiếm |
+| F18 | **Robustness Score** | Chuẩn hóa kết quả kiểm thử thành điểm tổng hợp 0-100 theo từng danh mục để so sánh giữa các phiên bản model |
+| F19 | **Explainable Failure Clustering** | Tự động phân cụm case lỗi theo pattern chung và gắn bằng chứng trực quan để rút ngắn thời gian phân tích nguyên nhân |
+| F20 | **CI/CD Robustness Gate** | Tự động chạy bộ test rút gọn cho model mới, chặn merge khi kết quả dưới ngưỡng, và chuyển case sang reviewer |
+| F21 | **Active Sampling tiết kiệm chi phí** | Ưu tiên chạy trên các mẫu có độ bất định cao để giảm chi phí GPU mà vẫn duy trì khả năng phát hiện lỗi |
+| F22 | **Digital-Twin Scenario Replay** | Kết nối simulator (ví dụ CARLA) để kiểm thử trên chuỗi video hoặc tình huống lái xe và đo ảnh hưởng của lỗi perception lên hành vi điều khiển |
 
 ---
 
@@ -221,13 +215,13 @@ Mỗi màn hình gồm: **Mục đích** – **Bố cục & thành phần chính
 - **Bố cục:** Bảng heatmap (hàng = loại tấn công, cột = mức độ 1-5, màu ô = % suy giảm mAP/IoU); radar chart Robustness Score theo 4 danh mục (Thời tiết, Adversarial, Che khuất, Nhiễu cảm biến); có thể bật so sánh nhiều model cùng lúc.
 - **Tương tác:** Nút Export PDF/Excel; click 1 ô heatmap → nhảy thẳng tới các ảnh cụ thể gây ra mức suy giảm đó.
 
-### 5.8 Worst-Case Explorer *(tính năng đột phá)*
-- **Mục đích:** Nơi Auto Red-Team "khoe" những gì nó tìm được — biến điểm yếu thành hành động cụ thể.
+### 5.8 Worst-Case Explorer
+- **Mục đích:** Tập trung các biến thể gây suy giảm mạnh nhất để kỹ sư phân tích và đưa vào vòng cải thiện model.
 - **Bố cục:** Danh sách Top-N biến thể gây fail nặng nhất, mỗi item gồm thumbnail trước/sau, tham số tấn công cụ thể mà thuật toán tìm ra, mức suy giảm, overlay Grad-CAM chỉ vùng ảnh đánh lừa model; các case tương tự được tự động gom cụm kèm mô tả pattern chung.
 - **Tương tác:** Nút "Gửi cụm này vào backlog retrain" để gắn kết quả với quy trình cải thiện model.
 
 ### 5.9 Hàng đợi Review (Human-in-the-loop)
-- **Mục đích:** Nơi con người ra quyết định cuối — trái tim của nguyên tắc human-in-the-loop.
+- **Mục đích:** Giao diện để reviewer xử lý các case vượt ngưỡng rủi ro và ghi nhận quyết định cuối cùng.
 - **Bố cục:** Danh sách case cần xử lý (engineer gắn cờ hoặc hệ thống tự gắn cờ vì điểm dưới ngưỡng); chi tiết từng case (ảnh, kết quả, ghi chú); form quyết định bắt buộc chọn 1 trong: *Chấp nhận rủi ro / Yêu cầu retrain / Cần thêm dữ liệu / Từ chối triển khai*, kèm trường ghi chú bắt buộc.
 - **Tương tác:** Toàn bộ quyết định lưu vào audit log, tra cứu lại theo thời gian hoặc theo model version.
 
@@ -246,7 +240,7 @@ Mỗi màn hình gồm: **Mục đích** – **Bố cục & thành phần chính
 | Hiệu năng model | IoU trước/sau tấn công | Độ khớp bounding box/mask trước-sau |
 | Robustness | Robustness Accuracy theo severity | % giữ được hiệu năng ở từng mức độ 1-5 |
 | Robustness | Attack Success Rate | % biến thể khiến model dự đoán sai/miss hoàn toàn |
-| Robustness | Robustness Score tổng hợp *(đột phá)* | Điểm 0-100 gộp toàn bộ, theo từng danh mục |
+| Robustness | Robustness Score tổng hợp | Điểm 0-100 tổng hợp theo từng danh mục |
 | Vận hành | Chi phí GPU / Test Run | Theo dõi & tối ưu ngân sách |
 | Vận hành | GPU-hours tiết kiệm nhờ Active Sampling/Auto Red-Team | Đo hiệu quả tính năng tối ưu |
 | Vận hành | Thời gian trung bình phát hiện điểm yếu | Time-to-weakness — càng ngắn càng tốt |
@@ -259,10 +253,10 @@ Mỗi màn hình gồm: **Mục đích** – **Bố cục & thành phần chính
 |---|---|---|
 | **1 — MVP** | Nền tảng chạy đầu-cuối với 1 model, bộ tấn công cơ bản | F1–F9 |
 | **2 — Nâng cao** | Tự động hóa quét đa tấn công, tối ưu chi phí, benchmark | F10–F16 |
-| **3 — Đột phá** | Auto Red-Team, Robustness Score, Explainable Clustering, CI/CD Gate | F17–F21 |
+| **3 — Mở rộng** | Auto Red-Team, Robustness Score, Explainable Clustering, CI/CD Gate | F17–F21 |
 | **4 — Mở rộng** | Digital-Twin/simulator, thêm model & dataset khác | F22+ |
 
-*Nếu đây là đề bài hackathon time-boxed (24-48h): ưu tiên hoàn thiện trọn Giai đoạn 1 + tối thiểu bản rút gọn của F10, F11, F17 để phần demo có đủ "điểm nhấn đột phá" mà không sa lầy vào hạ tầng.*
+*Nếu đây là đề bài hackathon time-boxed (24-48h): ưu tiên hoàn thiện trọn Giai đoạn 1 + bản rút gọn của F10, F11, F17 để có đủ luồng kiểm thử và bằng chứng trực quan mà vẫn giữ phạm vi triển khai khả thi.*
 
 ---
 
