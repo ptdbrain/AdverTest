@@ -60,6 +60,7 @@ GEMINI_HOME = Path.home() / ".gemini"
 
 # Antigravity has shipped under two folder names; prefer the newer IDE one.
 BRAIN_CANDIDATES = (
+    GEMINI_HOME / "antigravity-cli" / "brain",
     GEMINI_HOME / "antigravity-ide" / "brain",
     GEMINI_HOME / "antigravity" / "brain",
 )
@@ -123,7 +124,7 @@ def _conv_cwds(transcript: Path) -> set[str]:
     """All Cwd values that appear in tool calls inside this transcript."""
     cwds: set[str] = set()
     try:
-        with open(transcript, encoding="utf-8") as f:
+        with open(transcript, encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -222,7 +223,7 @@ def iter_user_inputs(brain_dirs: list[Path], cutoff: datetime | None,
             if repo_root_n and not _conv_matches_repo(cwds, repo_root_n):
                 continue
 
-            with open(transcript, encoding="utf-8") as f:
+            with open(transcript, encoding="utf-8", errors="replace") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
