@@ -78,10 +78,14 @@ class SyntheticShapes(DatasetSource):
             if placed is not None:
                 boxes.append(placed)
         depth = linear_depth_prior(size, size, near=params.depth_near_m, far=params.depth_far_m)
+        mask = np.zeros((size, size), dtype=np.uint8)
+        for object_index, box in enumerate(boxes, start=1):
+            mask[int(box.y1) : int(box.y2), int(box.x1) : int(box.x2)] = object_index
         return Sample(
             sample_id=f"{self.name}_{index:04d}",
             image=clip01(image),
             boxes=tuple(boxes),
+            mask=mask,
             depth=depth,
             anonymized=True,
             meta={"index": index},

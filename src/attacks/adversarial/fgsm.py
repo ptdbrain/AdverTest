@@ -19,6 +19,7 @@ from typing import ClassVar
 import numpy as np
 
 from src.attacks import ATTACKS
+from src.attacks.adversarial._iterative import input_gradient
 from src.attacks.base import AttackContext, AttackParams, BaseAttack
 from src.core.types import AttackGroup, CostClass, Sample
 
@@ -44,6 +45,7 @@ class Fgsm(BaseAttack):
     cost_class: ClassVar[CostClass] = "medium"
     needs_model: ClassVar[bool] = True
     needs_gradients: ClassVar[bool] = True
+    required_capabilities = frozenset({"input_gradient", "detection_loss"})
     owner: ClassVar[str] = "core"
     reference: ClassVar[str] = "Goodfellow et al., ICLR 2015 (arXiv:1412.6572)"
     params_model: ClassVar[type[AttackParams]] = FgsmParams
@@ -53,6 +55,6 @@ class Fgsm(BaseAttack):
         model = ctx.require_model(self.name)
         # loss_for_attack is defined so that *higher* means worse detection,
         # hence a gradient ascent step. The adapter owns the framework.
-        gradient = model.input_gradient(sample)
-        step = epsilon * np.sign(gradient).astype(np.float32)
+        gradient = input_gradient(model, sample, ctx.objective)
+        step = epsilon * np.sign(gradient)
         return sample.with_image(sample.image + step)

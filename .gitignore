@@ -30,6 +30,11 @@ Thumbs.db
 
 # Data (never commit large data)
 data/
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+*.safetensors
 *.db
 *.sqlite3
 

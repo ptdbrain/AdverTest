@@ -26,6 +26,7 @@ import numpy as np
 from src.adapters import MODELS
 from src.adapters.base import ModelAdapter
 from src.core.image_ops import box_blur, box_slice, luminance, spread_to_channels
+from src.core.objectives import AttackObjective, SurrogateCapability
 from src.core.types import Box, ModelInfo, Prediction, Sample, Task
 
 #: Aspect-ratio cut points separating the three normalised classes.
@@ -41,6 +42,17 @@ class BlobDetector(ModelAdapter):
     task: ClassVar[Task] = "detection2d"
     version: ClassVar[str] = "blob-1.0.0"
     supports_gradients: ClassVar[bool] = True
+    capabilities: ClassVar[frozenset[SurrogateCapability]] = frozenset(
+        {
+            "input_gradient",
+            "detection_loss",
+            "objectness",
+            "class_logits",
+            "dense_proposals",
+            "segmentation_loss",
+            "class_margin",
+        }
+    )
     owner: ClassVar[str] = "core"
 
     def __init__(
@@ -165,7 +177,11 @@ class BlobDetector(ModelAdapter):
 
     # ------------------------------------------------------- white-box interface
 
-    def loss_for_attack(self, sample: Sample, target: Any | None = None) -> float:
+    def loss_for_attack(
+        self,
+        sample: Sample,
+        target: AttackObjective | Any | None = None,
+    ) -> float:
         """Object-vanishing objective: how far the target regions sit below threshold.
 
         ``L = mean over target pixels of (1 - sigmoid((luma - thr) / softness))``.
@@ -180,9 +196,16 @@ class BlobDetector(ModelAdapter):
         probability, weights = self._vanishing_terms(sample)
         if weights.sum() == 0.0:
             return 0.0
-        return float(((1.0 - probability) * weights).sum() / weights.sum())
+        loss = float(((1.0 - probability) * weights).sum() / weights.sum())
+        if isinstance(target, AttackObjective) and target.kind == "cw_margin":
+            return loss - 0.5
+        return loss
 
-    def input_gradient(self, sample: Sample, target: Any | None = None) -> np.ndarray:
+    def input_gradient(
+        self,
+        sample: Sample,
+        target: AttackObjective | Any | None = None,
+    ) -> np.ndarray:
         """Analytic ``d loss_for_attack / d image`` (same shape as the image)."""
         probability, weights = self._vanishing_terms(sample)
         total = weights.sum()

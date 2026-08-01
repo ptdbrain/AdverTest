@@ -78,9 +78,9 @@ class MotionBlur(BaseAttack):
 4. Kiểm tra — test hợp đồng đã tự bao phủ file mới của bạn:
 
 ```bash
-pytest tests/test_attacks -q                    # gồm cả contract test
-python -m src.cli attacks                       # attack đã xuất hiện chưa
-python -m src.cli run --attacks motion_blur --severities 1,3,5 --limit 4
+uv run pytest tests/test_attacks -q             # gồm cả contract test
+uv run python -m src.cli attacks                # attack đã xuất hiện chưa
+uv run python -m src.cli run --attacks motion_blur --severities 1,3,5 --limit 4
 ```
 
 5. Thêm test riêng cho phần chỉ bạn biết (công thức, biên, tham số) vào
@@ -146,7 +146,7 @@ Quy tắc: giữ mặc định đúng theo paper/plan, còn khi thử trên mode
 truyền tham số mạnh hơn từ ngoài, không sửa mặc định:
 
 ```bash
-python -m src.cli run --attacks fgsm \
+uv run python -m src.cli run --attacks fgsm \
   --params '{"fgsm": {"epsilon_per_severity": [0.02, 0.04, 0.08, 0.16, 0.32]}}'
 ```
 
@@ -180,10 +180,10 @@ Khai báo sai làm ước tính chi phí sai → người khác bấm Run và b�
 
 - [ ] `name` chưa ai dùng (`make catalog`), snake_case, đúng tên trong paper
 - [ ] `owner` là bạn, `reference` trỏ tới paper/thư viện thật
-- [ ] `pytest tests/test_attacks -q` xanh (gồm contract test)
-- [ ] `ruff check src/ tests/` xanh
+- [ ] `uv run pytest tests/test_attacks -q` xanh (gồm contract test)
+- [ ] `uv run ruff check src/ tests/` xanh
 - [ ] Có test riêng cho công thức/biên của attack
-- [ ] `python -m src.cli run --attacks <ten>` cho thấy `D%` tăng theo severity
+- [ ] `uv run python -m src.cli run --attacks <ten>` cho thấy `D%` tăng theo severity
 - [ ] PR chỉ chạm file của bạn (`git diff --name-only main` để kiểm tra)
 
 ---
@@ -198,8 +198,8 @@ công tập trung — `make catalog` in ra ai đang giữ gì).
 | A | 18 corruption còn lại của ImageNet-C | giữ đúng tên ImageNet-C để so sánh mPC/rPC với paper |
 | B | rain, snow, fog LiDAR, snow LiDAR | dùng `sample.depth`; công thức ở plan §2 nhóm B |
 | C | random erasing, occlusion theo box GT, camera dropout, LiDAR beam/sector drop, frame freeze | attack đa cảm biến đặt `modality = "multi"` |
-| D | PGD, MI-FGSM, C&W, TOG (3 biến thể), DAG, PGD cho SAM2 | tham số quét ở plan §2 nhóm D |
-| E | DPatch, patch theo Thys et al., universal patch | bắt buộc EOT + loss TV/NPS |
+| D | Không còn slot trong phạm vi generator hiện tại | FGSM, PGD, MI-FGSM, C&W, TOG, DAG và SAM2-PGD đã có plugin |
+| E | Không còn slot trong phạm vi generator hiện tại | DPatch và Thys patch đã có train-artifact-apply, EOT, TV/NPS |
 | F | Square Attack, transfer matrix, random-noise baseline cùng `ε` | baseline này là điều kiện tin cậy của nhóm D (plan §11) |
 
 Ngoài attack, các slot khác cùng cơ chế plugin: adapter model

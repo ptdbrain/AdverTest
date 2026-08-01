@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -23,6 +24,15 @@ def array_digest(array: np.ndarray, *, length: int = 16) -> str:
     """Digest of raw array bytes; use to assert two images are identical."""
     contiguous = np.ascontiguousarray(array)
     return hashlib.sha256(contiguous.tobytes()).hexdigest()[:length]
+
+
+def file_digest(path: str | Path, *, length: int = 32) -> str:
+    """SHA-256 of a file without loading the whole checkpoint into memory."""
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()[:length]
 
 
 def variant_key(

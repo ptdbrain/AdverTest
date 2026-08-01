@@ -9,12 +9,67 @@ reporting benchmark numbers (plan §3 metric 1).
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
 from src.core.types import Box, Prediction, Sample
 
 DEFAULT_IOU_THRESHOLD = 0.5
+
+
+@dataclass(frozen=True, slots=True)
+class DetectionSummary:
+    """Class-aware TP/FP/FN counts at one IoU threshold."""
+
+    true_positives: int
+    false_positives: int
+    false_negatives: int
+    detections: int
+    ground_truths: int
+
+    @property
+    def precision(self) -> float:
+        denominator = self.true_positives + self.false_positives
+        return self.true_positives / denominator if denominator else 0.0
+
+    @property
+    def recall(self) -> float:
+        denominator = self.true_positives + self.false_negatives
+        return self.true_positives / denominator if denominator else 0.0
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "true_positives": self.true_positives,
+            "false_positives": self.false_positives,
+            "false_negatives": self.false_negatives,
+            "detections": self.detections,
+            "ground_truths": self.ground_truths,
+            "precision": round(self.precision, 6),
+            "recall": round(self.recall, 6),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AttackSuccessSummary:
+    """Ground truths detected cleanly but lost after the attack."""
+
+    clean_detected_truths: int
+    lost_truths: int
+
+    @property
+    def rate(self) -> float:
+        if not self.clean_detected_truths:
+            return 0.0
+        return self.lost_truths / self.clean_detected_truths
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "clean_detected_truths": self.clean_detected_truths,
+            "lost_truths": self.lost_truths,
+            "rate": round(self.rate, 6),
+        }
 
 
 def iou(first: Box, second: Box) -> float:
@@ -81,6 +136,71 @@ def average_precision_per_class(
         flags, n_truths = _collect_hits(label, samples, by_sample, iou_threshold)
         scored[label] = _average_precision_from_hits(flags, n_truths)
     return scored
+
+
+def detection_summary(
+    predictions: Sequence[Prediction],
+    samples: Sequence[Sample],
+    iou_threshold: float = DEFAULT_IOU_THRESHOLD,
+) -> DetectionSummary:
+    """Aggregate class-aware TP/FP/FN counts for a dataset."""
+    by_sample = {prediction.sample_id: prediction for prediction in predictions}
+    true_positives = 0
+    false_positives = 0
+    false_negatives = 0
+    detections = 0
+    ground_truths = 0
+    for sample in samples:
+        predicted = by_sample.get(sample.sample_id, Prediction(sample.sample_id)).boxes
+        matches = match_boxes(predicted, sample.boxes, iou_threshold)
+        matched = len(matches)
+        true_positives += matched
+        false_positives += len(predicted) - matched
+        false_negatives += len(sample.boxes) - matched
+        detections += len(predicted)
+        ground_truths += len(sample.boxes)
+    return DetectionSummary(
+        true_positives,
+        false_positives,
+        false_negatives,
+        detections,
+        ground_truths,
+    )
+
+
+def detection_attack_success_rate(
+    clean_predictions: Sequence[Prediction],
+    attacked_predictions: Sequence[Prediction],
+    samples: Sequence[Sample],
+    iou_threshold: float = DEFAULT_IOU_THRESHOLD,
+) -> AttackSuccessSummary:
+    """Rate of cleanly detected ground truths no longer detected after attack."""
+    clean_by_sample = {
+        prediction.sample_id: prediction for prediction in clean_predictions
+    }
+    attacked_by_sample = {
+        prediction.sample_id: prediction for prediction in attacked_predictions
+    }
+    clean_detected = 0
+    lost = 0
+    for sample in samples:
+        clean_boxes = clean_by_sample.get(
+            sample.sample_id,
+            Prediction(sample.sample_id),
+        ).boxes
+        attacked_boxes = attacked_by_sample.get(
+            sample.sample_id,
+            Prediction(sample.sample_id),
+        ).boxes
+        clean_truths = set(
+            match_boxes(clean_boxes, sample.boxes, iou_threshold).values()
+        )
+        attacked_truths = set(
+            match_boxes(attacked_boxes, sample.boxes, iou_threshold).values()
+        )
+        clean_detected += len(clean_truths)
+        lost += len(clean_truths - attacked_truths)
+    return AttackSuccessSummary(clean_detected, lost)
 
 
 def _collect_hits(

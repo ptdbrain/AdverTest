@@ -1,0 +1,18 @@
+{
+  "input_dir": "data/anonymized/kitti-de",
+  "input_format": "kitti",
+  "attack_name": "thys_patch",
+  "attack_params": {
+    "patch_path": "data/patches/thys_patch/fe37bfa735cada91/patch.npy",
+    "artifact_hash": "f3ac834b598b983eeadfa144d2d8b70b",
+    "target_label": "Pedestrian",
+    "eot": true
+  },
+  "severities": [
+    3
+  ],
+  "seed": 20260731,
+  "output_dir": "data/attacked",
+  "preview": true,
+  "limit": 1
+}

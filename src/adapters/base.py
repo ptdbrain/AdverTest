@@ -26,6 +26,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 
+from src.core.objectives import AttackObjective, SurrogateCapability
 from src.core.types import Box, Modality, ModelInfo, Prediction, Sample, Task
 
 
@@ -41,6 +42,7 @@ class ModelAdapter(ABC):
     version: ClassVar[str] = "0.1.0"
     modality: ClassVar[Modality] = "image"
     supports_gradients: ClassVar[bool] = False
+    capabilities: ClassVar[frozenset[SurrogateCapability]] = frozenset()
     #: Team member responsible for this adapter (shown in the catalog).
     owner: ClassVar[str] = "unassigned"
 
@@ -62,15 +64,27 @@ class ModelAdapter(ABC):
         kept.sort(key=lambda box: box.score, reverse=True)
         return tuple(kept[: self.max_detections])
 
-    def loss_for_attack(self, sample: Sample, target: Any | None = None) -> float:
+    def loss_for_attack(
+        self,
+        sample: Sample,
+        target: AttackObjective | Any | None = None,
+    ) -> float:
         """Scalar an untargeted attack *maximises* (higher = worse detection)."""
         raise GradientsNotSupportedError(f"{self.name} does not expose an attack loss")
 
-    def input_gradient(self, sample: Sample, target: Any | None = None) -> np.ndarray:
+    def input_gradient(
+        self,
+        sample: Sample,
+        target: AttackObjective | Any | None = None,
+    ) -> np.ndarray:
         """``d loss_for_attack / d image`` with the same shape as the image."""
         raise GradientsNotSupportedError(
             f"{self.name} does not expose input gradients; use a black-box attack (group F)"
         )
+
+    def supports(self, capability: SurrogateCapability) -> bool:
+        """Whether this adapter can satisfy an attack-generation requirement."""
+        return capability in self.capabilities
 
     @classmethod
     def describe(cls) -> dict[str, Any]:
@@ -81,6 +95,7 @@ class ModelAdapter(ABC):
             "version": cls.version,
             "modality": cls.modality,
             "supports_gradients": cls.supports_gradients,
+            "capabilities": sorted(cls.capabilities),
             "owner": cls.owner,
             "docstring": (cls.__doc__ or "").strip().splitlines()[0] if cls.__doc__ else "",
         }

@@ -1,0 +1,72 @@
+[project]
+name = "advertest"
+version = "0.1.0"
+description = "Adversarial dataset generation and perception robustness tooling"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "fastapi>=0.115.0",
+    "numpy>=1.26.0",
+    "pillow>=10.0.0",
+    "pydantic-settings>=2.7.0",
+    "pydantic>=2.10.0",
+    "python-dotenv>=1.0.0",
+    "uvicorn[standard]>=0.34.0",
+]
+
+[project.optional-dependencies]
+models-cpu = [
+    "onnx>=1.17.0",
+    "onnxruntime>=1.20.0",
+    "torch>=2.4.0",
+    "torchvision>=0.19.0",
+    "ultralytics>=8.3.0",
+]
+models-gpu = [
+    "onnx>=1.17.0",
+    "onnxruntime>=1.20.0",
+    "torch>=2.4.0",
+    "torchvision>=0.19.0",
+    "ultralytics>=8.3.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest>=8.0.0",
+    "ruff>=0.8.0",
+]
+
+[tool.uv]
+package = false
+default-groups = ["dev"]
+conflicts = [
+    [
+        { extra = "models-cpu" },
+        { extra = "models-gpu" },
+    ],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "models-cpu" },
+    { index = "pytorch-gpu", extra = "models-gpu" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "models-cpu" },
+    { index = "pytorch-gpu", extra = "models-gpu" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-gpu"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.ruff]
+target-version = "py311"

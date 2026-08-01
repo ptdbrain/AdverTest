@@ -1,4 +1,7 @@
-# ---- Core (must stay light: CI installs exactly this file) ----
+# Legacy pip compatibility. pyproject.toml and uv.lock are the source of truth.
+# Prefer: uv sync
+
+# ---- Core ----
 fastapi>=0.115.0
 uvicorn[standard]>=0.34.0
 pydantic>=2.10.0
@@ -7,6 +10,7 @@ python-dotenv>=1.0.0
 
 # ---- Numerics: attack generation + metrics ----
 numpy>=1.26.0
+Pillow>=10.0.0
 
 # ---- Optional extras: install per role, never in CI ----
 # Real models (adapters)

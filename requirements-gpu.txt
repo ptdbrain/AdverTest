@@ -1,0 +1,11 @@
+# Legacy pip compatibility. Prefer: uv sync --extra models-gpu
+-r requirements.txt
+
+# Install only on GPU workers. Core CI intentionally does not install this file.
+torch>=2.4.0
+torchvision>=0.19.0
+ultralytics>=8.3.0
+
+# SAM2 is installed from the official repository because its package and
+# checkpoint/config versions must match:
+# pip install "git+https://github.com/facebookresearch/sam2.git"

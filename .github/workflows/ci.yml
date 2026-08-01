@@ -13,25 +13,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           python-version: "3.11"
-          cache: pip
+          version: "0.11.32"
+          enable-cache: true
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: uv sync --locked
 
       - name: Lint with ruff
-        run: ruff check src/ tests/
+        run: uv run ruff check src/ tests/
 
       # Fails if a plugin cannot be imported or two plugins claim the same name.
       - name: Plugin catalog loads
-        run: python -m src.cli attacks
+        run: uv run python -m src.cli attacks
         env:
           APP_ENV: test
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short
+        run: uv run pytest tests/ -v --tb=short
         env:
           APP_ENV: test

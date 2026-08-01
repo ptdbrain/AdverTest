@@ -86,6 +86,7 @@ class Sample:
     sample_id: str
     image: np.ndarray
     boxes: tuple[Box, ...] = ()
+    mask: np.ndarray | None = None
     depth: np.ndarray | None = None
     lidar: np.ndarray | None = None
     anonymized: bool = False

@@ -1,0 +1,25 @@
+{
+  "input_dir": "data/anonymized/kitti-smoke",
+  "input_format": "kitti",
+  "attack_name": "cw_l2",
+  "attack_params": {
+    "iterations": 8,
+    "binary_search_steps": 2,
+    "learning_rate": 0.01,
+    "initial_const": 0.1,
+    "confidence": 0.0
+  },
+  "severities": [
+    3
+  ],
+  "seed": 20260731,
+  "surrogate": {
+    "name": "yolo11",
+    "checkpoint": "checkpoints/surrogates/yolo11s.pt",
+    "device": "cpu",
+    "objective": "untargeted"
+  },
+  "output_dir": "data/attacked",
+  "preview": true,
+  "limit": 1
+}

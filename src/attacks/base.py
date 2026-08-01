@@ -25,6 +25,11 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict
 
 from src.adapters.base import ModelAdapter
+from src.core.objectives import (
+    AttackObjective,
+    RequiredAnnotation,
+    SurrogateCapability,
+)
 from src.core.types import (
     MAX_SEVERITY,
     AttackGroup,
@@ -60,6 +65,7 @@ class AttackContext:
 
     rng: np.random.Generator
     model: ModelAdapter | None = None
+    objective: AttackObjective = AttackObjective()
 
     def require_model(self, attack_name: str) -> ModelAdapter:
         if self.model is None:
@@ -72,6 +78,7 @@ class BaseAttack(ABC):
 
     #: Registry key: snake_case, unique across the whole catalog.
     name: ClassVar[str]
+    version: ClassVar[str] = "1.0.0"
     #: Plan §2 group: A corruptions, B weather, C occlusion, D white-box, E patch, F black-box.
     group: ClassVar[AttackGroup]
     modality: ClassVar[Modality] = "image"
@@ -81,6 +88,9 @@ class BaseAttack(ABC):
     needs_model: ClassVar[bool] = False
     #: True when gradients are required, so black-box adapters are skipped.
     needs_gradients: ClassVar[bool] = False
+    required_annotations: ClassVar[frozenset[RequiredAnnotation]] = frozenset()
+    required_capabilities: ClassVar[frozenset[SurrogateCapability]] = frozenset()
+    generation_mode: ClassVar[str] = "per_sample"
     #: Team member who owns this file — the only "assignment table" we need.
     owner: ClassVar[str] = "unassigned"
     #: Paper / library the implementation follows.
@@ -100,12 +110,44 @@ class BaseAttack(ABC):
             raise ValueError(
                 f"severity for {self.name!r} must be 0..{self.severity_levels}, got {severity}"
             )
-        if self.needs_model:
-            ctx.require_model(self.name)
+        self.validate_requirements(sample, ctx.model)
         attacked = self.apply(sample, severity, ctx)
         image = np.clip(attacked.image, 0.0, 1.0).astype(np.float32, copy=False)
         validate_image(image, like=sample.image)
         return attacked.with_image(image)
+
+    def validate_requirements(
+        self,
+        sample: Sample,
+        model: ModelAdapter | None,
+    ) -> None:
+        """Fail before generation when annotations or model capabilities are absent."""
+        if self.needs_model:
+            if model is None:
+                raise ModelRequiredError(
+                    f"attack {self.name!r} needs a model adapter in the context"
+                )
+            missing = sorted(
+                capability
+                for capability in self.required_capabilities
+                if not model.supports(capability)
+            )
+            if missing:
+                raise ModelRequiredError(
+                    f"attack {self.name!r} requires surrogate capabilities: "
+                    f"{', '.join(missing)}"
+                )
+        missing_annotations = [
+            annotation
+            for annotation in self.required_annotations
+            if (annotation == "boxes" and not sample.boxes)
+            or (annotation == "mask" and sample.mask is None)
+        ]
+        if missing_annotations:
+            raise ValueError(
+                f"attack {self.name!r} requires annotations: "
+                f"{', '.join(sorted(missing_annotations))}"
+            )
 
     @abstractmethod
     def apply(self, sample: Sample, severity: int, ctx: AttackContext) -> Sample:
@@ -128,6 +170,7 @@ class BaseAttack(ABC):
         """Catalog entry for the API / CLI (plan §2 plugin declaration)."""
         return {
             "name": cls.name,
+            "version": cls.version,
             "group": cls.group,
             "title": (cls.__doc__ or "").strip().splitlines()[0] if cls.__doc__ else "",
             "modality": cls.modality,
@@ -135,6 +178,9 @@ class BaseAttack(ABC):
             "severity_levels": cls.severity_levels,
             "needs_model": cls.needs_model,
             "needs_gradients": cls.needs_gradients,
+            "required_annotations": sorted(cls.required_annotations),
+            "required_capabilities": sorted(cls.required_capabilities),
+            "generation_mode": cls.generation_mode,
             "owner": cls.owner,
             "reference": cls.reference,
             "params_schema": cls.params_model.model_json_schema(),

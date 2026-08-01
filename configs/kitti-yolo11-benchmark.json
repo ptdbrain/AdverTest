@@ -1,0 +1,25 @@
+{
+  "generation_paths": [
+    "data/attacked/kitti-smoke/fgsm/51f112ab642580e8",
+    "data/attacked/kitti-smoke/pgd/18818218caae220b",
+    "data/attacked/kitti-de/mi_fgsm/6e8ccae178cc42c3",
+    "data/attacked/kitti-de/tog/e1fbc143c284c999",
+    "data/attacked/kitti-de/tog/174fa2f9380b5934",
+    "data/attacked/kitti-de/tog/1151c643cf00e86e",
+    "data/attacked/kitti-smoke/cw_l2/6a9e07d81914e1bb",
+    "data/attacked/kitti-de/dpatch/f0237606b7737156",
+    "data/attacked/kitti-de/thys_patch/356e1e4b1cadef77"
+  ],
+  "model": {
+    "name": "yolo11",
+    "checkpoint": "checkpoints/surrogates/yolo11s.pt",
+    "device": "cpu",
+    "score_threshold": 0.001,
+    "max_detections": 300,
+    "params": {
+      "image_size": 640
+    }
+  },
+  "iou_threshold": 0.5,
+  "output_dir": "data/benchmarks"
+}

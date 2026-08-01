@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 
 from src.core.types import Box, Prediction, Sample
-from src.evaluation.detection_metrics import average_precision, iou, match_boxes
+from src.evaluation.detection_metrics import (
+    average_precision,
+    detection_attack_success_rate,
+    detection_summary,
+    iou,
+    match_boxes,
+)
 from src.evaluation.report import CellResult, RunReport
 
 
@@ -55,6 +61,41 @@ def test_low_scored_false_positive_does_not_erase_ap() -> None:
 
 def test_no_predictions_scores_zero() -> None:
     assert average_precision([Prediction("s0")], [_sample((CAR,))]) == 0.0
+
+
+def test_detection_summary_counts_tp_fp_and_fn() -> None:
+    sample = _sample((CAR, Box(20, 20, 30, 30, "Car")))
+    prediction = Prediction(
+        "s0",
+        (
+            Box(0, 0, 10, 10, "Car", 0.9),
+            Box(40, 40, 50, 50, "Car", 0.8),
+        ),
+    )
+    summary = detection_summary([prediction], [sample])
+
+    assert summary.true_positives == 1
+    assert summary.false_positives == 1
+    assert summary.false_negatives == 1
+    assert summary.precision == pytest.approx(0.5)
+    assert summary.recall == pytest.approx(0.5)
+
+
+def test_attack_success_counts_clean_detections_lost_after_attack() -> None:
+    sample = _sample((CAR, Box(20, 20, 30, 30, "Car")))
+    clean = Prediction(
+        "s0",
+        (
+            Box(0, 0, 10, 10, "Car", 0.9),
+            Box(20, 20, 30, 30, "Car", 0.8),
+        ),
+    )
+    attacked = Prediction("s0", (Box(0, 0, 10, 10, "Car", 0.7),))
+    summary = detection_attack_success_rate([clean], [attacked], [sample])
+
+    assert summary.clean_detected_truths == 2
+    assert summary.lost_truths == 1
+    assert summary.rate == pytest.approx(0.5)
 
 
 def test_degradation_is_relative_to_clean_ap() -> None:

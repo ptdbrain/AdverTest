@@ -6,6 +6,10 @@
     python -m src.cli estimate --attacks fgsm     # cost before running
     python -m src.cli run --attacks gaussian_noise,fgsm --severities 1,3,5
     python -m src.cli run --attacks fgsm --params '{"fgsm": {"epsilon_per_severity": [0.05]}}'
+    python -m src.cli generate-attack --config configs/pgd.json
+    python -m src.cli anonymize-dataset --config configs/kitti-anonymize.json
+    python -m src.cli train-patch --config configs/patch.json
+    python -m src.cli inspect-attack-dataset --path data/attacked/.../
 """
 
 from __future__ import annotations
@@ -15,11 +19,26 @@ import json
 from typing import Any
 
 from src.adapters import load_adapters
+from src.anonymization import (
+    AnonymizationConfig,
+    DatasetAnonymizer,
+    inspect_anonymized_dataset,
+)
 from src.attacks import load_attacks
 from src.config import get_settings
 from src.datasets import load_datasets
 from src.evaluation.report import RunReport
 from src.pipeline import RunConfig, TestRunner
+from src.pipeline.benchmark import (
+    AttackBenchmarkConfig,
+    AttackDatasetBenchmark,
+)
+from src.pipeline.generator import (
+    AttackDatasetGenerator,
+    AttackGenerationConfig,
+    inspect_generated_dataset,
+)
+from src.training import PatchTrainer, PatchTrainingConfig
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,6 +50,12 @@ def main(argv: list[str] | None = None) -> int:
         "datasets": _show_datasets,
         "estimate": _show_estimate,
         "run": _show_run,
+        "anonymize-dataset": _anonymize_dataset,
+        "inspect-anonymized-dataset": _inspect_anonymized_dataset,
+        "generate-attack": _generate_attack,
+        "benchmark-attack-datasets": _benchmark_attack_datasets,
+        "train-patch": _train_patch,
+        "inspect-attack-dataset": _inspect_attack_dataset,
     }
     return handlers[args.command](args)
 
@@ -55,6 +80,40 @@ def _build_parser() -> argparse.ArgumentParser:
             help='per-attack overrides as JSON, e.g. \'{"fgsm": {"epsilon_per_severity": [0.05]}}\'',
         )
         sub.add_argument("--json", action="store_true", help="dump the raw report as JSON")
+    generate = subparsers.add_parser(
+        "generate-attack",
+        help="create a reloadable attacked dataset from a JSON config",
+    )
+    generate.add_argument("--config", required=True, help="AttackGenerationConfig JSON file")
+    benchmark = subparsers.add_parser(
+        "benchmark-attack-datasets",
+        help="benchmark completed attack datasets with one model",
+    )
+    benchmark.add_argument(
+        "--config",
+        required=True,
+        help="AttackBenchmarkConfig JSON file",
+    )
+    anonymize = subparsers.add_parser(
+        "anonymize-dataset",
+        help="blur detected faces and license plates in a KITTI folder",
+    )
+    anonymize.add_argument("--config", required=True, help="AnonymizationConfig JSON file")
+    inspect_anonymized = subparsers.add_parser(
+        "inspect-anonymized-dataset",
+        help="verify anonymization descriptor, manifest, and output hashes",
+    )
+    inspect_anonymized.add_argument("--path", required=True, help="anonymized dataset root")
+    train_patch = subparsers.add_parser(
+        "train-patch",
+        help="train a reusable DPatch/Thys artifact from a JSON config",
+    )
+    train_patch.add_argument("--config", required=True, help="PatchTrainingConfig JSON file")
+    inspect_dataset = subparsers.add_parser(
+        "inspect-attack-dataset",
+        help="verify a generated dataset descriptor, manifest, and hashes",
+    )
+    inspect_dataset.add_argument("--path", required=True, help="generation root")
     return parser
 
 
@@ -105,6 +164,55 @@ def _show_run(args: argparse.Namespace) -> int:
         return 0
     _print_report(report)
     return 0
+
+
+def _generate_attack(args: argparse.Namespace) -> int:
+    config = AttackGenerationConfig.model_validate(_read_json(args.config))
+    report = AttackDatasetGenerator().generate(config)
+    print(json.dumps(report.as_dict(), indent=2))
+    return 0
+
+
+def _benchmark_attack_datasets(args: argparse.Namespace) -> int:
+    config = AttackBenchmarkConfig.model_validate(_read_json(args.config))
+    artifacts = AttackDatasetBenchmark().run(config)
+    report = json.loads(artifacts.report_path.read_text(encoding="utf-8"))
+    print(json.dumps({**artifacts.as_dict(), "cells": report["cells"]}, indent=2))
+    return 0
+
+
+def _anonymize_dataset(args: argparse.Namespace) -> int:
+    config = AnonymizationConfig.model_validate(_read_json(args.config))
+    report = DatasetAnonymizer().anonymize(config)
+    print(json.dumps(report.as_dict(), indent=2))
+    return 0
+
+
+def _inspect_anonymized_dataset(args: argparse.Namespace) -> int:
+    result = inspect_anonymized_dataset(args.path)
+    print(json.dumps(result, indent=2))
+    return 0 if result["valid"] else 1
+
+
+def _train_patch(args: argparse.Namespace) -> int:
+    config = PatchTrainingConfig.model_validate(_read_json(args.config))
+    artifact = PatchTrainer().train(config)
+    print(json.dumps(artifact.as_dict(), indent=2))
+    return 0
+
+
+def _inspect_attack_dataset(args: argparse.Namespace) -> int:
+    result = inspect_generated_dataset(args.path)
+    print(json.dumps(result, indent=2))
+    return 0 if result["valid"] else 1
+
+
+def _read_json(path: str) -> dict[str, Any]:
+    with open(path, encoding="utf-8") as stream:
+        payload = json.load(stream)
+    if not isinstance(payload, dict):
+        raise ValueError(f"config root must be a JSON object: {path}")
+    return payload
 
 
 def _print_report(report: RunReport) -> None:

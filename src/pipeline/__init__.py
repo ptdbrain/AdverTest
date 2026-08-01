@@ -10,14 +10,36 @@ Optuna-based red-team search, and a Celery/Redis queue for background runs.
 
 from __future__ import annotations
 
+from src.pipeline.benchmark import (
+    AttackBenchmarkConfig,
+    AttackDatasetBenchmark,
+    BenchmarkArtifacts,
+    BenchmarkModelConfig,
+)
 from src.pipeline.cache import MemoryCache, NullCache, PredictionCache
+from src.pipeline.generator import (
+    AttackDatasetGenerator,
+    AttackGenerationConfig,
+    GenerationReport,
+    SurrogateConfig,
+    inspect_generated_dataset,
+)
 from src.pipeline.runner import CostEstimate, RunConfig, TestRunner
 
 __all__ = [
     "CostEstimate",
+    "AttackBenchmarkConfig",
+    "AttackDatasetBenchmark",
+    "BenchmarkArtifacts",
+    "BenchmarkModelConfig",
+    "AttackDatasetGenerator",
+    "AttackGenerationConfig",
+    "GenerationReport",
     "MemoryCache",
     "NullCache",
     "PredictionCache",
     "RunConfig",
+    "SurrogateConfig",
     "TestRunner",
+    "inspect_generated_dataset",
 ]

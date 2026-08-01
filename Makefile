@@ -1,33 +1,33 @@
 .PHONY: run test lint format typecheck check catalog demo clean
 
 run:
-	uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+	uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
 test:
-	pytest tests/ -v
+	uv run pytest tests/ -v
 
 lint:
-	ruff check src/ tests/
+	uv run ruff check src/ tests/
 
 format:
-	ruff format src/ tests/
+	uv run ruff format src/ tests/
 
 typecheck:
-	mypy src/
+	uv run mypy src/
 
 check: lint format test
 
 # Registered plugins (attacks / adapters / datasets) with their owners.
 catalog:
-	python -m src.cli attacks
-	python -m src.cli models
-	python -m src.cli datasets
+	uv run python -m src.cli attacks
+	uv run python -m src.cli models
+	uv run python -m src.cli datasets
 
 # Smallest end-to-end run: reference dataset + reference detector.
 # fgsm gets a larger epsilon here on purpose: blob_detector is a threshold model,
 # so the plan's {1..16}/255 ladder (right for real CNNs) barely moves it.
 demo:
-	python -m src.cli run --limit 4 --severities 1,3,5 \
+	uv run python -m src.cli run --limit 4 --severities 1,3,5 \
 	  --params '{"fgsm": {"epsilon_per_severity": [0.02, 0.04, 0.08, 0.16, 0.32]}}'
 
 clean:

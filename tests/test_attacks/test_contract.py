@@ -42,6 +42,16 @@ def _distance(sample: Sample, attacked: Sample) -> float:
     return float(np.linalg.norm(attacked.image - sample.image))
 
 
+def _attack(attack_cls: type[BaseAttack]) -> BaseAttack:
+    """Use a deterministic synthetic artifact only inside shared contract tests."""
+    params = (
+        {"allow_builtin_patch": True}
+        if "allow_builtin_patch" in attack_cls.params_model.model_fields
+        else {}
+    )
+    return attack_cls(**params)
+
+
 def test_catalog_metadata_is_complete(attack_cls: type[BaseAttack]) -> None:
     described = attack_cls.describe()
     assert attack_cls.group in GROUP_TITLES, "group must be one of A..F (plan §2)"
@@ -54,7 +64,7 @@ def test_catalog_metadata_is_complete(attack_cls: type[BaseAttack]) -> None:
 
 
 def test_severity_zero_is_identity(attack_cls: type[BaseAttack], sample: Sample, adapter: ModelAdapter) -> None:
-    attacked = attack_cls().run(sample, 0, _context(attack_cls, adapter))
+    attacked = _attack(attack_cls).run(sample, 0, _context(attack_cls, adapter))
     assert array_digest(attacked.image) == array_digest(sample.image)
 
 
@@ -63,7 +73,7 @@ def test_output_respects_image_contract(
     sample: Sample,
     adapter: ModelAdapter,
 ) -> None:
-    attacked = attack_cls().run(sample, 1, _context(attack_cls, adapter))
+    attacked = _attack(attack_cls).run(sample, 1, _context(attack_cls, adapter))
     validate_image(attacked.image, like=sample.image)
 
 
@@ -73,7 +83,11 @@ def test_ground_truth_is_untouched(
     adapter: ModelAdapter,
 ) -> None:
     before = array_digest(sample.image)
-    attacked = attack_cls().run(sample, attack_cls.severity_levels, _context(attack_cls, adapter))
+    attacked = _attack(attack_cls).run(
+        sample,
+        attack_cls.severity_levels,
+        _context(attack_cls, adapter),
+    )
     assert attacked.boxes == sample.boxes, "attacks change pixels, never labels"
     assert array_digest(sample.image) == before, "the input sample must not be mutated"
 
@@ -83,8 +97,16 @@ def test_same_seed_gives_same_pixels(
     sample: Sample,
     adapter: ModelAdapter,
 ) -> None:
-    first = attack_cls().run(sample, 2, _context(attack_cls, adapter, seed=99))
-    second = attack_cls().run(sample, 2, _context(attack_cls, adapter, seed=99))
+    first = _attack(attack_cls).run(
+        sample,
+        2,
+        _context(attack_cls, adapter, seed=99),
+    )
+    second = _attack(attack_cls).run(
+        sample,
+        2,
+        _context(attack_cls, adapter, seed=99),
+    )
     assert array_digest(first.image) == array_digest(second.image)
 
 
@@ -93,7 +115,7 @@ def test_attack_actually_changes_the_image(
     sample: Sample,
     adapter: ModelAdapter,
 ) -> None:
-    attacked = attack_cls().run(sample, 1, _context(attack_cls, adapter))
+    attacked = _attack(attack_cls).run(sample, 1, _context(attack_cls, adapter))
     assert _distance(sample, attacked) > 0.0
 
 
@@ -102,8 +124,12 @@ def test_effect_grows_with_severity(
     sample: Sample,
     adapter: ModelAdapter,
 ) -> None:
-    weak = attack_cls().run(sample, 1, _context(attack_cls, adapter))
-    strong = attack_cls().run(sample, attack_cls.severity_levels, _context(attack_cls, adapter))
+    weak = _attack(attack_cls).run(sample, 1, _context(attack_cls, adapter))
+    strong = _attack(attack_cls).run(
+        sample,
+        attack_cls.severity_levels,
+        _context(attack_cls, adapter),
+    )
     assert _distance(sample, strong) >= _distance(sample, weak), (
         "severity must be ordered: severity 5 cannot perturb less than severity 1 (sanity check #2)"
     )
@@ -115,7 +141,11 @@ def test_out_of_range_severity_is_rejected(
     adapter: ModelAdapter,
 ) -> None:
     with pytest.raises(ValueError):
-        attack_cls().run(sample, attack_cls.severity_levels + 1, _context(attack_cls, adapter))
+        _attack(attack_cls).run(
+            sample,
+            attack_cls.severity_levels + 1,
+            _context(attack_cls, adapter),
+        )
 
 
 def test_unknown_parameter_is_rejected(attack_cls: type[BaseAttack]) -> None:

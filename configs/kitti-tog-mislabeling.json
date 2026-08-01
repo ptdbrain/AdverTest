@@ -1,0 +1,23 @@
+{
+  "input_dir": "data/anonymized/kitti-de",
+  "input_format": "kitti",
+  "attack_name": "tog",
+  "attack_params": {
+    "variant": "mislabeling",
+    "steps": 5
+  },
+  "severities": [
+    3
+  ],
+  "seed": 20260731,
+  "surrogate": {
+    "name": "yolo11",
+    "checkpoint": "checkpoints/surrogates/yolo11s.pt",
+    "device": "cpu",
+    "objective": "mislabeling",
+    "target_label": "Cyclist"
+  },
+  "output_dir": "data/attacked",
+  "preview": true,
+  "limit": 2
+}

@@ -240,6 +240,14 @@ class TestRunner:
         skipped: list[SkippedAttack] = []
         for attack in requested:
             reason = _incompatibility(attack, dataset, info)
+            params = config.attack_params.get(attack.name, {})
+            if (
+                reason is None
+                and attack.generation_mode == "artifact"
+                and not params.get("patch_path")
+                and not params.get("allow_builtin_patch", False)
+            ):
+                reason = "artifact attack requires patch_path"
             if reason is None:
                 selected.append(attack)
             else:

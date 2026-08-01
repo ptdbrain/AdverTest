@@ -15,6 +15,7 @@ class AttackCatalogItem(BaseModel):
     """One entry of the attack catalog (mirrors ``BaseAttack.describe``)."""
 
     name: str
+    version: str = "1.0.0"
     group: str
     title: str = ""
     modality: str
@@ -22,6 +23,9 @@ class AttackCatalogItem(BaseModel):
     severity_levels: int
     needs_model: bool
     needs_gradients: bool
+    required_annotations: list[str] = Field(default_factory=list)
+    required_capabilities: list[str] = Field(default_factory=list)
+    generation_mode: str = "per_sample"
     owner: str
     reference: str = ""
     params_schema: dict[str, Any] = Field(default_factory=dict)
@@ -35,6 +39,7 @@ class ModelCatalogItem(BaseModel):
     version: str
     modality: str
     supports_gradients: bool
+    capabilities: list[str] = Field(default_factory=list)
     owner: str
     docstring: str = ""
 

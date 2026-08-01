@@ -19,15 +19,17 @@ model tham chiếu thuần numpy — không cần GPU, weight, hay tải dataset
 dataset (đã ẩn danh) → attack plugin → model adapter → AP/Degradation → RunReport
 ```
 
-Phần còn lại của plan (19 corruption, thời tiết, patch, PGD/C&W/TOG, mPC/rPC/ASR/
-RobustScore, review queue, Optuna red-team…) là **slot** đã có chỗ và có hợp đồng
-rõ ràng — xem bảng ở cuối `docs/CONTRIBUTING_ATTACKS.md`.
+Nhóm D/E đã có pipeline sinh attack dataset độc lập, gồm FGSM, PGD, MI-FGSM,
+C&W, TOG, DAG, SAM2-PGD, DPatch và Thys patch. Các phần benchmark
+(mPC/rPC/ASR/RobustScore), nhóm attack còn lại, review queue và Optuna red-team
+vẫn nằm ngoài pipeline này.
 
 ## ⚡ Quick Start
 
 ```bash
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt          # chỉ numpy + fastapi + dev tools
+uv sync                                  # core + dev, Python 3.11 từ .python-version
+uv sync --extra models-cpu               # Torch/Torchvision/Ultralytics cho máy CPU
+# uv sync --extra models-gpu             # dùng trên máy NVIDIA/CUDA
 cp .env.example .env                     # điền AI_LOG_API_KEY của nhóm
 
 make catalog                             # attack/model/dataset nào đang có, ai giữ
@@ -62,8 +64,8 @@ D      fgsm            5         0.0     100.0  0
 git checkout -b feat/attack-motion-blur
 cp src/attacks/_template.py src/attacks/corruption/motion_blur.py
 # sửa name/group/owner + hàm apply()
-pytest tests/test_attacks -q             # contract test tự bao phủ file mới
-python -m src.cli run --attacks motion_blur --severities 1,3,5 --limit 4
+uv run pytest tests/test_attacks -q      # contract test tự bao phủ file mới
+uv run python -m src.cli run --attacks motion_blur --severities 1,3,5 --limit 4
 ```
 
 Không cần đăng ký ở đâu khác: registry tự phát hiện file mới. Hướng dẫn đầy đủ
@@ -81,13 +83,15 @@ bảng slot còn trống): **[docs/CONTRIBUTING_ATTACKS.md](docs/CONTRIBUTING_AT
 │   │   ├── corruption/     #    nhóm A — có gaussian_noise
 │   │   ├── weather/        #    nhóm B — slot (depth-aware)
 │   │   ├── occlusion/      #    nhóm C — slot
-│   │   ├── adversarial/    #    nhóm D — có fgsm
-│   │   ├── patch/          #    nhóm E — slot
+│   │   ├── adversarial/    #    nhóm D — gradient attack
+│   │   ├── patch/          #    nhóm E — artifact patch
 │   │   └── blackbox/       #    nhóm F — slot
 │   ├── adapters/           # 🤖 model under test (M1–M6); blob_detector = model tham chiếu
 │   ├── datasets/           # 🗂️ nguồn dữ liệu + cổng ẩn danh bắt buộc
 │   ├── evaluation/         # 📏 IoU, AP, degradation, RunReport
-│   ├── pipeline/           # ⚙️ TestRunner + cache + ước tính chi phí
+│   ├── pipeline/           # ⚙️ TestRunner + AttackDatasetGenerator
+│   ├── training/           # 🧪 PatchTrainer
+│   ├── anonymization/      # 🔒 ẩn danh khuôn mặt/biển số
 │   ├── api/                # 🌐 FastAPI: catalog + runs
 │   ├── cli.py              # 🖥️ python -m src.cli attacks|run|estimate
 │   └── config.py           # 🔧 Pydantic Settings
@@ -103,6 +107,30 @@ bảng slot còn trống): **[docs/CONTRIBUTING_ATTACKS.md](docs/CONTRIBUTING_AT
 ├── ARCHITECTURE.md         # 🏗️ kiến trúc + design decisions
 └── eval/ presentation/     # 📊 evidence + slides cho Demo Day
 ```
+
+## Attack Dataset Generator
+
+Nhóm D/E có pipeline riêng để sinh dataset bị tấn công mà không gọi evaluator
+hoặc tính AP. Config synthetic chạy không cần checkpoint; config KITTI dùng
+checkpoint local và không tự tải weight:
+
+```bash
+uv run python -m src.cli generate-attack --config configs/pgd.json
+uv run python -m src.cli anonymize-dataset --config configs/kitti-anonymize-smoke.json
+uv run python -m src.cli generate-attack --config configs/kitti-fgsm.json
+uv run python -m src.cli generate-attack --config configs/kitti-pgd.json
+uv run python -m src.cli train-patch --config configs/patch.json
+uv run python -m src.cli anonymize-dataset --config configs/kitti-anonymize-de.json
+uv run python -m src.cli generate-attack --config configs/kitti-mi-fgsm.json
+uv run python -m src.cli generate-attack --config configs/kitti-tog-vanishing.json
+uv run python -m src.cli generate-attack --config configs/kitti-cw-l2.json
+uv run python -m src.cli train-patch --config configs/kitti-dpatch-train.json
+uv run python -m src.cli generate-attack --config configs/kitti-dpatch-apply.json
+uv run python -m src.cli benchmark-attack-datasets --config configs/kitti-yolo11-benchmark.json
+```
+
+Hướng dẫn input, checkpoint, attack params, output manifest và resume:
+**[docs/ATTACK_DATASET_GENERATOR.md](docs/ATTACK_DATASET_GENERATOR.md)**.
 
 ## 🔌 API
 
@@ -156,7 +184,7 @@ bash scripts/setup_hooks.sh   # chạy một lần sau khi clone
 Log thủ công cho ChatGPT/web tool:
 
 ```bash
-bash scripts/_pyrun.sh scripts/log_manual.py --tool chatgpt --prompt "What you asked"
+uv run python scripts/log_manual.py --tool chatgpt --prompt "What you asked"
 ```
 
 > ⚠️ Đừng sửa/xoá file trong `.ai-log/`, đừng `git push --no-verify`.
