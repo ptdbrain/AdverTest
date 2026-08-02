@@ -33,6 +33,13 @@ numpy>=1.26.0
 # celery>=5.4.0
 # redis>=5.2.0
 
+# ---- KITTI + YOLO11 benchmarking (group C, P-195) — install locally, never in CI ----
+# Enables the `kitti` dataset, the `yolo11` adapter and scripts/benchmark_kitti_yolo11.py.
+# Without them the catalog still imports and every test either runs or skips cleanly.
+# pillow>=10.4.0                # decode KITTI PNGs (src/datasets/kitti.py)
+# torch>=2.4.0                  # --index-url https://download.pytorch.org/whl/cu124
+# ultralytics>=8.3.0            # M1 YOLO11s (src/adapters/yolo11.py)
+
 # ---- Dev tools ----
 ruff>=0.8.0
 pytest>=8.0.0

@@ -33,6 +33,10 @@ data/
 *.db
 *.sqlite3
 
+# Model weights + training runs (ultralytics downloads yolo11s.pt into the CWD)
+*.pt
+runs/
+
 # Logs
 logs/
 *.log

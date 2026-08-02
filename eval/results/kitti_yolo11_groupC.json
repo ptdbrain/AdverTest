@@ -1,0 +1,572 @@
+{
+  "report": {
+    "run_id": "3a4b9bd70fcd",
+    "model": "yolo11",
+    "model_version": "yolo11-1.0.0:yolo11s:imgsz640:conf0.25",
+    "dataset": "kitti",
+    "n_samples": 500,
+    "ap_clean": 0.2451,
+    "cells": [
+      {
+        "attack": "random_erasing",
+        "group": "C",
+        "severity": 1,
+        "ap": 0.2354,
+        "n_samples": 500,
+        "seconds": 14.574,
+        "cache_hits": 0,
+        "degradation": 0.0396
+      },
+      {
+        "attack": "random_erasing",
+        "group": "C",
+        "severity": 2,
+        "ap": 0.219,
+        "n_samples": 500,
+        "seconds": 40.349,
+        "cache_hits": 0,
+        "degradation": 0.1065
+      },
+      {
+        "attack": "random_erasing",
+        "group": "C",
+        "severity": 3,
+        "ap": 0.1999,
+        "n_samples": 500,
+        "seconds": 13.415,
+        "cache_hits": 0,
+        "degradation": 0.1842
+      },
+      {
+        "attack": "random_erasing",
+        "group": "C",
+        "severity": 4,
+        "ap": 0.1907,
+        "n_samples": 500,
+        "seconds": 11.415,
+        "cache_hits": 0,
+        "degradation": 0.222
+      },
+      {
+        "attack": "random_erasing",
+        "group": "C",
+        "severity": 5,
+        "ap": 0.1696,
+        "n_samples": 500,
+        "seconds": 9.767,
+        "cache_hits": 0,
+        "degradation": 0.3081
+      },
+      {
+        "attack": "object_occlusion",
+        "group": "C",
+        "severity": 1,
+        "ap": 0.2026,
+        "n_samples": 500,
+        "seconds": 10.2,
+        "cache_hits": 0,
+        "degradation": 0.1733
+      },
+      {
+        "attack": "object_occlusion",
+        "group": "C",
+        "severity": 2,
+        "ap": 0.1642,
+        "n_samples": 500,
+        "seconds": 10.268,
+        "cache_hits": 0,
+        "degradation": 0.33
+      },
+      {
+        "attack": "object_occlusion",
+        "group": "C",
+        "severity": 3,
+        "ap": 0.0165,
+        "n_samples": 500,
+        "seconds": 10.358,
+        "cache_hits": 0,
+        "degradation": 0.9329
+      },
+      {
+        "attack": "object_occlusion",
+        "group": "C",
+        "severity": 4,
+        "ap": 0.0004,
+        "n_samples": 500,
+        "seconds": 10.916,
+        "cache_hits": 0,
+        "degradation": 0.9985
+      },
+      {
+        "attack": "object_occlusion",
+        "group": "C",
+        "severity": 5,
+        "ap": 0.0,
+        "n_samples": 500,
+        "seconds": 10.627,
+        "cache_hits": 0,
+        "degradation": 1.0
+      },
+      {
+        "attack": "sensor_fault",
+        "group": "C",
+        "severity": 1,
+        "ap": 0.2454,
+        "n_samples": 500,
+        "seconds": 10.95,
+        "cache_hits": 0,
+        "degradation": 0.0
+      },
+      {
+        "attack": "sensor_fault",
+        "group": "C",
+        "severity": 2,
+        "ap": 0.2283,
+        "n_samples": 500,
+        "seconds": 11.518,
+        "cache_hits": 0,
+        "degradation": 0.0685
+      },
+      {
+        "attack": "sensor_fault",
+        "group": "C",
+        "severity": 3,
+        "ap": 0.2161,
+        "n_samples": 500,
+        "seconds": 11.623,
+        "cache_hits": 0,
+        "degradation": 0.1181
+      },
+      {
+        "attack": "sensor_fault",
+        "group": "C",
+        "severity": 4,
+        "ap": 0.203,
+        "n_samples": 500,
+        "seconds": 11.92,
+        "cache_hits": 0,
+        "degradation": 0.1717
+      },
+      {
+        "attack": "sensor_fault",
+        "group": "C",
+        "severity": 5,
+        "ap": 0.1831,
+        "n_samples": 500,
+        "seconds": 13.427,
+        "cache_hits": 0,
+        "degradation": 0.2528
+      },
+      {
+        "attack": "frame_freeze",
+        "group": "C",
+        "severity": 1,
+        "ap": 0.2539,
+        "n_samples": 500,
+        "seconds": 12.79,
+        "cache_hits": 0,
+        "degradation": 0.0
+      },
+      {
+        "attack": "frame_freeze",
+        "group": "C",
+        "severity": 2,
+        "ap": 0.2366,
+        "n_samples": 500,
+        "seconds": 12.291,
+        "cache_hits": 0,
+        "degradation": 0.0344
+      },
+      {
+        "attack": "frame_freeze",
+        "group": "C",
+        "severity": 3,
+        "ap": 0.2089,
+        "n_samples": 500,
+        "seconds": 12.268,
+        "cache_hits": 0,
+        "degradation": 0.1474
+      },
+      {
+        "attack": "frame_freeze",
+        "group": "C",
+        "severity": 4,
+        "ap": 0.1818,
+        "n_samples": 500,
+        "seconds": 12.586,
+        "cache_hits": 0,
+        "degradation": 0.258
+      },
+      {
+        "attack": "frame_freeze",
+        "group": "C",
+        "severity": 5,
+        "ap": 0.1512,
+        "n_samples": 500,
+        "seconds": 12.735,
+        "cache_hits": 0,
+        "degradation": 0.383
+      },
+      {
+        "attack": "gaussian_noise",
+        "group": "A",
+        "severity": 1,
+        "ap": 0.2438,
+        "n_samples": 500,
+        "seconds": 16.8,
+        "cache_hits": 0,
+        "degradation": 0.0053
+      },
+      {
+        "attack": "gaussian_noise",
+        "group": "A",
+        "severity": 2,
+        "ap": 0.2539,
+        "n_samples": 500,
+        "seconds": 16.937,
+        "cache_hits": 0,
+        "degradation": 0.0
+      },
+      {
+        "attack": "gaussian_noise",
+        "group": "A",
+        "severity": 3,
+        "ap": 0.24,
+        "n_samples": 500,
+        "seconds": 16.939,
+        "cache_hits": 0,
+        "degradation": 0.0208
+      },
+      {
+        "attack": "gaussian_noise",
+        "group": "A",
+        "severity": 4,
+        "ap": 0.2274,
+        "n_samples": 500,
+        "seconds": 16.841,
+        "cache_hits": 0,
+        "degradation": 0.0721
+      },
+      {
+        "attack": "gaussian_noise",
+        "group": "A",
+        "severity": 5,
+        "ap": 0.206,
+        "n_samples": 500,
+        "seconds": 16.518,
+        "cache_hits": 0,
+        "degradation": 0.1596
+      }
+    ],
+    "heatmap": {
+      "random_erasing": {
+        "1": 0.0396,
+        "2": 0.1065,
+        "3": 0.1842,
+        "4": 0.222,
+        "5": 0.3081
+      },
+      "object_occlusion": {
+        "1": 0.1733,
+        "2": 0.33,
+        "3": 0.9329,
+        "4": 0.9985,
+        "5": 1.0
+      },
+      "sensor_fault": {
+        "1": 0.0,
+        "2": 0.0685,
+        "3": 0.1181,
+        "4": 0.1717,
+        "5": 0.2528
+      },
+      "frame_freeze": {
+        "1": 0.0,
+        "2": 0.0344,
+        "3": 0.1474,
+        "4": 0.258,
+        "5": 0.383
+      },
+      "gaussian_noise": {
+        "1": 0.0053,
+        "2": 0.0,
+        "3": 0.0208,
+        "4": 0.0721,
+        "5": 0.1596
+      }
+    },
+    "worst_cases": [
+      {
+        "attack": "object_occlusion",
+        "group": "C",
+        "severity": 5,
+        "ap": 0.0,
+        "n_samples": 500,
+        "seconds": 10.627,
+        "cache_hits": 0,
+        "degradation": 1.0
+      },
+      {
+        "attack": "object_occlusion",
+        "group": "C",
+        "severity": 4,
+        "ap": 0.0004,
+        "n_samples": 500,
+        "seconds": 10.916,
+        "cache_hits": 0,
+        "degradation": 0.9985
+      },
+      {
+        "attack": "object_occlusion",
+        "group": "C",
+        "severity": 3,
+        "ap": 0.0165,
+        "n_samples": 500,
+        "seconds": 10.358,
+        "cache_hits": 0,
+        "degradation": 0.9329
+      },
+      {
+        "attack": "frame_freeze",
+        "group": "C",
+        "severity": 5,
+        "ap": 0.1512,
+        "n_samples": 500,
+        "seconds": 12.735,
+        "cache_hits": 0,
+        "degradation": 0.383
+      },
+      {
+        "attack": "object_occlusion",
+        "group": "C",
+        "severity": 2,
+        "ap": 0.1642,
+        "n_samples": 500,
+        "seconds": 10.268,
+        "cache_hits": 0,
+        "degradation": 0.33
+      }
+    ],
+    "skipped": [],
+    "seconds": 380.701,
+    "simulation_only": true
+  },
+  "metrics": {
+    "ap_clean": 0.2451,
+    "mpc": 0.1871,
+    "rpc": 0.7635,
+    "resilience_rate": {
+      "random_erasing": 0.8279,
+      "object_occlusion": 0.3131,
+      "sensor_fault": 0.8781,
+      "frame_freeze": 0.8426,
+      "gaussian_noise": 0.9556
+    },
+    "robustness_accuracy": {
+      "1": 0.9639,
+      "2": 0.8993,
+      "3": 0.7193,
+      "4": 0.6555,
+      "5": 0.5793
+    },
+    "category_scores": {
+      "noise": 0.9556,
+      "occlusion": 0.7154
+    },
+    "robust_score_plan": 41.78,
+    "robust_score_normalized": 83.55,
+    "covered_categories": [
+      "noise",
+      "occlusion"
+    ],
+    "severity_monotonicity": {
+      "random_erasing": true,
+      "object_occlusion": true,
+      "sensor_fault": true,
+      "frame_freeze": true,
+      "gaussian_noise": false
+    },
+    "normalize_score": true
+  },
+  "estimate": {
+    "n_cells": 25,
+    "n_samples": 500,
+    "n_forward_passes": 13000,
+    "cost_units": 13000.0,
+    "estimated_seconds": 650.0
+  },
+  "bootstrap": {
+    "replicates": 1000,
+    "intervals": {
+      "clean": {
+        "ap_low": 0.2293,
+        "ap_high": 0.2656,
+        "width": 0.0363
+      },
+      "random_erasing@1": {
+        "ap_low": 0.2212,
+        "ap_high": 0.2566,
+        "width": 0.0354
+      },
+      "random_erasing@2": {
+        "ap_low": 0.2034,
+        "ap_high": 0.2382,
+        "width": 0.0348
+      },
+      "random_erasing@3": {
+        "ap_low": 0.1859,
+        "ap_high": 0.2186,
+        "width": 0.0328
+      },
+      "random_erasing@4": {
+        "ap_low": 0.1751,
+        "ap_high": 0.2132,
+        "width": 0.0382
+      },
+      "random_erasing@5": {
+        "ap_low": 0.1528,
+        "ap_high": 0.1909,
+        "width": 0.0381
+      },
+      "object_occlusion@1": {
+        "ap_low": 0.1922,
+        "ap_high": 0.2163,
+        "width": 0.0241
+      },
+      "object_occlusion@2": {
+        "ap_low": 0.1545,
+        "ap_high": 0.1761,
+        "width": 0.0216
+      },
+      "object_occlusion@3": {
+        "ap_low": 0.0139,
+        "ap_high": 0.0198,
+        "width": 0.0059
+      },
+      "object_occlusion@4": {
+        "ap_low": 0.0002,
+        "ap_high": 0.0006,
+        "width": 0.0004
+      },
+      "object_occlusion@5": {
+        "ap_low": 0.0,
+        "ap_high": 0.0,
+        "width": 0.0
+      },
+      "sensor_fault@1": {
+        "ap_low": 0.2294,
+        "ap_high": 0.2655,
+        "width": 0.0361
+      },
+      "sensor_fault@2": {
+        "ap_low": 0.2141,
+        "ap_high": 0.2465,
+        "width": 0.0324
+      },
+      "sensor_fault@3": {
+        "ap_low": 0.1985,
+        "ap_high": 0.2402,
+        "width": 0.0417
+      },
+      "sensor_fault@4": {
+        "ap_low": 0.1849,
+        "ap_high": 0.2268,
+        "width": 0.0419
+      },
+      "sensor_fault@5": {
+        "ap_low": 0.1621,
+        "ap_high": 0.2092,
+        "width": 0.0471
+      },
+      "frame_freeze@1": {
+        "ap_low": 0.2375,
+        "ap_high": 0.2748,
+        "width": 0.0373
+      },
+      "frame_freeze@2": {
+        "ap_low": 0.2224,
+        "ap_high": 0.2535,
+        "width": 0.0311
+      },
+      "frame_freeze@3": {
+        "ap_low": 0.1965,
+        "ap_high": 0.2261,
+        "width": 0.0295
+      },
+      "frame_freeze@4": {
+        "ap_low": 0.1701,
+        "ap_high": 0.1974,
+        "width": 0.0273
+      },
+      "frame_freeze@5": {
+        "ap_low": 0.1407,
+        "ap_high": 0.1658,
+        "width": 0.0251
+      },
+      "gaussian_noise@1": {
+        "ap_low": 0.2283,
+        "ap_high": 0.2636,
+        "width": 0.0353
+      },
+      "gaussian_noise@2": {
+        "ap_low": 0.236,
+        "ap_high": 0.2759,
+        "width": 0.04
+      },
+      "gaussian_noise@3": {
+        "ap_low": 0.2218,
+        "ap_high": 0.2631,
+        "width": 0.0412
+      },
+      "gaussian_noise@4": {
+        "ap_low": 0.2066,
+        "ap_high": 0.2563,
+        "width": 0.0496
+      },
+      "gaussian_noise@5": {
+        "ap_low": 0.1867,
+        "ap_high": 0.2312,
+        "width": 0.0445
+      }
+    }
+  },
+  "anonymization": {
+    "ap_raw": 0.3919,
+    "ap_anonymized": 0.2451,
+    "delta_ap": 0.1468,
+    "note": "placeholder anonymiser (GT-box heuristic), not a privacy guarantee"
+  },
+  "config": {
+    "model": "yolo11",
+    "adapter_params": {
+      "weights": "yolo11s.pt",
+      "imgsz": 640,
+      "batch_size": 8,
+      "device": null
+    },
+    "dataset": "kitti",
+    "dataset_params": {
+      "split": "val",
+      "difficulty": "moderate"
+    },
+    "attacks": [
+      "random_erasing",
+      "object_occlusion",
+      "sensor_fault",
+      "frame_freeze",
+      "gaussian_noise"
+    ],
+    "attack_params": {},
+    "severities": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "limit": 500,
+    "seed": 20260731,
+    "iou_threshold": 0.5
+  },
+  "wall_seconds": 646.37
+}
