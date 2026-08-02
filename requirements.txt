@@ -9,8 +9,11 @@ pydantic-settings>=2.7.0
 python-dotenv>=1.0.0
 
 # ---- Numerics: attack generation + metrics ----
-numpy>=1.26.0
+numpy>=1.26.0,<2
 Pillow>=10.0.0
+imagecorruptions>=1.1.2
+setuptools>=69.0.0,<81
+tqdm>=4.66.5
 
 # ---- Optional extras: install per role, never in CI ----
 # Real models (adapters)
@@ -21,7 +24,6 @@ Pillow>=10.0.0
 #
 # Attacks
 # torchattacks>=3.5.1           # FGSM / PGD / MI-FGSM / C&W references
-# imagecorruptions>=1.1.2       # group A: the 19 ImageNet-C corruptions
 # kornia>=0.7.3                 # GPU corruptions (plan §5)
 # opencv-python-headless>=4.10  # image ops for weather / patch rendering
 #
@@ -36,6 +38,13 @@ Pillow>=10.0.0
 # psycopg2-binary>=2.9.0
 # celery>=5.4.0
 # redis>=5.2.0
+
+# ---- KITTI + YOLO11 benchmarking (group C, P-195) — install locally, never in CI ----
+# Enables the `kitti` dataset, the `yolo11` adapter and scripts/benchmark_kitti_yolo11.py.
+# Without them the catalog still imports and every test either runs or skips cleanly.
+# pillow>=10.4.0                # decode KITTI PNGs (src/datasets/kitti.py)
+# torch>=2.4.0                  # --index-url https://download.pytorch.org/whl/cu124
+# ultralytics>=8.3.0            # M1 YOLO11s (src/adapters/yolo11.py)
 
 # ---- Dev tools ----
 ruff>=0.8.0

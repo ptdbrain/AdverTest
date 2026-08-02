@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from time import perf_counter
 from typing import Any, ClassVar
@@ -16,6 +16,13 @@ from src.core.types import Box, ModelInfo, Prediction, Sample
 
 COCO_MAP = {0: "Pedestrian", 1: "Cyclist", 2: "Car"}
 COCO_REVERSE = {label: class_id for class_id, label in COCO_MAP.items()}
+COCO_LABEL_MAP = {
+    "car": "Car",
+    "person": "Pedestrian",
+    "bicycle": "Cyclist",
+    "motorcycle": "Cyclist",
+}
+LARGE_VEHICLE_ALIASES = {"truck": "Car", "bus": "Car"}
 
 
 @MODELS.register
@@ -44,6 +51,11 @@ class Yolo11Adapter(ModelAdapter):
         score_threshold: float = 0.25,
         max_detections: int = 100,
         image_size: int = 640,
+        imgsz: int | None = None,
+        nms_iou: float = 0.7,
+        batch_size: int = 8,
+        half: bool = False,
+        map_truck_bus_to_car: bool = False,
     ) -> None:
         super().__init__(
             score_threshold=score_threshold,
@@ -51,59 +63,115 @@ class Yolo11Adapter(ModelAdapter):
         )
         self.weights = weights
         self.device = device
-        self.image_size = image_size
+        self.image_size = image_size if imgsz is None else imgsz
+        self.nms_iou = nms_iou
+        self.batch_size = max(1, batch_size)
+        self.half = half
+        self.map_truck_bus_to_car = map_truck_bus_to_car
         self._backend: Any | None = None
 
     def metadata(self) -> ModelInfo:
         return ModelInfo(
             name=self.name,
             task="detection2d",
-            version=f"{self.version}:{self.weights}",
+            version=(
+                f"{self.version}:{Path(self.weights).stem}:"
+                f"imgsz{self.image_size}:conf{self.score_threshold:.3f}"
+            ),
             supports_gradients=True,
         )
 
     def predict(self, samples: Sequence[Sample]) -> list[Prediction]:
         backend = self._load()
         predictions: list[Prediction] = []
-        for sample in samples:
+        for chunk in self._chunks(samples):
             started = perf_counter()
             results = backend.predict(
-                source=np.rint(sample.image * 255.0).astype(np.uint8),
+                source=[self.to_backend_image(sample.image) for sample in chunk],
                 device=self.device,
                 imgsz=self.image_size,
+                iou=self.nms_iou,
                 conf=min(self.score_threshold, 0.001),
                 max_det=self.max_detections,
                 verbose=False,
+                **self._precision_kwargs(),
             )
-            converted: list[Box] = []
-            for result in results:
-                boxes = getattr(result, "boxes", None)
-                if boxes is None:
-                    continue
-                xyxy = boxes.xyxy.detach().cpu().numpy()
-                confidence = boxes.conf.detach().cpu().numpy()
-                classes = boxes.cls.detach().cpu().numpy().astype(int)
-                for coordinates, score, class_id in zip(xyxy, confidence, classes, strict=True):
-                    label = COCO_MAP.get(int(class_id))
-                    if label is not None:
-                        converted.append(
-                            Box(
-                                float(coordinates[0]),
-                                float(coordinates[1]),
-                                float(coordinates[2]),
-                                float(coordinates[3]),
-                                label,
-                                float(score),
-                            )
-                        )
-            predictions.append(
-                Prediction(
-                    sample.sample_id,
-                    self.postprocess(converted),
-                    (perf_counter() - started) * 1000.0,
+            elapsed_ms = (perf_counter() - started) * 1000.0 / max(1, len(chunk))
+            for sample, result in zip(chunk, results, strict=True):
+                predictions.append(
+                    Prediction(
+                        sample.sample_id,
+                        self.postprocess(self.convert(self._rows(result))),
+                        elapsed_ms,
+                    )
                 )
-            )
         return predictions
+
+    def _chunks(self, samples: Sequence[Sample]) -> Iterable[Sequence[Sample]]:
+        for start in range(0, len(samples), self.batch_size):
+            yield samples[start : start + self.batch_size]
+
+    @staticmethod
+    def _rows(result: Any) -> list[tuple[float, float, float, float, str, float]]:
+        names = result.names
+        boxes = getattr(result, "boxes", None)
+        if boxes is None or len(boxes) == 0:
+            return []
+        xyxy = boxes.xyxy.detach().cpu().numpy()
+        confidences = boxes.conf.detach().cpu().numpy()
+        classes = boxes.cls.detach().cpu().numpy().astype(int)
+        return [
+            (
+                float(coordinates[0]),
+                float(coordinates[1]),
+                float(coordinates[2]),
+                float(coordinates[3]),
+                str(names[int(class_id)]),
+                float(score),
+            )
+            for coordinates, class_id, score in zip(
+                xyxy, classes, confidences, strict=True
+            )
+        ]
+
+    @staticmethod
+    def to_backend_image(image: np.ndarray) -> np.ndarray:
+        """Convert RGB float pixels to the BGR ndarray expected by Ultralytics."""
+        scaled = np.clip(image, 0.0, 1.0) * 255.0
+        return np.ascontiguousarray(scaled.round().astype(np.uint8)[..., ::-1])
+
+    def map_label(self, raw_label: str) -> str | None:
+        key = raw_label.lower()
+        if key in COCO_LABEL_MAP:
+            return COCO_LABEL_MAP[key]
+        if self.map_truck_bus_to_car and key in LARGE_VEHICLE_ALIASES:
+            return LARGE_VEHICLE_ALIASES[key]
+        return None
+
+    def convert(
+        self,
+        rows: Iterable[tuple[float, float, float, float, str, float]],
+    ) -> list[Box]:
+        boxes: list[Box] = []
+        for x1, y1, x2, y2, raw_label, score in rows:
+            label = self.map_label(raw_label)
+            if label is not None and x2 > x1 and y2 > y1:
+                boxes.append(Box(x1, y1, x2, y2, label, score))
+        return boxes
+
+    def _use_half(self) -> bool:
+        return bool(self.half) and self._cuda_available()
+
+    def _precision_kwargs(self) -> dict[str, Any]:
+        return {"half": self._use_half()}
+
+    @staticmethod
+    def _cuda_available() -> bool:
+        try:
+            import torch
+        except ImportError:  # pragma: no cover - optional dependency
+            return False
+        return bool(torch.cuda.is_available())
 
     def loss_for_attack(
         self,

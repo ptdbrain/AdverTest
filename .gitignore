@@ -38,6 +38,10 @@ checkpoints/
 *.db
 *.sqlite3
 
+# Model weights + training runs (ultralytics downloads yolo11s.pt into the CWD)
+*.pt
+runs/
+
 # Logs
 logs/
 *.log
@@ -46,6 +50,7 @@ logs/
 htmlcov/
 .coverage
 coverage.xml
+.pytest-tmp-final/
 
 # Docker
 docker-compose.override.yml

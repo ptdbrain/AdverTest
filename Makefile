@@ -1,4 +1,4 @@
-.PHONY: run test lint format typecheck check catalog demo clean
+.PHONY: run test lint format typecheck check catalog demo benchmark-kitti clean
 
 run:
 	uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
@@ -29,6 +29,13 @@ catalog:
 demo:
 	uv run python -m src.cli run --limit 4 --severities 1,3,5 \
 	  --params '{"fgsm": {"epsilon_per_severity": [0.02, 0.04, 0.08, 0.16, 0.32]}}'
+
+# Group C x YOLO11 x anonymized KITTI robustness benchmark.
+benchmark-kitti:
+	uv run python scripts/benchmark_kitti_yolo11.py \
+	  --root data/anonymized/kitti \
+	  --weights checkpoints/surrogates/yolo11s.pt \
+	  --limit 500
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
