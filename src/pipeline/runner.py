@@ -84,9 +84,7 @@ class TestRunner:
         n_samples = len(dataset.load(config.limit))
         selected, _ = self._resolve_attacks(config, dataset, adapter.metadata())
         n_cells = len(selected) * len(config.severities)
-        units = sum(
-            COST_WEIGHT[attack.cost_class] * n_samples * len(config.severities) for attack in selected
-        )
+        units = sum(COST_WEIGHT[attack.cost_class] * n_samples * len(config.severities) for attack in selected)
         return CostEstimate(
             n_cells=n_cells,
             n_samples=n_samples,
@@ -118,9 +116,22 @@ class TestRunner:
         )
         selected, skipped = self._resolve_attacks(config, dataset, info)
         report.skipped = skipped
+
+        try:
+            from tqdm import tqdm
+
+            total_steps = len(selected) * len(config.severities)
+            pbar = tqdm(total=total_steps, desc=f"Evaluating {info.name}", unit="cell")
+        except ImportError:
+            pbar = None
+
         for attack_cls in selected:
             attack = get_attack(attack_cls.name, **config.attack_params.get(attack_cls.name, {}))
-            report.cells.extend(self._run_attack(attack, samples, adapter, config))
+            report.cells.extend(self._run_attack(attack, samples, adapter, config, pbar))
+
+        if pbar:
+            pbar.close()
+
         report.seconds = perf_counter() - started
         return report
 
@@ -130,6 +141,7 @@ class TestRunner:
         samples: Sequence[Sample],
         adapter: ModelAdapter,
         config: RunConfig,
+        pbar=None,
     ) -> list[CellResult]:
         """One row of the heatmap: the same attack at every requested severity."""
         cells: list[CellResult] = []
@@ -149,6 +161,9 @@ class TestRunner:
                     cache_hits=self.cache.hits - hits_before,
                 )
             )
+            if pbar:
+                pbar.set_postfix({"attack": attack.name, "sev": severity})
+                pbar.update(1)
         return cells
 
     def _attack_sample(
