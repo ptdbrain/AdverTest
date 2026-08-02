@@ -58,3 +58,10 @@ out/
 # AI logs — tracked structure, ignored content
 .ai-log/*.jsonl
 .ai-log/archive/
+advertest-plan.md
+
+# Models
+models/
+
+# Results
+results/

@@ -1,0 +1,27 @@
+[project]
+name = "p-195"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "httpx>=0.28.0",
+    "imagecorruptions>=1.1.2",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "langgraph>=0.2.0",
+    "matplotlib>=3.11.1",
+    "numpy<2",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "python-dotenv>=1.0.0",
+    "ruff>=0.8.0",
+    "torch~=2.7.0",
+    "torchvision>=0.22.1",
+    "tqdm>=4.66.5",
+    "ultralytics>=8.4.114",
+    "uvicorn[standard]>=0.34.0",
+]

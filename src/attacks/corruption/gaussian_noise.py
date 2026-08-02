@@ -1,4 +1,4 @@
-"""Group A: additive Gaussian sensor noise."""
+"""Group A: Additive Gaussian sensor noise."""
 
 from __future__ import annotations
 
@@ -28,5 +28,5 @@ class GaussianNoise(BaseAttack):
 
     def apply(self, sample: Sample, severity: int, ctx: AttackContext) -> Sample:
         sigma = self.level(severity, self.params.sigma_per_severity)
-        noise = ctx.rng.normal(0.0, sigma, size=sample.image.shape).astype(np.float32)
-        return sample.with_image(sample.image + noise)
+        noise = ctx.rng.normal(0, sigma, sample.image.shape)
+        return sample.with_image(sample.image + noise.astype(np.float32))
