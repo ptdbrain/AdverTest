@@ -30,8 +30,17 @@ Thumbs.db
 
 # Data (never commit large data)
 data/
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+*.safetensors
 *.db
 *.sqlite3
+
+# Model weights + training runs (ultralytics downloads yolo11s.pt into the CWD)
+*.pt
+runs/
 
 # Logs
 logs/
@@ -41,6 +50,8 @@ logs/
 htmlcov/
 .coverage
 coverage.xml
+.pytest-tmp-final/
+.pytest-tmp-*/
 
 # Docker
 docker-compose.override.yml
@@ -58,3 +69,10 @@ out/
 # AI logs — tracked structure, ignored content
 .ai-log/*.jsonl
 .ai-log/archive/
+advertest-plan.md
+
+# Models
+models/
+
+# Results
+results/

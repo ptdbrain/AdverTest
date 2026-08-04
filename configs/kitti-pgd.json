@@ -1,0 +1,23 @@
+{
+  "input_dir": "data/anonymized/kitti-smoke",
+  "input_format": "kitti",
+  "attack_name": "pgd",
+  "attack_params": {
+    "steps": 3,
+    "restarts": 1,
+    "random_start": true
+  },
+  "severities": [
+    3
+  ],
+  "seed": 20260731,
+  "surrogate": {
+    "name": "yolo11",
+    "checkpoint": "checkpoints/surrogates/yolo11s.pt",
+    "device": "cpu",
+    "objective": "untargeted"
+  },
+  "output_dir": "data/attacked",
+  "preview": true,
+  "limit": 2
+}

@@ -1,201 +1,194 @@
-# 🤖 AI20K Agent Template
+# 🛡️ AdverTest — Sinh & kiểm thử adversarial cho model perception
 
-Template chính thức cho học viên **VinUni AI20K Build Phase** — cung cấp sẵn cấu trúc dự án, code mẫu, và hướng dẫn kỹ thuật chi tiết để xây dựng AI Agent đạt điểm cao (35+/50).
+> **SIMULATION ONLY.** Mọi con số ở đây là kết quả mô phỏng. Hệ thống không có
+> đường nối tới pipeline triển khai, và không tự kết luận model "đủ an toàn" —
+> quyết định cuối luôn thuộc về con người.
 
-> 📖 **Technical Guidebook:** [phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book)
+Bản kế hoạch kỹ thuật đầy đủ: [`docs/advertest-plan.md`](docs/advertest-plan.md).
 
-## 🎯 Template này dùng để làm gì?
+## Bản starter này là gì
 
-Khi tham gia AI20K Build Phase, mỗi đội cần xây dựng một AI Agent hoàn chỉnh — từ kiến trúc, code, test, đến deploy. Thay vì bắt đầu từ con số không, template này cung cấp:
+Khung code tổng quát để **cả nhóm làm song song**: mỗi người thêm một phép tấn
+công (hoặc một model, một dataset, một chỉ số) trong **file riêng của mình**,
+không sửa file chung, nên gần như không có merge conflict.
 
-- **Cấu trúc thư mục chuẩn** — đã được thiết kế theo best practices (separation of concerns)
-- **Code mẫu** cho các phần cốt lõi: LangGraph agent, FastAPI API, config, schemas
-- **Docker + CI/CD sẵn** — Dockerfile multi-stage, GitHub Actions workflow
-- **Hướng dẫn kỹ thuật 10 chương** — từ clone template đến nộp bài Demo Day
-- **Checklist 10 deliverables** — đảm bảo không bỏ sót yêu cầu BTC
-- **AI Usage Logging tự động** — Pre-configured hooks cho Claude Code, Cursor, Codex, Gemini CLI, Antigravity, và GitHub Copilot
+Đã chạy được end-to-end với hai ví dụ mẫu (`gaussian_noise`, `fgsm`) trên một
+model tham chiếu thuần numpy — không cần GPU, weight, hay tải dataset:
+
+```
+dataset (đã ẩn danh) → attack plugin → model adapter → AP/Degradation → RunReport
+```
+
+Nhóm D/E đã có pipeline sinh attack dataset độc lập, gồm FGSM, PGD, MI-FGSM,
+C&W, TOG, DAG, SAM2-PGD, DPatch và Thys patch. Các phần benchmark
+(mPC/rPC/ASR/RobustScore), nhóm attack còn lại, review queue và Optuna red-team
+vẫn nằm ngoài pipeline này.
 
 ## ⚡ Quick Start
 
-### Bước 1: Fork hoặc Clone
-
 ```bash
-# Clone template
-git clone https://github.com/AI20K-Build-Cohort-2/starter-code-template.git team-YOUR_TEAM_NAME
-cd team-YOUR_TEAM_NAME
+uv sync                                  # core + dev, Python 3.11 từ .python-version
+uv sync --extra models-cpu               # Torch/Torchvision/Ultralytics cho máy CPU
+# uv sync --extra models-gpu             # dùng trên máy NVIDIA/CUDA
+cp .env.example .env                     # điền AI_LOG_API_KEY của nhóm
 
-# Xóa git history cũ và khởi tạo lại
-rm -rf .git
-git init
-git add .
-git commit -m "feat: khởi tạo dự án từ template"
+make catalog                             # attack/model/dataset nào đang có, ai giữ
+make demo                                # chạy thử một test run nhỏ
+make test                                # pytest
+make run                                 # API: http://localhost:8000/docs
 ```
 
-### Bước 2: Setup môi trường
+Output thật của `make demo`:
 
-```bash
-# Tạo virtual environment
-python3.11 -m venv .venv
-source .venv/bin/activate
-
-# Cài dependencies
-pip install -e ".[dev]"
-
-# Cấu hình API keys
-cp .env.example .env
-# Mở .env và thêm OPENAI_API_KEY của bạn
-# Đồng thời cập nhật AI_LOG_API_KEY bằng key riêng từ link mời của BTC
-# (giá trị trong .env.example chỉ là placeholder)
+```
+run 713527bdb975  model=blob-1.0.0:thr0.45  dataset=synthetic_shapes
+samples=4  AP_clean=1.000  seconds=0.10
+group  attack          severity  ap      D%     cache_hits
+-----  --------------  --------  ------  -----  ----------
+A      gaussian_noise  1         1.0     0.0    0
+A      gaussian_noise  3         1.0     0.0    0
+A      gaussian_noise  5         0.75    25.0   0
+D      fgsm            1         1.0     0.0    0
+D      fgsm            3         0.9583  4.2    0
+D      fgsm            5         0.0     100.0  0
 ```
 
-### Bước 3: Cài AI Logging Hooks
+> Lưu ý về model tham chiếu: `blob_detector` là detector ngưỡng thuần numpy, biên
+> quyết định của nó rộng hơn CNN thật rất nhiều. Vì vậy `make demo` truyền `ε` lớn
+> hơn mặc định của plan (`{1..16}/255`) cho `fgsm` — dùng nó để kiểm tra *cơ chế*
+> attack, còn kiểm tra *độ mạnh* thì phải chạy trên adapter model thật.
+
+## 🧩 Thêm một attack (việc chính của mỗi thành viên)
 
 ```bash
-# Linux / macOS / Git Bash
-bash scripts/setup_hooks.sh
-
-# Windows PowerShell
-# powershell -ExecutionPolicy Bypass -File scripts\setup_hooks.ps1
+git checkout -b feat/attack-motion-blur
+cp src/attacks/_template.py src/attacks/corruption/motion_blur.py
+# sửa name/group/owner + hàm apply()
+uv run pytest tests/test_attacks -q      # contract test tự bao phủ file mới
+uv run python -m src.cli run --attacks motion_blur --severities 1,3,5 --limit 4
 ```
 
-Hooks tự động log mọi AI prompt khi dùng Claude Code, Cursor, Codex, Gemini CLI, Antigravity, hoặc GitHub Copilot. Không cần thao tác thủ công.
+Không cần đăng ký ở đâu khác: registry tự phát hiện file mới. Hướng dẫn đầy đủ
+(hợp đồng bắt buộc, attack cần gradient, cách chọn `cost_class`, checklist PR,
+bảng slot còn trống): **[docs/CONTRIBUTING_ATTACKS.md](docs/CONTRIBUTING_ATTACKS.md)**.
 
-### Bước 4: Chạy server
-
-```bash
-# Chạy FastAPI backend
-uvicorn src.main:app --reload --port 8000
-
-# Mở Swagger UI
-# http://localhost:8000/docs
-```
-
-### Bước 5: Đọc hướng dẫn
-
-📖 Mở **[Technical Guidebook](https://phoenix.note.transformerlabs.ai/technical-book)** và làm theo từng chương.
-
-## 📁 Cấu trúc dự án
+## 📁 Cấu trúc
 
 ```
 ├── src/
-│   ├── agents/           # 🧠 LangGraph Agent
-│   │   ├── graph.py      #    State graph (nodes + edges)
-│   │   ├── state.py      #    State schema (TypedDict)
-│   │   ├── nodes/        #    Node functions
-│   │   └── tools/        #    Agent tools (@tool)
-│   ├── api/              # 🌐 FastAPI Backend
-│   │   └── routes.py     #    API endpoints
-│   ├── models/           # 📋 Pydantic schemas
-│   ├── services/         # 🔧 Business logic (LLM, etc.)
-│   ├── config.py         # ⚙️ Pydantic Settings
-│   └── main.py           # 🚀 App entry point
-├── tests/                # 🧪 pytest suite
-│   ├── test_agents/      #    Agent/graph tests
-│   └── test_api/         #    API endpoint tests
-├── scripts/              # 🔌 AI Logging Hooks
-│   ├── log_hook.py       #    Auto-log cho Claude/Cursor/Codex/Gemini/Copilot
-│   ├── log_antigravity.py#    Antigravity IDE prompt scanner
-│   ├── log_manual.py     #    Manual log cho ChatGPT / web tools
-│   ├── submit_log.py     #    Submit logs on git push
-│   └── setup_hooks.sh    #    One-time hook installer
-├── .claude/ .codex/ .cursor/ .gemini/  # Per-tool hook configs
-├── .agents/              # Antigravity rules + workflows
-├── .ai-log/              # 📊 AI usage logs (auto-generated)
+│   ├── core/               # 🧱 types, registry + auto-discovery, hashing, image ops
+│   ├── attacks/            # 💥 plugin tấn công — MỘT FILE / MỘT ATTACK
+│   │   ├── base.py         #    hợp đồng BaseAttack (đừng sửa)
+│   │   ├── _template.py    #    copy file này để bắt đầu
+│   │   ├── corruption/     #    nhóm A — có gaussian_noise
+│   │   ├── weather/        #    nhóm B — slot (depth-aware)
+│   │   ├── occlusion/      #    nhóm C — slot
+│   │   ├── adversarial/    #    nhóm D — gradient attack
+│   │   ├── patch/          #    nhóm E — artifact patch
+│   │   └── blackbox/       #    nhóm F — slot
+│   ├── adapters/           # 🤖 model under test (M1–M6); blob_detector = model tham chiếu
+│   ├── datasets/           # 🗂️ nguồn dữ liệu + cổng ẩn danh bắt buộc
+│   ├── evaluation/         # 📏 IoU, AP, degradation, RunReport
+│   ├── pipeline/           # ⚙️ TestRunner + AttackDatasetGenerator
+│   ├── training/           # 🧪 PatchTrainer
+│   ├── anonymization/      # 🔒 ẩn danh khuôn mặt/biển số
+│   ├── api/                # 🌐 FastAPI: catalog + runs
+│   ├── cli.py              # 🖥️ python -m src.cli attacks|run|estimate
+│   └── config.py           # 🔧 Pydantic Settings
+├── tests/
+│   ├── test_attacks/       #    contract test (tự chạy cho mọi attack mới)
+│   ├── test_adapters/ test_datasets/ test_evaluation/ test_pipeline/ test_api/
 ├── docs/
-│   ├── guide/            # 📖 Technical Guidebook (10 chapters)
-│   └── architecture_diagram.md
-├── eval/                 # 📊 Evaluation results
-├── presentation/         # 🎤 Demo Day slides
-├── .github/workflows/    # ⚡ CI/CD (GitHub Actions)
-├── .github/hooks/        # 🪝 Copilot hook config
-├── Dockerfile            # 🐳 Multi-stage build
-├── docker-compose.yml    # 🐙 Full stack orchestration
-└── README_boilerplate.md # 📝 README template cho đội của bạn
+│   ├── advertest-plan.md   # 📋 kế hoạch kỹ thuật (nguồn sự thật)
+│   ├── CONTRIBUTING_ATTACKS.md
+│   └── guide/              # 📖 Technical Guidebook của BTC
+├── scripts/                # 🔌 AI usage logging hooks
+├── .ai-log/                # 📊 log AI (tự sinh, submit khi git push)
+├── ARCHITECTURE.md         # 🏗️ kiến trúc + design decisions
+└── eval/ presentation/     # 📊 evidence + slides cho Demo Day
 ```
 
-## 📚 Technical Guidebook — 10 Chương
+## Attack Dataset Generator
 
-| Chương | Nội dung | Thời gian |
-|---------|----------|-----------|
-| 1 | Lời mở đầu — Mục tiêu, cách sử dụng | 15 phút |
-| 2 | Khởi tạo dự án — Clone, setup, git workflow | 4 giờ |
-| 3 | Thiết kế kiến trúc — 3-tier, diagrams, ADR | 6 giờ |
-| 4 | **LangGraph Agent** — State, nodes, edges, tools, RAG | 8 giờ |
-| 5 | FastAPI — Routes, validation, error handling, streaming | 6 giờ |
-| 6 | Giao diện — Next.js + Streamlit quickstart | 6 giờ |
-| 7 | DevOps — Docker, CI/CD, deploy, logging | 6 giờ |
-| 8 | Kiểm thử — Unit test, integration test, RAGAS | 4 giờ |
-| 9 | Demo Day — 10 deliverables, checklist, tips | 2 giờ |
-| 10 | Tài nguyên — Khóa học, docs, BMAD method | tham khảo |
+Nhóm D/E có pipeline riêng để sinh dataset bị tấn công mà không gọi evaluator
+hoặc tính AP. Config synthetic chạy không cần checkpoint; config KITTI dùng
+checkpoint local và không tự tải weight:
 
-📖 **Đọc online:** [phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book)
+```bash
+uv run python -m src.cli generate-attack --config configs/pgd.json
+uv run python -m src.cli anonymize-dataset --config configs/kitti-anonymize-smoke.json
+uv run python -m src.cli generate-attack --config configs/kitti-fgsm.json
+uv run python -m src.cli generate-attack --config configs/kitti-pgd.json
+uv run python -m src.cli train-patch --config configs/patch.json
+uv run python -m src.cli anonymize-dataset --config configs/kitti-anonymize-de.json
+uv run python -m src.cli generate-attack --config configs/kitti-mi-fgsm.json
+uv run python -m src.cli generate-attack --config configs/kitti-tog-vanishing.json
+uv run python -m src.cli generate-attack --config configs/kitti-cw-l2.json
+uv run python -m src.cli train-patch --config configs/kitti-dpatch-train.json
+uv run python -m src.cli generate-attack --config configs/kitti-dpatch-apply.json
+uv run python -m src.cli benchmark-attack-datasets --config configs/kitti-yolo11-benchmark.json
+```
 
-## 📋 10 Deliverables cho Demo Day
+Hướng dẫn input, checkpoint, attack params, output manifest và resume:
+**[docs/ATTACK_DATASET_GENERATOR.md](docs/ATTACK_DATASET_GENERATOR.md)**.
 
-| # | Deliverable | File vị trí | Template có sẵn |
-|---|-------------|-------------|:---:|
-| 1 | Source Code | `src/` | ✅ |
-| 2 | README.md | `README_boilerplate.md` → copy thành `README.md` | ✅ |
-| 3 | Architecture Diagram | `docs/architecture_diagram.md` | ✅ |
-| 4 | AI Logs | LangSmith (3 env vars) + Auto AI Usage Logging | ✅ |
-| 5 | Live URL | Deploy lên Render/Vercel | ⚡ CI/CD sẵn |
-| 6 | Video Demo | `presentation/` | 📝 |
-| 7 | Pitch Deck | `presentation/` | 📝 |
-| 8 | Development Journal | `JOURNAL.md` | ✅ |
-| 9 | Worklog | `WORKLOG.md` | ✅ |
-| 10 | Evaluation Evidence | `eval/` | 📝 |
+## 🔌 API
+
+| Endpoint | Mô tả |
+|---|---|
+| `GET /health` | trạng thái + banner simulation |
+| `GET /api/v1/catalog/attacks` | catalog attack kèm `owner`, `params_schema` |
+| `GET /api/v1/catalog/models` · `/datasets` | adapter và dataset đã đăng ký |
+| `POST /api/v1/runs/estimate` | ước tính chi phí **trước** khi chạy |
+| `POST /api/v1/runs` | chạy test run, trả `RunReport` |
+| `GET /api/v1/runs` · `/runs/{id}` | danh sách / báo cáo chi tiết |
+
+```bash
+curl -s localhost:8000/api/v1/runs -H 'content-type: application/json' \
+  -d '{"attacks":["gaussian_noise","fgsm"],"severities":[1,3,5],"limit":4}' | jq .heatmap
+```
 
 ## 🛠 Tech Stack
 
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| AI Agent | LangGraph + LangChain | Latest |
-| Backend | FastAPI + Uvicorn | 0.100+ |
-| LLM | OpenAI GPT-4o-mini | API |
-| Frontend | Next.js / Streamlit | 14+ / 1.30+ |
-| Database | SQLite (dev) / PostgreSQL (prod) | — |
-| DevOps | Docker + GitHub Actions | — |
-| Testing | pytest + pytest-asyncio | 8+ |
+| Layer | Hiện tại | Khi lên model thật (plan §4) |
+|---|---|---|
+| Attack/metric | numpy | + kornia (GPU), imagecorruptions, torchattacks |
+| Model | adapter thuần numpy (`blob_detector`) | + torch, ultralytics, MMDetection(3D) |
+| Metric | AP50 tự cài | + pycocotools, bootstrap CI |
+| Backend | FastAPI + Uvicorn | + Celery/Redis, PostgreSQL, MinIO, W&B |
+| Test/CI | pytest + ruff + GitHub Actions | + sanity-check gate (plan §3) |
+
+## 📋 Deliverables
+
+| # | Deliverable | Vị trí |
+|---|---|---|
+| 1 | Source Code | `src/` |
+| 2 | README | file này |
+| 3 | Architecture Diagram | `ARCHITECTURE.md`, `docs/architecture_diagram.md` |
+| 4 | AI Logs | `.ai-log/` (hook tự động, submit khi `git push`) |
+| 5 | Live URL | Dockerfile + CI đã sẵn |
+| 6–7 | Video + Pitch Deck | `presentation/` |
+| 8–9 | Journal + Worklog | `JOURNAL.md`, `WORKLOG.md` |
+| 10 | Evaluation Evidence | `eval/` |
 
 ## 📊 AI Usage Logging
 
-Template đã tích hợp sẵn auto-logging hooks cho 6 AI tools:
+Hook đã cấu hình sẵn cho Claude Code, Cursor, Codex, Gemini CLI, Copilot,
+Antigravity. Mọi prompt/tool call ghi vào `.ai-log/session.jsonl` và tự submit lên
+grading server mỗi lần `git push`.
 
-| Tool | Cơ chế | Config |
-|------|--------|--------|
-| Claude Code | `.claude/settings.json` hooks | Tự động |
-| Cursor | `.cursor/hooks.json` | Tự động |
-| OpenAI Codex CLI | `.codex/hooks.json` | Tự động |
-| Gemini CLI | `.gemini/settings.json` | Tự động |
-| GitHub Copilot | `.github/hooks/hooks.json` | Tự động |
-| Antigravity IDE | Pre-push scan transcript | Tự động trên `git push` |
-
-Tất cả prompts và tool calls được log vào `.ai-log/session.jsonl` và tự động submit lên grading server mỗi khi `git push`.
-
-**ChatGPT / web tools khác** — log thủ công:
 ```bash
-bash scripts/_pyrun.sh scripts/log_manual.py --tool chatgpt --prompt "What you asked"
+bash scripts/setup_hooks.sh   # chạy một lần sau khi clone
 ```
 
-> ⚠️ Chạy `bash scripts/setup_hooks.sh` một lần sau khi clone để cài pre-push hook.
+Log thủ công cho ChatGPT/web tool:
 
-## 📖 Đọc Technical Guidebook
+```bash
+uv run python scripts/log_manual.py --tool chatgpt --prompt "What you asked"
+```
 
-**Online (khuyến nghị):** [phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book)
-
-Đăng nhập bằng GitHub (cùng account đã được BTC mời vào org `AI20K-Build-Cohort-2`)
-→ chọn tab **Technical Book** ở sidebar trái → đọc 10 chương + topic sections,
-có table of contents bên phải, hỗ trợ light/dark/cyberpunk theme.
-
-**Offline:** mọi chương đều ở thư mục `docs/guide/` trong template này — mở bằng
-bất kỳ markdown viewer/editor nào (VS Code, Obsidian, GitHub UI, …).
-
-## 🔗 Liên kết
-
-- 📖 **Technical Guidebook:** [phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book)
-- 🏫 **AI20K Program:** VinUni AI20K Build Phase
-- 👨‍🏫 **Mentor:** Đặng Hải Lộc
+> ⚠️ Đừng sửa/xoá file trong `.ai-log/`, đừng `git push --no-verify`.
 
 ## 📄 License
 
-MIT — Sử dụng tự do cho mục đích giáo dục.
+MIT — dùng cho mục đích giáo dục.

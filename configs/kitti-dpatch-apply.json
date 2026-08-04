@@ -1,0 +1,21 @@
+{
+  "input_dir": "data/anonymized/kitti-de",
+  "input_format": "kitti",
+  "attack_name": "dpatch",
+  "attack_params": {
+    "patch_path": "data/patches/dpatch/ddc73bb2529202d6/patch.npy",
+    "artifact_hash": "62fdb66ea4a1208a76f0703b22cf9243",
+    "objective": "untargeted",
+    "source_label": null,
+    "target_label": null,
+    "random_offset": true,
+    "eot": true
+  },
+  "severities": [
+    3
+  ],
+  "seed": 20260731,
+  "output_dir": "data/attacked",
+  "preview": true,
+  "limit": 2
+}

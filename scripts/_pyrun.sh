@@ -9,7 +9,11 @@
 set -u
 
 if command -v uv >/dev/null 2>&1; then
-  PY="uv run python"
+  exec uv run --no-sync python "$@"
+elif [ -x ".venv/Scripts/python.exe" ]; then
+  PY=".venv/Scripts/python.exe"
+elif [ -x ".venv/bin/python" ]; then
+  PY=".venv/bin/python"
 elif command -v python3 >/dev/null 2>&1; then
   PY=python3
 elif command -v python >/dev/null 2>&1; then

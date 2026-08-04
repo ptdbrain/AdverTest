@@ -10,6 +10,7 @@ docs/
 presentation/
 eval/
 *.md
+!README.md
 !requirements.txt
 .dockerignore
 Dockerfile
