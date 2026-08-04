@@ -82,8 +82,7 @@ def robustness_accuracy(report: RunReport) -> dict[int, float]:
     for cell in report.cells:
         by_severity.setdefault(cell.severity, []).append(cell.ap)
     return {
-        severity: _ratio(float(np.mean(values)), report.ap_clean)
-        for severity, values in sorted(by_severity.items())
+        severity: _ratio(float(np.mean(values)), report.ap_clean) for severity, values in sorted(by_severity.items())
     }
 
 
@@ -91,7 +90,7 @@ def category_scores(report: RunReport) -> dict[str, float]:
     """Retained AP fraction per RobustScore category (weather / noise / …)."""
     by_category: dict[str, list[float]] = {}
     for cell in report.cells:
-        by_category.setdefault(GROUP_CATEGORY[cell.group], []).append(cell.ap)
+        by_category.setdefault(cell.category or GROUP_CATEGORY[cell.group], []).append(cell.ap)
     return {
         category: float(np.clip(_ratio(float(np.mean(values)), report.ap_clean), 0.0, 1.0))
         for category, values in sorted(by_category.items())
@@ -120,7 +119,7 @@ def robust_score(
 
 def covered_categories(report: RunReport) -> list[str]:
     """Categories the run touched — context for reading a RobustScore."""
-    return sorted({GROUP_CATEGORY[cell.group] for cell in report.cells})
+    return sorted({cell.category or GROUP_CATEGORY[cell.group] for cell in report.cells})
 
 
 def severity_monotonicity(report: RunReport) -> dict[str, bool]:
@@ -133,9 +132,7 @@ def severity_monotonicity(report: RunReport) -> dict[str, bool]:
     checks: dict[str, bool] = {}
     for attack, row in ap_grid(report).items():
         ordered = [row[severity] for severity in sorted(row)]
-        checks[attack] = all(
-            later <= earlier + 1e-9 for earlier, later in zip(ordered, ordered[1:], strict=False)
-        )
+        checks[attack] = all(later <= earlier + 1e-9 for earlier, later in zip(ordered, ordered[1:], strict=False))
     return checks
 
 
@@ -164,9 +161,7 @@ def summary(report: RunReport, *, normalize_score: bool = True) -> dict[str, obj
         "mpc": round(mpc(report), 4),
         "rpc": round(rpc(report), 4),
         "resilience_rate": {key: round(value, 4) for key, value in resilience_rate(report).items()},
-        "robustness_accuracy": {
-            key: round(value, 4) for key, value in robustness_accuracy(report).items()
-        },
+        "robustness_accuracy": {key: round(value, 4) for key, value in robustness_accuracy(report).items()},
         "category_scores": {key: round(value, 4) for key, value in category_scores(report).items()},
         "robust_score_plan": round(robust_score(report), 2),
         "robust_score_normalized": round(robust_score(report, normalize=True), 2),

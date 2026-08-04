@@ -11,6 +11,7 @@ import numpy as np
 
 from src.adapters import MODELS
 from src.adapters.base import ModelAdapter
+from src.core.hashing import file_digest
 from src.core.objectives import AttackObjective, SurrogateCapability
 from src.core.types import Box, ModelInfo, Prediction, Sample
 
@@ -47,11 +48,15 @@ class FasterRcnnAdapter(ModelAdapter):
         self._backend: Any | None = None
 
     def metadata(self) -> ModelInfo:
+        checkpoint = Path(self.weights).expanduser()
         return ModelInfo(
             name=self.name,
             task="detection2d",
             version=f"{self.version}:{self.weights}",
             supports_gradients=True,
+            capabilities=self.capabilities,
+            checkpoint_hash=file_digest(checkpoint) if checkpoint.is_file() else None,
+            preprocessing_version="torchvision-default-transform-v1",
         )
 
     def predict(self, samples: Sequence[Sample]) -> list[Prediction]:
@@ -75,9 +80,7 @@ class FasterRcnnAdapter(ModelAdapter):
                 ):
                     label = COCO_MAP.get(int(label_id))
                     if label is not None:
-                        boxes.append(
-                            Box(*map(float, coordinates), label, float(score))
-                        )
+                        boxes.append(Box(*map(float, coordinates), label, float(score)))
                 predictions.append(
                     Prediction(
                         sample.sample_id,
@@ -159,8 +162,7 @@ class FasterRcnnAdapter(ModelAdapter):
             checkpoint = Path(self.weights).expanduser().resolve()
             if not checkpoint.is_file():
                 raise FileNotFoundError(
-                    f"Faster R-CNN checkpoint does not exist; automatic download "
-                    f"is disabled: {checkpoint}"
+                    f"Faster R-CNN checkpoint does not exist; automatic download is disabled: {checkpoint}"
                 )
             try:
                 import torch
@@ -168,9 +170,7 @@ class FasterRcnnAdapter(ModelAdapter):
                     fasterrcnn_resnet50_fpn,
                 )
             except ImportError as exc:  # pragma: no cover
-                raise RuntimeError(
-                    "adapter 'faster_rcnn' requires torch and torchvision"
-                ) from exc
+                raise RuntimeError("adapter 'faster_rcnn' requires torch and torchvision") from exc
             self._backend = fasterrcnn_resnet50_fpn(
                 weights=None,
                 weights_backbone=None,

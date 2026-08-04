@@ -33,6 +33,7 @@ class Sam2Pgd(BaseAttack):
     needs_gradients: ClassVar[bool] = True
     required_annotations = frozenset({"boxes", "mask"})
     required_capabilities = frozenset({"input_gradient", "segmentation_loss"})
+    required_tasks = frozenset({"segmentation"})
     owner: ClassVar[str] = "group-d-e"
     reference: ClassVar[str] = "Custom PGD objective for SAM2 segmentation BCE"
     params_model: ClassVar[type[AttackParams]] = Sam2PgdParams
@@ -47,4 +48,3 @@ class Sam2Pgd(BaseAttack):
             step_size=2.5 * epsilon / max(1, self.params.steps),
             objective=replace(ctx.objective, kind="segmentation_bce"),
         )
-

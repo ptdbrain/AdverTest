@@ -29,6 +29,7 @@ class AttackCatalogItem(BaseModel):
     required_sensors: list[str] = Field(default_factory=list)
     affected_sensors: list[str] = Field(default_factory=list)
     generation_mode: str = "per_sample"
+    category: str = "adversarial"
     owner: str
     reference: str = ""
     params_schema: dict[str, Any] = Field(default_factory=dict)
@@ -43,6 +44,7 @@ class ModelCatalogItem(BaseModel):
     modality: str
     supports_gradients: bool
     capabilities: list[str] = Field(default_factory=list)
+    runnable: bool = True
     owner: str
     docstring: str = ""
 
@@ -64,6 +66,8 @@ class CostEstimateOut(BaseModel):
     n_cells: int
     n_samples: int
     n_forward_passes: int
+    n_model_queries: int = 0
+    n_gradient_steps: int = 0
     cost_units: float
     estimated_seconds: float
 
@@ -79,6 +83,9 @@ class CellOut(BaseModel):
     n_samples: int
     seconds: float
     cache_hits: int
+    category: str | None = None
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)
 
 
 class SkippedOut(BaseModel):
@@ -99,6 +106,9 @@ class RunReportOut(BaseModel):
     heatmap: dict[str, dict[int, float]] = Field(default_factory=dict)
     worst_cases: list[dict[str, Any]] = Field(default_factory=list)
     skipped: list[SkippedOut] = Field(default_factory=list)
+    sample_results: list[dict[str, Any]] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)
     seconds: float = 0.0
     #: Constant reminder that nothing here validates a model for deployment.
     simulation_only: bool = True
@@ -114,3 +124,18 @@ class RunSummaryOut(BaseModel):
     n_cells: int
     worst_degradation: float
     needs_review: bool
+
+
+class PreflightOut(BaseModel):
+    compatible: list[str] = Field(default_factory=list)
+    skipped_with_reason: list[SkippedOut] = Field(default_factory=list)
+    fatal_errors: list[str] = Field(default_factory=list)
+
+
+class RunJobOut(BaseModel):
+    run_id: str
+    status: str
+    progress: float = 0.0
+    detail: dict[str, Any] = Field(default_factory=dict)
+    report: RunReportOut | None = None
+    error: str | None = None

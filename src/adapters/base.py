@@ -43,6 +43,7 @@ class ModelAdapter(ABC):
     modality: ClassVar[Modality] = "image"
     supports_gradients: ClassVar[bool] = False
     capabilities: ClassVar[frozenset[SurrogateCapability]] = frozenset()
+    runnable: ClassVar[bool] = True
     #: Team member responsible for this adapter (shown in the catalog).
     owner: ClassVar[str] = "unassigned"
 
@@ -96,6 +97,7 @@ class ModelAdapter(ABC):
             "modality": cls.modality,
             "supports_gradients": cls.supports_gradients,
             "capabilities": sorted(cls.capabilities),
+            "runnable": cls.runnable,
             "owner": cls.owner,
             "docstring": (cls.__doc__ or "").strip().splitlines()[0] if cls.__doc__ else "",
         }

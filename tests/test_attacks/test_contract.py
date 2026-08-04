@@ -19,10 +19,11 @@ import numpy as np
 import pytest
 
 from src.adapters.base import ModelAdapter
+from src.adapters.blob_detector import BlobDetector
 from src.attacks import load_attacks
 from src.attacks.base import AttackContext, BaseAttack
 from src.core.hashing import array_digest
-from src.core.types import GROUP_TITLES, CameraView, LidarFrame, Sample, validate_image
+from src.core.types import GROUP_TITLES, CameraView, LidarFrame, ModelInfo, Sample, validate_image
 
 ATTACK_CLASSES = load_attacks().values()
 ATTACK_IDS = [attack.name for attack in ATTACK_CLASSES]
@@ -30,11 +31,28 @@ ATTACK_IDS = [attack.name for attack in ATTACK_CLASSES]
 pytestmark = pytest.mark.parametrize("attack_cls", ATTACK_CLASSES, ids=ATTACK_IDS)
 
 
+class _SegmentationBlobDetector(BlobDetector):
+    """CI-only surrogate with Blob's deterministic gradient and seg task metadata."""
+
+    name = "segmentation_blob"
+    task = "segmentation"
+
+    def metadata(self) -> ModelInfo:
+        return ModelInfo(
+            name=self.name,
+            task="segmentation",
+            version="segmentation-blob-v1",
+            supports_gradients=True,
+            capabilities=self.capabilities,
+        )
+
+
 def _context(attack_cls: type[BaseAttack], adapter: ModelAdapter, seed: int = 7) -> AttackContext:
     """Fresh context; the model is only handed over when the attack declares it."""
+    model = _SegmentationBlobDetector() if attack_cls.required_tasks == frozenset({"segmentation"}) else adapter
     return AttackContext(
         rng=np.random.default_rng(seed),
-        model=adapter if attack_cls.needs_model else None,
+        model=model if attack_cls.needs_model else None,
     )
 
 

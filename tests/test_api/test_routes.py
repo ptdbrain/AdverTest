@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 
@@ -60,18 +62,26 @@ async def test_estimate_before_run(client):
 
 
 @pytest.mark.asyncio
-async def test_run_returns_report_and_is_retrievable(client):
+async def test_run_is_queued_and_report_is_retrievable(client):
     body = {"attacks": ["gaussian_noise"], "severities": [1, 5], "limit": 2}
     created = await client.post("/api/v1/runs", json=body)
-    assert created.status_code == 200
-    report = created.json()
+    assert created.status_code == 202
+    job = created.json()
+    assert job["status"] in {"QUEUED", "PREPARING", "INFERENCING", "GENERATING", "EVALUATING", "COMPLETED"}
+    for _ in range(50):
+        fetched = await client.get(f"/api/v1/runs/{job['run_id']}")
+        if fetched.json()["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
+            break
+        await asyncio.sleep(0.05)
+    assert fetched.status_code == 200
+    completed = fetched.json()
+    assert completed["status"] == "COMPLETED", completed.get("error")
+    report = completed["report"]
     assert report["simulation_only"] is True
     assert len(report["cells"]) == 2
     assert set(report["heatmap"]) == {"gaussian_noise"}
-
-    fetched = await client.get(f"/api/v1/runs/{report['run_id']}")
-    assert fetched.status_code == 200
-    assert fetched.json()["run_id"] == report["run_id"]
+    samples = await client.get(f"/api/v1/runs/{job['run_id']}/samples", params={"attack": "gaussian_noise"})
+    assert len(samples.json()) == 4
 
 
 @pytest.mark.asyncio

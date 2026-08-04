@@ -88,6 +88,7 @@ class BlobDetector(ModelAdapter):
             task="detection2d",
             version=f"{self.version}:thr{self.brightness_threshold:.2f}",
             supports_gradients=True,
+            capabilities=self.capabilities,
         )
 
     def _detect(self, image: np.ndarray) -> list[Box]:
@@ -131,9 +132,7 @@ class BlobDetector(ModelAdapter):
         margin = (region_mean - self.brightness_threshold) / (1.0 - self.brightness_threshold)
         texture = float(roughness[y1:y2, x1:x2].mean())
         smoothness = 1.0 - self.texture_penalty * texture
-        score = float(
-            np.clip(margin, 0.0, 1.0) * np.clip(fill, 0.0, 1.0) * np.clip(smoothness, 0.0, 1.0)
-        )
+        score = float(np.clip(margin, 0.0, 1.0) * np.clip(fill, 0.0, 1.0) * np.clip(smoothness, 0.0, 1.0))
         return Box(float(x1), float(y1), float(x2), float(y2), self._label(x2 - x1, y2 - y1), score)
 
     @staticmethod

@@ -45,6 +45,35 @@ GROUP_CATEGORY: dict[AttackGroup, str] = {
     "F": "adversarial",
 }
 
+# Category is attached to individual attacks where group membership is too
+# coarse. Group A has both noise and weather-like corruptions.
+ATTACK_CATEGORY: dict[str, str] = {
+    "fog": "weather",
+    "frost": "weather",
+    "snow": "weather",
+    "depth_fog": "weather",
+    "depth_rain": "weather",
+    "depth_snow": "weather",
+    "lidar_fog": "weather",
+    "lidar_snow": "weather",
+    "brightness": "weather",
+    "contrast": "weather",
+    "saturate": "weather",
+    "gaussian_noise": "noise",
+    "shot_noise": "noise",
+    "impulse_noise": "noise",
+    "speckle_noise": "noise",
+    "jpeg_compression": "noise",
+    "pixelate": "noise",
+    "gaussian_blur": "noise",
+    "defocus_blur": "noise",
+    "motion_blur": "noise",
+    "zoom_blur": "noise",
+    "glass_blur": "noise",
+    "elastic_transform": "noise",
+    "spatter": "noise",
+}
+
 #: Relative cost used by the pre-run GPU estimate (plan §5).
 COST_WEIGHT: dict[CostClass, float] = {"cheap": 1.0, "medium": 4.0, "expensive": 20.0}
 
@@ -181,6 +210,10 @@ class ModelInfo:
     modality: Modality = "image"
     supports_gradients: bool = False
     classes: tuple[str, ...] = CLASSES
+    capabilities: frozenset[str] = frozenset()
+    checkpoint_hash: str | None = None
+    preprocessing_version: str = "default"
+    runnable: bool = True
 
 
 def validate_image(image: np.ndarray, *, like: np.ndarray | None = None) -> None:

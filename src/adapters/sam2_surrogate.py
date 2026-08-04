@@ -22,10 +22,9 @@ class Sam2SurrogateAdapter(ModelAdapter):
     task = "segmentation"
     version: ClassVar[str] = "sam2.1-hiera-small"
     supports_gradients: ClassVar[bool] = True
-    capabilities: ClassVar[frozenset[SurrogateCapability]] = frozenset(
-        {"input_gradient", "segmentation_loss"}
-    )
+    capabilities: ClassVar[frozenset[SurrogateCapability]] = frozenset({"input_gradient", "segmentation_loss"})
     owner: ClassVar[str] = "group-d-e"
+    runnable: ClassVar[bool] = False
 
     def __init__(
         self,
@@ -51,12 +50,12 @@ class Sam2SurrogateAdapter(ModelAdapter):
             task="segmentation",
             version=f"{self.version}:{self.weights}",
             supports_gradients=True,
+            capabilities=self.capabilities,
+            runnable=False,
         )
 
     def predict(self, samples: Sequence[Sample]) -> list[Prediction]:
-        raise NotImplementedError(
-            "SAM2 surrogate is generation-only; use input_gradient for sam2_pgd"
-        )
+        raise NotImplementedError("SAM2 surrogate is generation-only; use input_gradient for sam2_pgd")
 
     def loss_for_attack(
         self,
@@ -86,12 +85,7 @@ class Sam2SurrogateAdapter(ModelAdapter):
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError("SAM2 surrogate requires torch") from exc
         backend = self._load()
-        tensor = (
-            torch.from_numpy(sample.image)
-            .permute(2, 0, 1)
-            .unsqueeze(0)
-            .to(self.device)
-        )
+        tensor = torch.from_numpy(sample.image).permute(2, 0, 1).unsqueeze(0).to(self.device)
         tensor.requires_grad_(requires_grad)
         box = torch.tensor(
             [sample.boxes[0].as_tuple()],
@@ -109,16 +103,11 @@ class Sam2SurrogateAdapter(ModelAdapter):
         if self._backend is None:
             checkpoint = Path(self.weights).expanduser().resolve()
             if not checkpoint.is_file():
-                raise FileNotFoundError(
-                    f"SAM2 checkpoint does not exist; automatic download is disabled: "
-                    f"{checkpoint}"
-                )
+                raise FileNotFoundError(f"SAM2 checkpoint does not exist; automatic download is disabled: {checkpoint}")
             try:
                 from sam2.build_sam import build_sam2
             except ImportError as exc:  # pragma: no cover
-                raise RuntimeError(
-                    "adapter 'sam2_surrogate' requires the official SAM2 package"
-                ) from exc
+                raise RuntimeError("adapter 'sam2_surrogate' requires the official SAM2 package") from exc
             model = build_sam2(self.config, str(checkpoint), device=self.device)
             if not hasattr(model, "forward_image_with_box"):
                 raise RuntimeError(

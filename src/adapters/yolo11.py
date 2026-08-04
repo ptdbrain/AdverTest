@@ -11,6 +11,7 @@ import numpy as np
 
 from src.adapters import MODELS
 from src.adapters.base import ModelAdapter
+from src.core.hashing import file_digest
 from src.core.objectives import AttackObjective, SurrogateCapability
 from src.core.types import Box, ModelInfo, Prediction, Sample
 
@@ -71,14 +72,17 @@ class Yolo11Adapter(ModelAdapter):
         self._backend: Any | None = None
 
     def metadata(self) -> ModelInfo:
+        checkpoint = Path(self.weights).expanduser()
         return ModelInfo(
             name=self.name,
             task="detection2d",
-            version=(
-                f"{self.version}:{Path(self.weights).stem}:"
-                f"imgsz{self.image_size}:conf{self.score_threshold:.3f}"
-            ),
+            version=(f"{self.version}:{Path(self.weights).stem}:imgsz{self.image_size}:conf{self.score_threshold:.3f}"),
             supports_gradients=True,
+            capabilities=self.capabilities,
+            checkpoint_hash=file_digest(checkpoint) if checkpoint.is_file() else None,
+            preprocessing_version=(
+                f"letterbox-{self.image_size}-iou{self.nms_iou:.3f}-maptruck{self.map_truck_bus_to_car}"
+            ),
         )
 
     def predict(self, samples: Sequence[Sample]) -> list[Prediction]:
@@ -129,9 +133,7 @@ class Yolo11Adapter(ModelAdapter):
                 str(names[int(class_id)]),
                 float(score),
             )
-            for coordinates, class_id, score in zip(
-                xyxy, classes, confidences, strict=True
-            )
+            for coordinates, class_id, score in zip(xyxy, classes, confidences, strict=True)
         ]
 
     @staticmethod
@@ -192,14 +194,7 @@ class Yolo11Adapter(ModelAdapter):
         objective.backward()
         if tensor.grad is None:
             raise RuntimeError("YOLO surrogate produced no input gradient")
-        return (
-            tensor.grad[0]
-            .permute(1, 2, 0)
-            .detach()
-            .cpu()
-            .numpy()
-            .astype(np.float32)
-        )
+        return tensor.grad[0].permute(1, 2, 0).detach().cpu().numpy().astype(np.float32)
 
     def _raw_objective(
         self,
@@ -213,21 +208,14 @@ class Yolo11Adapter(ModelAdapter):
         except ImportError as exc:  # pragma: no cover - optional dependency
             raise RuntimeError("YOLO attack generation requires torch") from exc
         backend = self._load()
-        tensor = (
-            torch.from_numpy(sample.image)
-            .permute(2, 0, 1)
-            .unsqueeze(0)
-            .to(self.device)
-        )
+        tensor = torch.from_numpy(sample.image).permute(2, 0, 1).unsqueeze(0).to(self.device)
         tensor.requires_grad_(requires_grad)
         model_input = _letterbox_tensor(tensor, self.image_size)
         raw = backend.model(model_input)
         prediction, class_logits = _prediction_and_logits(raw)
         class_scores = prediction[:, 4:, :]
         if class_scores.shape[1] < 3:
-            raise RuntimeError(
-                f"YOLO prediction has no class-score channels: {tuple(prediction.shape)}"
-            )
+            raise RuntimeError(f"YOLO prediction has no class-score channels: {tuple(prediction.shape)}")
         if class_logits is None:
             class_logits = _probabilities_to_logits(class_scores)
         objectness_logits = class_logits.max(dim=1).values
@@ -235,9 +223,7 @@ class Yolo11Adapter(ModelAdapter):
         if kind == "fabrication":
             objective = objectness_logits.mean()
         elif kind in {"targeted", "mislabeling", "cw_margin"}:
-            selected_target = (
-                target if isinstance(target, AttackObjective) else AttackObjective()
-            )
+            selected_target = target if isinstance(target, AttackObjective) else AttackObjective()
             objective = _classification_margin(
                 prediction,
                 class_logits,
@@ -246,9 +232,7 @@ class Yolo11Adapter(ModelAdapter):
                 self.image_size,
             )
         else:
-            selected_target = (
-                target if isinstance(target, AttackObjective) else AttackObjective()
-            )
+            selected_target = target if isinstance(target, AttackObjective) else AttackObjective()
             focused = _selected_true_scores(
                 prediction,
                 class_logits,
@@ -256,27 +240,18 @@ class Yolo11Adapter(ModelAdapter):
                 selected_target,
                 self.image_size,
             )
-            objective = (
-                -focused.mean()
-                if focused is not None
-                else -objectness_logits.mean()
-            )
+            objective = -focused.mean() if focused is not None else -objectness_logits.mean()
         return tensor, objective
 
     def _load(self) -> Any:
         if self._backend is None:
             checkpoint = Path(self.weights).expanduser().resolve()
             if not checkpoint.is_file():
-                raise FileNotFoundError(
-                    f"YOLO checkpoint does not exist; automatic download is disabled: "
-                    f"{checkpoint}"
-                )
+                raise FileNotFoundError(f"YOLO checkpoint does not exist; automatic download is disabled: {checkpoint}")
             try:
                 from ultralytics import YOLO
             except ImportError as exc:  # pragma: no cover - optional dependency
-                raise RuntimeError(
-                    "adapter 'yolo11' requires optional dependency: pip install ultralytics"
-                ) from exc
+                raise RuntimeError("adapter 'yolo11' requires optional dependency: pip install ultralytics") from exc
             self._backend = YOLO(str(checkpoint))
             self._backend.model.eval()
             for parameter in self._backend.model.parameters():
@@ -288,11 +263,7 @@ def _collect_tensors(value: Any) -> list[Any]:
     if hasattr(value, "requires_grad") and hasattr(value, "float"):
         return [value]
     if isinstance(value, dict):
-        return [
-            tensor
-            for nested in value.values()
-            for tensor in _collect_tensors(nested)
-        ]
+        return [tensor for nested in value.values() for tensor in _collect_tensors(nested)]
     if isinstance(value, (list, tuple)):
         return [tensor for nested in value for tensor in _collect_tensors(nested)]
     return []
@@ -406,10 +377,7 @@ def _selected_true_scores(
     )
     if not pairs:
         return None
-    values = [
-        class_logits[0, class_index, proposal_index]
-        for proposal_index, class_index in pairs
-    ]
+    values = [class_logits[0, class_index, proposal_index] for proposal_index, class_index in pairs]
     return values[0].reshape(1) if len(values) == 1 else torch.stack(values)
 
 
@@ -474,15 +442,9 @@ def _box_iou(left: Any, right: Any) -> Any:
     bottom_right = torch.minimum(left[:, None, 2:], right[None, :, 2:])
     intersection = (bottom_right - top_left).clamp(min=0)
     intersection_area = intersection[..., 0] * intersection[..., 1]
-    left_area = (left[:, 2] - left[:, 0]).clamp(min=0) * (
-        left[:, 3] - left[:, 1]
-    ).clamp(min=0)
-    right_area = (right[:, 2] - right[:, 0]).clamp(min=0) * (
-        right[:, 3] - right[:, 1]
-    ).clamp(min=0)
-    return intersection_area / (
-        left_area[:, None] + right_area[None, :] - intersection_area
-    ).clamp(min=1e-12)
+    left_area = (left[:, 2] - left[:, 0]).clamp(min=0) * (left[:, 3] - left[:, 1]).clamp(min=0)
+    right_area = (right[:, 2] - right[:, 0]).clamp(min=0) * (right[:, 3] - right[:, 1]).clamp(min=0)
+    return intersection_area / (left_area[:, None] + right_area[None, :] - intersection_area).clamp(min=1e-12)
 
 
 def _probabilities_to_logits(class_scores: Any) -> Any:

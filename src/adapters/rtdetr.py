@@ -12,6 +12,7 @@ from typing import ClassVar
 
 from src.adapters import MODELS
 from src.adapters.yolo11 import Yolo11Adapter
+from src.core.hashing import file_digest
 from src.core.types import ModelInfo
 
 
@@ -26,12 +27,13 @@ class RtdetrAdapter(Yolo11Adapter):
     owner: ClassVar[str] = "group-f"
 
     def metadata(self) -> ModelInfo:
+        checkpoint = Path(self.weights).expanduser()
         return ModelInfo(
             name=self.name,
             task="detection2d",
-            version=(
-                f"{self.version}:{Path(self.weights).stem}:"
-                f"imgsz{self.image_size}:conf{self.score_threshold:.3f}"
-            ),
+            version=(f"{self.version}:{Path(self.weights).stem}:imgsz{self.image_size}:conf{self.score_threshold:.3f}"),
             supports_gradients=False,
+            capabilities=self.capabilities,
+            checkpoint_hash=file_digest(checkpoint) if checkpoint.is_file() else None,
+            preprocessing_version=f"ultralytics-{self.image_size}-iou{self.nms_iou:.3f}",
         )
