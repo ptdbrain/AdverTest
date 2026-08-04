@@ -16,7 +16,7 @@ from src.pipeline.benchmark import (
     BenchmarkArtifacts,
     BenchmarkModelConfig,
 )
-from src.pipeline.cache import MemoryCache, NullCache, PredictionCache
+from src.pipeline.cache import MemoryCache, NullCache, PredictionCache, SqliteCache
 from src.pipeline.generator import (
     AttackDatasetGenerator,
     AttackGenerationConfig,
@@ -24,7 +24,7 @@ from src.pipeline.generator import (
     SurrogateConfig,
     inspect_generated_dataset,
 )
-from src.pipeline.runner import CostEstimate, RunConfig, TestRunner
+from src.pipeline.runner import CostEstimate, PreflightResult, RunConfig, TestRunner
 
 __all__ = [
     "CostEstimate",
@@ -38,7 +38,9 @@ __all__ = [
     "MemoryCache",
     "NullCache",
     "PredictionCache",
+    "PreflightResult",
     "RunConfig",
+    "SqliteCache",
     "SurrogateConfig",
     "TestRunner",
     "inspect_generated_dataset",

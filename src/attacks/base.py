@@ -31,6 +31,8 @@ from src.core.objectives import (
     SurrogateCapability,
 )
 from src.core.types import (
+    ATTACK_CATEGORY,
+    GROUP_CATEGORY,
     MAX_SEVERITY,
     AttackGroup,
     CostClass,
@@ -100,6 +102,7 @@ class BaseAttack(ABC):
     #: Model tasks accepted by model-dependent attacks. Empty means any task.
     required_tasks: ClassVar[frozenset[Task]] = frozenset()
     generation_mode: ClassVar[str] = "per_sample"
+    category: ClassVar[str | None] = None
     #: Team member who owns this file — the only "assignment table" we need.
     owner: ClassVar[str] = "unassigned"
     #: Paper / library the implementation follows.
@@ -116,9 +119,7 @@ class BaseAttack(ABC):
         if severity == 0:
             return sample
         if not 1 <= severity <= self.severity_levels:
-            raise ValueError(
-                f"severity for {self.name!r} must be 0..{self.severity_levels}, got {severity}"
-            )
+            raise ValueError(f"severity for {self.name!r} must be 0..{self.severity_levels}, got {severity}")
         self.validate_requirements(sample, ctx.model)
         attacked = self.apply(sample, severity, ctx)
         image = np.clip(attacked.image, 0.0, 1.0).astype(np.float32, copy=False)
@@ -143,36 +144,22 @@ class BaseAttack(ABC):
         """Fail before generation when annotations or model capabilities are absent."""
         if self.needs_model:
             if model is None:
-                raise ModelRequiredError(
-                    f"attack {self.name!r} needs a model adapter in the context"
-                )
-            missing = sorted(
-                capability
-                for capability in self.required_capabilities
-                if not model.supports(capability)
-            )
+                raise ModelRequiredError(f"attack {self.name!r} needs a model adapter in the context")
+            missing = sorted(capability for capability in self.required_capabilities if not model.supports(capability))
             if missing:
-                raise ModelRequiredError(
-                    f"attack {self.name!r} requires surrogate capabilities: "
-                    f"{', '.join(missing)}"
-                )
+                raise ModelRequiredError(f"attack {self.name!r} requires surrogate capabilities: {', '.join(missing)}")
             if self.required_tasks and model.metadata().task not in self.required_tasks:
                 required = ", ".join(sorted(self.required_tasks))
                 raise ModelRequiredError(
-                    f"attack {self.name!r} requires model task(s): {required}; "
-                    f"got {model.metadata().task!r}"
+                    f"attack {self.name!r} requires model task(s): {required}; got {model.metadata().task!r}"
                 )
         missing_annotations = [
             annotation
             for annotation in self.required_annotations
-            if (annotation == "boxes" and not sample.boxes)
-            or (annotation == "mask" and sample.mask is None)
+            if (annotation == "boxes" and not sample.boxes) or (annotation == "mask" and sample.mask is None)
         ]
         if missing_annotations:
-            raise ValueError(
-                f"attack {self.name!r} requires annotations: "
-                f"{', '.join(sorted(missing_annotations))}"
-            )
+            raise ValueError(f"attack {self.name!r} requires annotations: {', '.join(sorted(missing_annotations))}")
         if "camera_rig" in self.required_sensors and not sample.camera_views:
             raise ValueError(f"attack {self.name!r} requires camera views")
         if "lidar" in self.required_sensors and sample.lidar_frame is None and sample.lidar is None:
@@ -203,6 +190,20 @@ class BaseAttack(ABC):
         """
         return 0
 
+    def gradient_steps_for_severity(self, severity: int) -> int:
+        """Worst-case input-gradient evaluations for one sample."""
+        if not self.needs_gradients:
+            return 0
+        steps = int(getattr(self.params, "steps", 1))
+        steps = int(getattr(self.params, "iterations", steps))
+        restarts = int(getattr(self.params, "restarts", 1))
+        searches = int(getattr(self.params, "binary_search_steps", 1))
+        return max(1, steps) * max(1, restarts) * max(1, searches)
+
+    @classmethod
+    def reporting_category(cls) -> str:
+        return cls.category or ATTACK_CATEGORY.get(cls.name, GROUP_CATEGORY[cls.group])
+
     @classmethod
     def describe(cls) -> dict[str, Any]:
         """Catalog entry for the API / CLI (plan §2 plugin declaration)."""
@@ -222,6 +223,7 @@ class BaseAttack(ABC):
             "required_capabilities": sorted(cls.required_capabilities),
             "required_tasks": sorted(cls.required_tasks),
             "generation_mode": cls.generation_mode,
+            "category": cls.reporting_category(),
             "owner": cls.owner,
             "reference": cls.reference,
             "params_schema": cls.params_model.model_json_schema(),

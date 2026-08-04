@@ -10,7 +10,7 @@ from src.datasets import get_dataset
 from src.pipeline import MemoryCache, NullCache, RunConfig, TestRunner
 from src.pipeline.runner import _incompatibility
 
-CONFIG = RunConfig(attacks=["gaussian_noise"], severities=[1, 5], limit=3)
+CONFIG = RunConfig(attacks=["gaussian_noise"], severities=[1, 5], limit=3, bootstrap_repetitions=0)
 
 
 def test_run_produces_one_cell_per_attack_and_severity() -> None:
@@ -19,6 +19,14 @@ def test_run_produces_one_cell_per_attack_and_severity() -> None:
     assert {cell.severity for cell in report.cells} == {1, 5}
     assert report.n_samples == 3
     assert report.simulation_only is True
+
+
+def test_report_bootstrap_resamples_samples_not_aggregate_cells() -> None:
+    report = TestRunner().run(
+        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=2, bootstrap_repetitions=20)
+    )
+    assert report.metrics["clean"]["ap50_ci95"] is not None
+    assert report.cells[0].metrics["ap50_ci95"] is not None
 
 
 def test_clean_baseline_is_strong_enough_to_measure_against() -> None:
@@ -58,6 +66,19 @@ def test_estimate_matches_the_executed_run() -> None:
     assert estimate.n_cells == len(report.cells)
     assert estimate.n_forward_passes == CONFIG.limit * (len(report.cells) + 1)
     assert estimate.estimated_seconds > 0.0
+
+
+def test_square_cost_counts_its_query_budget() -> None:
+    estimate = TestRunner().estimate(RunConfig(attacks=["square_attack"], severities=[1], limit=2))
+    assert estimate.n_model_queries == 1000
+    assert estimate.n_forward_passes >= 1000
+
+
+def test_preflight_skips_capability_and_severity_mismatches() -> None:
+    result = TestRunner().preflight(RunConfig(attacks=["sam2_pgd", "square_attack"], severities=[5], limit=1))
+    reasons = {item.attack: item.reason for item in result.skipped}
+    assert "sam2_pgd" in reasons and "model task" in reasons["sam2_pgd"]
+    assert "square_attack" in reasons and "severities" in reasons["square_attack"]
 
 
 def test_unknown_attack_is_reported_not_ignored() -> None:

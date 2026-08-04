@@ -25,6 +25,8 @@ class CellResult:
     n_samples: int
     seconds: float = 0.0
     cache_hits: int = 0
+    category: str | None = None
+    metrics: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -35,6 +37,8 @@ class CellResult:
             "n_samples": self.n_samples,
             "seconds": round(self.seconds, 3),
             "cache_hits": self.cache_hits,
+            "category": self.category,
+            "metrics": self.metrics,
         }
 
 
@@ -44,6 +48,40 @@ class SkippedAttack:
 
     attack: str
     reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class SampleResult:
+    """Traceable clean/attacked evidence for one image in one report cell."""
+
+    sample_id: str
+    attack: str
+    severity: int
+    clean_prediction: dict[str, Any]
+    attacked_prediction: dict[str, Any]
+    clean_image_path: str | None = None
+    attacked_image_path: str | None = None
+    overlay_path: str | None = None
+    degradation_hint: float = 0.0
+    attack_version: str = ""
+    attack_params: dict[str, Any] = field(default_factory=dict)
+    model_checkpoint_hash: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "sample_id": self.sample_id,
+            "attack": self.attack,
+            "severity": self.severity,
+            "clean_prediction": self.clean_prediction,
+            "attacked_prediction": self.attacked_prediction,
+            "clean_image_path": self.clean_image_path,
+            "attacked_image_path": self.attacked_image_path,
+            "overlay_path": self.overlay_path,
+            "degradation_hint": round(self.degradation_hint, 6),
+            "attack_version": self.attack_version,
+            "attack_params": self.attack_params,
+            "model_checkpoint_hash": self.model_checkpoint_hash,
+        }
 
 
 @dataclass
@@ -58,6 +96,9 @@ class RunReport:
     ap_clean: float
     cells: list[CellResult] = field(default_factory=list)
     skipped: list[SkippedAttack] = field(default_factory=list)
+    sample_results: list[SampleResult] = field(default_factory=list)
+    metrics: dict[str, Any] = field(default_factory=dict)
+    provenance: dict[str, Any] = field(default_factory=dict)
     seconds: float = 0.0
     #: Never remove: this platform evaluates in simulation only (plan §7).
     simulation_only: bool = True
@@ -77,11 +118,8 @@ class RunReport:
 
     def worst_cases(self, top_n: int = 5) -> list[dict[str, Any]]:
         """Cells with the largest degradation — the "what breaks the model" list."""
-        ranked = sorted(self.cells, key=lambda cell: cell.ap)
-        return [
-            {**cell.as_dict(), "degradation": round(self.degradation(cell), 4)}
-            for cell in ranked[:top_n]
-        ]
+        ranked = sorted(self.sample_results, key=lambda item: item.degradation_hint, reverse=True)
+        return [item.as_dict() for item in ranked[:top_n]]
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -91,13 +129,13 @@ class RunReport:
             "dataset": self.dataset,
             "n_samples": self.n_samples,
             "ap_clean": round(self.ap_clean, 4),
-            "cells": [
-                {**cell.as_dict(), "degradation": round(self.degradation(cell), 4)}
-                for cell in self.cells
-            ],
+            "cells": [{**cell.as_dict(), "degradation": round(self.degradation(cell), 4)} for cell in self.cells],
             "heatmap": self.heatmap(),
             "worst_cases": self.worst_cases(),
             "skipped": [{"attack": item.attack, "reason": item.reason} for item in self.skipped],
+            "sample_results": [item.as_dict() for item in self.sample_results],
+            "metrics": self.metrics,
+            "provenance": self.provenance,
             "seconds": round(self.seconds, 3),
             "simulation_only": True,
         }

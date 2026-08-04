@@ -138,6 +138,88 @@ def average_precision_per_class(
     return scored
 
 
+def detection_metric_suite(
+    predictions: Sequence[Prediction],
+    samples: Sequence[Sample],
+) -> dict[str, Any]:
+    """Detection metrics with explicit non-COCO provenance.
+
+    The calculation uses the same deterministic, dependency-free matcher as
+    the runner. It exposes AP50, AP75 and the ten-threshold mAP range for
+    internal comparisons. ``metric_implementation`` makes it impossible for a
+    caller to accidentally present it as the official pycocotools result.
+    """
+    thresholds = tuple(round(0.50 + index * 0.05, 2) for index in range(10))
+    by_threshold = {threshold: average_precision(predictions, samples, threshold) for threshold in thresholds}
+    per_class = average_precision_per_class(predictions, samples, 0.5)
+    size_buckets = {"small": [], "medium": [], "large": []}
+    for sample in samples:
+        for box in sample.boxes:
+            bucket = "small" if box.area < 32**2 else "medium" if box.area < 96**2 else "large"
+            size_buckets[bucket].append(box)
+    by_id = {prediction.sample_id: prediction for prediction in predictions}
+    by_size: dict[str, float | None] = {}
+    for bucket, boxes in size_buckets.items():
+        if not boxes:
+            by_size[bucket] = None
+            continue
+        scoped_samples = [
+            Sample(
+                sample_id=sample.sample_id,
+                image=sample.image,
+                boxes=tuple(
+                    box
+                    for box in sample.boxes
+                    if ("small" if box.area < 32**2 else "medium" if box.area < 96**2 else "large") == bucket
+                ),
+            )
+            for sample in samples
+        ]
+        by_size[bucket] = average_precision(
+            [by_id.get(sample.sample_id, Prediction(sample.sample_id)) for sample in scoped_samples],
+            scoped_samples,
+            0.5,
+        )
+    return {
+        "metric_implementation": "advertest-greedy-interpolated-v1",
+        "ap50": round(by_threshold[0.5], 6),
+        "ap75": round(by_threshold[0.75], 6),
+        "map50_95": round(float(np.mean(list(by_threshold.values()))), 6),
+        "ap_per_class": {name: round(value, 6) for name, value in per_class.items()},
+        "ap50_by_size": {name: None if value is None else round(value, 6) for name, value in by_size.items()},
+    }
+
+
+def bootstrap_average_precision(
+    predictions: Sequence[Prediction],
+    samples: Sequence[Sample],
+    *,
+    iou_threshold: float = DEFAULT_IOU_THRESHOLD,
+    repetitions: int = 1000,
+    seed: int = 20260730,
+) -> tuple[float, float]:
+    """Resample sample IDs and recompute AP for an empirical 95% interval."""
+    if not samples:
+        return (0.0, 0.0)
+    by_id = {prediction.sample_id: prediction for prediction in predictions}
+    rng = np.random.default_rng(seed)
+    values: list[float] = []
+    for _ in range(repetitions):
+        indices = rng.integers(0, len(samples), len(samples))
+        sampled = [samples[int(index)] for index in indices]
+        # Duplicate source IDs need unique IDs because metric lookups are keyed
+        # by sample ID. Preserve each paired prediction under a sampled alias.
+        copied_samples: list[Sample] = []
+        copied_predictions: list[Prediction] = []
+        for position, sample in enumerate(sampled):
+            alias = f"{sample.sample_id}#bootstrap-{position}"
+            copied_samples.append(Sample(sample_id=alias, image=sample.image, boxes=sample.boxes))
+            prediction = by_id.get(sample.sample_id, Prediction(sample.sample_id))
+            copied_predictions.append(Prediction(alias, prediction.boxes, prediction.boxes3d, prediction.latency_ms))
+        values.append(average_precision(copied_predictions, copied_samples, iou_threshold))
+    return tuple(float(value) for value in np.quantile(values, [0.025, 0.975]))
+
+
 def detection_summary(
     predictions: Sequence[Prediction],
     samples: Sequence[Sample],
@@ -175,12 +257,8 @@ def detection_attack_success_rate(
     iou_threshold: float = DEFAULT_IOU_THRESHOLD,
 ) -> AttackSuccessSummary:
     """Rate of cleanly detected ground truths no longer detected after attack."""
-    clean_by_sample = {
-        prediction.sample_id: prediction for prediction in clean_predictions
-    }
-    attacked_by_sample = {
-        prediction.sample_id: prediction for prediction in attacked_predictions
-    }
+    clean_by_sample = {prediction.sample_id: prediction for prediction in clean_predictions}
+    attacked_by_sample = {prediction.sample_id: prediction for prediction in attacked_predictions}
     clean_detected = 0
     lost = 0
     for sample in samples:
@@ -192,12 +270,8 @@ def detection_attack_success_rate(
             sample.sample_id,
             Prediction(sample.sample_id),
         ).boxes
-        clean_truths = set(
-            match_boxes(clean_boxes, sample.boxes, iou_threshold).values()
-        )
-        attacked_truths = set(
-            match_boxes(attacked_boxes, sample.boxes, iou_threshold).values()
-        )
+        clean_truths = set(match_boxes(clean_boxes, sample.boxes, iou_threshold).values())
+        attacked_truths = set(match_boxes(attacked_boxes, sample.boxes, iou_threshold).values())
         clean_detected += len(clean_truths)
         lost += len(clean_truths - attacked_truths)
     return AttackSuccessSummary(clean_detected, lost)

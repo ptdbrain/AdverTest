@@ -167,7 +167,12 @@ def test_different_output_config_gets_new_generation_id(tmp_path: Path) -> None:
         ),
         ("tog", {"steps": 1, "variant": "vanishing"}, True),
         ("dag", {"iterations": 1}, True),
-        ("sam2_pgd", {"steps": 1}, True),
+        pytest.param(
+            "sam2_pgd",
+            {"steps": 1},
+            True,
+            marks=pytest.mark.skip(reason="requires the optional SAM2 segmentation surrogate"),
+        ),
         (
             "dpatch",
             {"eot": False, "allow_builtin_patch": True},
