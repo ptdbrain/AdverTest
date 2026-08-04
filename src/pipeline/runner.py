@@ -195,7 +195,14 @@ class TestRunner:
         samples: Sequence[Sample],
         info: ModelInfo,
     ) -> list[Prediction]:
-        keys = [clean_key(sample_id=sample.sample_id, model_version=info.version) for sample in samples]
+        keys = [
+            clean_key(
+                sample_id=sample.sample_id,
+                model_version=info.version,
+                sample_hash=sample_digest(sample),
+            )
+            for sample in samples
+        ]
         return self._predict_cached(adapter, samples, keys)
 
     def _predict_variants(
@@ -277,4 +284,9 @@ def _incompatibility(attack: type[BaseAttack], dataset: DatasetSource, info: Mod
         return f"attack needs input gradients, adapter {info.name!r} does not expose them"
     if attack.modality != "image" and attack.modality != dataset.modality:
         return f"attack modality {attack.modality!r} != dataset modality {dataset.modality!r}"
+    if attack.required_tasks and info.task not in attack.required_tasks:
+        return (
+            f"attack requires model task(s) {sorted(attack.required_tasks)!r}; "
+            f"adapter provides {info.task!r}"
+        )
     return None

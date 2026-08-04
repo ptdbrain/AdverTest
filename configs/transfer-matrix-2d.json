@@ -1,0 +1,19 @@
+{
+  "generation_paths": [
+    "data/attacked/kitti-smoke/pgd/18818218caae220b"
+  ],
+  "target_models": [
+    {
+      "name": "yolo11",
+      "checkpoint": "checkpoints/surrogates/yolo11s.pt",
+      "device": "cpu",
+      "score_threshold": 0.001,
+      "max_detections": 300,
+      "params": {
+        "image_size": 640
+      }
+    }
+  ],
+  "iou_threshold": 0.5,
+  "output_dir": "data/benchmarks/transfer"
+}

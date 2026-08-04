@@ -9,13 +9,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from src.adapters import MODELS
 from src.adapters.base import ModelAdapter
 from src.core.types import ModelInfo, Prediction, Sample
 
 
-@MODELS.register
 class PointPillarsAdapter(ModelAdapter):
+    """Reserved MMDetection3D PointPillars integration slot.
+
+    This class is intentionally not registered until ``predict`` supports a
+    real checkpoint/config pair, so the model catalog stays executable.
+    """
     name = "pointpillars"
     task = "detection3d"
     modality = "lidar"

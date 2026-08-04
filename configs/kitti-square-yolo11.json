@@ -1,0 +1,20 @@
+{
+  "input_dir": "data/anonymized/kitti-smoke",
+  "input_format": "kitti",
+  "attack_name": "square_attack",
+  "attack_params": {
+    "queries_per_severity": [500, 1000, 2500],
+    "p_init": 0.8
+  },
+  "severities": [1],
+  "seed": 20260804,
+  "surrogate": {
+    "name": "yolo11",
+    "checkpoint": "checkpoints/surrogates/yolo11s.pt",
+    "device": "cpu",
+    "objective": "untargeted"
+  },
+  "output_dir": "data/attacked",
+  "preview": true,
+  "limit": 1
+}

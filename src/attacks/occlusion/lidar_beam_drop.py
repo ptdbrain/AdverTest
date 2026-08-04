@@ -5,7 +5,7 @@ from typing import ClassVar
 import numpy as np
 
 from src.attacks import ATTACKS
-from src.attacks.base import AttackContext, AttackParams, BaseAttack
+from src.attacks.base import AttackParams, BaseAttack
 from src.core.types import AttackGroup, CostClass, SensorKind
 
 
@@ -23,6 +23,7 @@ class LidarBeamDrop(BaseAttack):
     cost_class: ClassVar[CostClass] = "cheap"
     required_sensors: ClassVar[frozenset[SensorKind]] = frozenset({"lidar"})
     affected_sensors: ClassVar[frozenset[SensorKind]] = frozenset({"lidar"})
+    owner: ClassVar[str] = "group-c"
     params_model: ClassVar[type[AttackParams]] = LidarBeamDropParams
 
     def apply(self, sample, severity, ctx):

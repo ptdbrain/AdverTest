@@ -8,9 +8,19 @@ from src.core.image_ops import clip01, linear_depth_prior
 from src.core.types import CameraView, Sample
 
 
-def depth_for(image: np.ndarray, depth: np.ndarray | None) -> np.ndarray:
+def depth_for(
+    image: np.ndarray,
+    depth: np.ndarray | None,
+    *,
+    policy: str,
+) -> np.ndarray:
     if depth is None or depth.shape != image.shape[:2] or not np.isfinite(depth).all():
-        return linear_depth_prior(*image.shape[:2])
+        if policy == "linear_prior":
+            return linear_depth_prior(*image.shape[:2])
+        raise ValueError(
+            "depth-aware weather requires a finite depth map; provide "
+            "depths/<sample_id>.npy or set depth_policy='linear_prior' explicitly"
+        )
     return np.maximum(depth.astype(np.float32), 1e-3)
 
 

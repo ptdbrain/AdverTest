@@ -20,7 +20,7 @@ from src.core.objectives import AttackObjective, ObjectiveKind
 from src.core.types import Sample, validate_image
 from src.datasets import get_dataset
 from src.datasets.base import DatasetSource
-from src.datasets.io import boxes_payload, load_image, load_mask
+from src.datasets.io import annotations_payload, load_image, load_mask
 
 
 class SurrogateConfig(BaseModel):
@@ -76,6 +76,7 @@ class GenerationReport:
     resumed_variants: int
     estimated_canonical_bytes: int
     estimated_gradient_steps: int
+    estimated_model_queries: int
     status: str = "complete"
 
     def as_dict(self) -> dict[str, Any]:
@@ -89,6 +90,7 @@ class GenerationReport:
             "resumed_variants": self.resumed_variants,
             "estimated_canonical_bytes": self.estimated_canonical_bytes,
             "estimated_gradient_steps": self.estimated_gradient_steps,
+            "estimated_model_queries": self.estimated_model_queries,
             "status": self.status,
         }
 
@@ -211,6 +213,7 @@ class AttackDatasetGenerator:
             resumed_variants=resumed,
             estimated_canonical_bytes=estimate["canonical_bytes"],
             estimated_gradient_steps=estimate["gradient_steps"],
+            estimated_model_queries=estimate["model_queries"],
         )
 
     @staticmethod
@@ -325,6 +328,8 @@ class AttackDatasetGenerator:
         validate_image(attacked.image, like=sample.image)
         if attacked.boxes != sample.boxes:
             raise ValueError(f"attack {attack.name!r} modified ground-truth boxes")
+        if attacked.boxes3d != sample.boxes3d:
+            raise ValueError(f"attack {attack.name!r} modified ground-truth 3D boxes")
         if not _same_optional_array(attacked.mask, sample.mask):
             raise ValueError(f"attack {attack.name!r} modified the ground-truth mask")
         _validate_perturbation_budget(attack, sample, attacked, severity)
@@ -346,17 +351,38 @@ class AttackDatasetGenerator:
         image_rel = Path("images") / f"{variant_id}.npy"
         label_rel = Path("labels") / f"{variant_id}.json"
         _write_npy(root / image_rel, attacked.image)
-        _write_json(root / label_rel, boxes_payload(attacked.boxes))
+        _write_json(root / label_rel, annotations_payload(attacked.boxes, attacked.boxes3d))
         mask_rel: Path | None = None
         if attacked.mask is not None:
             mask_rel = Path("masks") / f"{variant_id}.npy"
             _write_npy(root / mask_rel, attacked.mask)
         camera_paths: dict[str, str] = {}
+        camera_payloads: list[dict[str, Any]] = []
         for view in attacked.camera_views:
-            safe_name = view.name.replace("/", "_")
+            safe_name = _safe_sensor_name(view.name)
             relative = Path("cameras") / f"{variant_id}-{safe_name}.npy"
             _write_npy(root / relative, view.image)
             camera_paths[view.name] = relative.as_posix()
+            payload: dict[str, Any] = {
+                "name": view.name,
+                "image_path": relative.as_posix(),
+                "image_hash": array_digest(view.image, length=32),
+            }
+            for field, array in (
+                ("depth", view.depth),
+                ("intrinsic", view.intrinsic),
+                ("sensor_to_ego", view.sensor_to_ego),
+                ("previous_image", view.previous_image),
+            ):
+                if array is None:
+                    payload[f"{field}_path"] = None
+                    payload[f"{field}_hash"] = None
+                    continue
+                field_relative = Path("cameras") / f"{variant_id}-{safe_name}-{field}.npy"
+                _write_npy(root / field_relative, array)
+                payload[f"{field}_path"] = field_relative.as_posix()
+                payload[f"{field}_hash"] = array_digest(array, length=32)
+            camera_payloads.append(payload)
         lidar_path: Path | None = None
         if attacked.lidar_frame is not None:
             lidar_path = Path("lidar") / f"{variant_id}.npy"
@@ -366,7 +392,7 @@ class AttackDatasetGenerator:
             preview_rel = Path("previews") / f"{variant_id}.png"
             _write_png(root / preview_rel, attacked.image)
         delta = attacked.image.astype(np.float64) - source.image.astype(np.float64)
-        label_hash = stable_digest(boxes_payload(attacked.boxes), length=32)
+        label_hash = stable_digest(annotations_payload(attacked.boxes, attacked.boxes3d), length=32)
         mask_hash = (
             array_digest(attacked.mask, length=32)
             if attacked.mask is not None
@@ -384,6 +410,7 @@ class AttackDatasetGenerator:
             "attack_params": attack.param_dict(),
             "severity": severity,
             "seed": seed,
+            "model_queries": attack.model_queries_for_severity(severity),
             "linf": float(np.max(np.abs(delta))),
             "l2": float(np.linalg.norm(delta)),
             "surrogate": surrogate["name"],
@@ -399,16 +426,19 @@ class AttackDatasetGenerator:
             "preview_path": preview_rel.as_posix() if preview_rel else None,
             "label_path": label_rel.as_posix(),
             "label_hash": label_hash,
+            "annotation_format": "advertest-annotations-v2",
             "mask_path": mask_rel.as_posix() if mask_rel else None,
             "mask_hash": mask_hash,
             "camera_paths": camera_paths,
             "camera_names": [view.name for view in attacked.camera_views],
+            "camera_payloads": camera_payloads,
             "lidar_path": lidar_path.as_posix() if lidar_path else None,
             "lidar_hash": (
                 array_digest(attacked.lidar_frame.points, length=32)
                 if attacked.lidar_frame is not None else None
             ),
             "lidar_fields": list(attacked.lidar_frame.fields) if attacked.lidar_frame else None,
+            "lidar_sensor_model": attacked.lidar_frame.sensor_model if attacked.lidar_frame else None,
             "anonymized": source.anonymized,
         }
 
@@ -520,7 +550,7 @@ def _sample_digest(sample: Sample) -> str:
     # sensor payloads to the shared multimodal digest used by the run cache.
     return stable_digest({
         "sensors": sample_digest(sample, length=32),
-        "labels": boxes_payload(sample.boxes),
+        "labels": annotations_payload(sample.boxes, sample.boxes3d),
         "mask_hash": array_digest(sample.mask, length=32) if sample.mask is not None else None,
     }, length=32)
 
@@ -560,8 +590,14 @@ def _estimate_generation(
     variants = len(samples) * len(severities)
     bytes_per_severity = sum(
         sample.image.nbytes
-        + len(json.dumps(boxes_payload(sample.boxes), sort_keys=True).encode("utf-8"))
-        + (sample.mask.nbytes if sample.mask is not None else 0)
+            + len(json.dumps(annotations_payload(sample.boxes, sample.boxes3d), sort_keys=True).encode("utf-8"))
+            + (sample.mask.nbytes if sample.mask is not None else 0)
+            + sum(
+                view.image.nbytes
+                + sum(array.nbytes for array in (view.depth, view.intrinsic, view.sensor_to_ego, view.previous_image) if array is not None)
+                for view in sample.camera_views
+            )
+            + (sample.lidar_frame.points.nbytes if sample.lidar_frame is not None else 0)
         for sample in samples
     )
     params = attack.param_dict()
@@ -575,10 +611,15 @@ def _estimate_generation(
             steps_per_variant = int(params.get("steps", params.get("iterations", 1)))
             steps_per_variant *= int(params.get("restarts", 1))
     active_variants = len(samples) * sum(severity > 0 for severity in severities)
+    model_queries = sum(
+        attack.model_queries_for_severity(severity) * len(samples)
+        for severity in severities
+    )
     return {
         "variants": variants,
         "canonical_bytes": bytes_per_severity * len(severities),
         "gradient_steps": active_variants * steps_per_variant,
+        "model_queries": model_queries,
     }
 
 
@@ -600,6 +641,14 @@ def _validate_perturbation_budget(
             raise ValueError(
                 f"attack {attack.name!r} exceeded L-inf budget: "
                 f"{actual:.8f} > {budget:.8f}"
+            )
+    epsilon = params.get("epsilon")
+    if isinstance(epsilon, (float, int)):
+        actual = float(np.max(np.abs(delta)))
+        if actual > float(epsilon) + 1e-6:
+            raise ValueError(
+                f"attack {attack.name!r} exceeded L-inf budget: "
+                f"{actual:.8f} > {float(epsilon):.8f}"
             )
     radius_values = params.get("radius_per_severity")
     if radius_values:
@@ -657,6 +706,12 @@ def _record_is_valid(root: Path, record: dict[str, Any]) -> bool:
             return False
         if camera.ndim not in (2, 3):
             return False
+    for payload in record.get("camera_payloads", []):
+        if not _array_record_is_valid(root, payload, "image"):
+            return False
+        for field in ("depth", "intrinsic", "sensor_to_ego", "previous_image"):
+            if not _array_record_is_valid(root, payload, field):
+                return False
     lidar_path_value = record.get("lidar_path")
     if lidar_path_value:
         try:
@@ -730,6 +785,22 @@ def _write_npy(path: Path, array: np.ndarray) -> None:
     with temporary.open("wb") as stream:
         np.save(stream, array, allow_pickle=False)
     os.replace(temporary, path)
+
+
+def _safe_sensor_name(name: str) -> str:
+    return "".join(character if character.isalnum() or character in {"-", "_"} else "_" for character in name)
+
+
+def _array_record_is_valid(root: Path, payload: dict[str, Any], field: str) -> bool:
+    path_value = payload.get(f"{field}_path")
+    expected_hash = payload.get(f"{field}_hash")
+    if path_value is None:
+        return expected_hash is None
+    try:
+        array = np.load(root / str(path_value), allow_pickle=False)
+    except (OSError, ValueError):
+        return False
+    return array.ndim >= 1 and array_digest(array, length=32) == expected_hash
 
 
 def _write_png(path: Path, image: np.ndarray) -> None:

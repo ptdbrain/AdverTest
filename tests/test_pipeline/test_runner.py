@@ -77,3 +77,10 @@ def test_image_attack_runs_on_an_image_dataset() -> None:
     info = ModelInfo(name="m", task="detection2d", version="1", supports_gradients=True)
     dataset = get_dataset("synthetic_shapes", n_samples=1)
     assert _incompatibility(load_attacks().get("gaussian_noise"), dataset, info) is None
+
+
+def test_square_attack_requires_a_2d_detector() -> None:
+    info = ModelInfo(name="segmenter", task="segmentation", version="1")
+    dataset = get_dataset("synthetic_shapes", n_samples=1)
+    reason = _incompatibility(load_attacks().get("square_attack"), dataset, info)
+    assert reason is not None and "model task" in reason

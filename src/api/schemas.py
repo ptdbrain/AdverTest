@@ -25,6 +25,9 @@ class AttackCatalogItem(BaseModel):
     needs_gradients: bool
     required_annotations: list[str] = Field(default_factory=list)
     required_capabilities: list[str] = Field(default_factory=list)
+    required_tasks: list[str] = Field(default_factory=list)
+    required_sensors: list[str] = Field(default_factory=list)
+    affected_sensors: list[str] = Field(default_factory=list)
     generation_mode: str = "per_sample"
     owner: str
     reference: str = ""

@@ -163,7 +163,9 @@ class Yolo11Adapter(ModelAdapter):
         return bool(self.half) and self._cuda_available()
 
     def _precision_kwargs(self) -> dict[str, Any]:
-        return {"half": self._use_half()}
+        # New Ultralytics versions warn when an explicit ``half=False`` is
+        # passed on every query. Omit it unless fp16 is actually enabled.
+        return {"half": True} if self._use_half() else {}
 
     @staticmethod
     def _cuda_available() -> bool:

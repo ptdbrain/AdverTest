@@ -22,7 +22,7 @@ from src.adapters.base import ModelAdapter
 from src.attacks import load_attacks
 from src.attacks.base import AttackContext, BaseAttack
 from src.core.hashing import array_digest
-from src.core.types import CameraView, GROUP_TITLES, LidarFrame, Sample, validate_image
+from src.core.types import GROUP_TITLES, CameraView, LidarFrame, Sample, validate_image
 
 ATTACK_CLASSES = load_attacks().values()
 ATTACK_IDS = [attack.name for attack in ATTACK_CLASSES]
@@ -75,7 +75,11 @@ def _attack(attack_cls: type[BaseAttack]) -> BaseAttack:
     params = (
         {"allow_builtin_patch": True}
         if "allow_builtin_patch" in attack_cls.params_model.model_fields
-        else {}
+        else (
+            {"depth_policy": "linear_prior"}
+            if "depth_policy" in attack_cls.params_model.model_fields
+            else {}
+        )
     )
     return attack_cls(**params)
 

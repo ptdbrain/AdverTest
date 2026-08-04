@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 
-from src.core.types import Box, validate_image
+from src.core.types import Box, Box3D, validate_image
 
 IMAGE_SUFFIXES = {".npy", ".png", ".jpg", ".jpeg", ".bmp"}
 
@@ -64,20 +64,71 @@ def load_boxes(path: Path | None) -> tuple[Box, ...]:
     )
 
 
+def load_boxes3d(path: Path | None) -> tuple[Box3D, ...]:
+    """Read optional 3D boxes while keeping v1 image-only labels compatible."""
+    if path is None or not path.exists():
+        return ()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = payload.get("boxes3d", []) if isinstance(payload, dict) else []
+    return tuple(
+        Box3D(
+            x=float(row["x"]),
+            y=float(row["y"]),
+            z=float(row["z"]),
+            length=float(row["length"]),
+            width=float(row["width"]),
+            height=float(row["height"]),
+            yaw=float(row["yaw"]),
+            label=str(row["label"]),
+            score=float(row.get("score", 1.0)),
+            vx=float(row.get("vx", 0.0)),
+            vy=float(row.get("vy", 0.0)),
+            native_label=(str(row["native_label"]) if row.get("native_label") is not None else None),
+        )
+        for row in rows
+    )
+
+
 def boxes_payload(boxes: tuple[Box, ...]) -> dict[str, list[dict[str, Any]]]:
     return {
         "boxes": [
             {
-                "x1": box.x1,
-                "y1": box.y1,
-                "x2": box.x2,
-                "y2": box.y2,
-                "label": box.label,
-                "score": box.score,
+                "x1": float(box.x1),
+                "y1": float(box.y1),
+                "x2": float(box.x2),
+                "y2": float(box.y2),
+                "label": str(box.label),
+                "score": float(box.score),
             }
             for box in boxes
         ]
     }
+
+
+def annotations_payload(
+    boxes: tuple[Box, ...],
+    boxes3d: tuple[Box3D, ...] = (),
+) -> dict[str, list[dict[str, Any]]]:
+    """Stable, explicit 2D/3D annotation payload used by generated v2 data."""
+    payload: dict[str, list[dict[str, Any]]] = boxes_payload(boxes)
+    payload["boxes3d"] = [
+        {
+            "x": float(box.x),
+            "y": float(box.y),
+            "z": float(box.z),
+            "length": float(box.length),
+            "width": float(box.width),
+            "height": float(box.height),
+            "yaw": float(box.yaw),
+            "label": str(box.label),
+            "score": float(box.score),
+            "vx": float(box.vx),
+            "vy": float(box.vy),
+            "native_label": box.native_label,
+        }
+        for box in boxes3d
+    ]
+    return payload
 
 
 def find_mask(root: Path, sample_id: str) -> Path | None:
@@ -86,4 +137,3 @@ def find_mask(root: Path, sample_id: str) -> Path | None:
         if candidate.exists():
             return candidate
     return None
-

@@ -3,7 +3,7 @@
 from typing import ClassVar
 
 from src.attacks import ATTACKS
-from src.attacks.base import AttackContext, AttackParams, BaseAttack
+from src.attacks.base import AttackParams, BaseAttack
 from src.attacks.weather._lidar import snow_frame
 from src.core.types import AttackGroup, CostClass, SensorKind
 
@@ -22,6 +22,7 @@ class LidarSnow(BaseAttack):
     cost_class: ClassVar[CostClass] = "expensive"
     required_sensors: ClassVar[frozenset[SensorKind]] = frozenset({"lidar"})
     affected_sensors: ClassVar[frozenset[SensorKind]] = frozenset({"lidar"})
+    owner: ClassVar[str] = "group-b"
     params_model: ClassVar[type[AttackParams]] = LidarSnowParams
 
     def apply(self, sample, severity, ctx):

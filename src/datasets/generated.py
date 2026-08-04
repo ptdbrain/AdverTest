@@ -6,11 +6,20 @@ import json
 from pathlib import Path
 from typing import Any, ClassVar
 
+import numpy as np
+
 from src.core.hashing import array_digest, stable_digest
-from src.core.types import Sample
+from src.core.types import CameraView, LidarFrame, Sample
 from src.datasets import DATASETS
 from src.datasets.base import DatasetInfo, DatasetParams, DatasetSource
-from src.datasets.io import boxes_payload, load_boxes, load_image, load_mask
+from src.datasets.io import (
+    annotations_payload,
+    boxes_payload,
+    load_boxes,
+    load_boxes3d,
+    load_image,
+    load_mask,
+)
 
 
 class GeneratedDatasetParams(DatasetParams):
@@ -64,7 +73,13 @@ class GeneratedDatasetSource(DatasetSource):
                     f"generated image hash mismatch for {record['variant_id']!r}"
                 )
             boxes = load_boxes(self.root / record["label_path"])
-            if stable_digest(boxes_payload(boxes), length=32) != record.get("label_hash"):
+            boxes3d = load_boxes3d(self.root / record["label_path"])
+            label_payload = (
+                annotations_payload(boxes, boxes3d)
+                if record.get("annotation_format") == "advertest-annotations-v2"
+                else boxes_payload(boxes)
+            )
+            if stable_digest(label_payload, length=32) != record.get("label_hash"):
                 raise ValueError(
                     f"generated label hash mismatch for {record['variant_id']!r}"
                 )
@@ -81,12 +96,25 @@ class GeneratedDatasetSource(DatasetSource):
                 raise ValueError(
                     f"generated mask hash mismatch for {record['variant_id']!r}"
                 )
+            cameras = tuple(
+                _load_camera(self.root, payload)
+                for payload in record.get("camera_payloads", [])
+            )
+            if not cameras:
+                cameras = tuple(
+                    CameraView(name, _load_hashed_array(self.root, path, None))
+                    for name, path in record.get("camera_paths", {}).items()
+                )
+            lidar = _load_lidar(self.root, record)
             samples.append(
                 Sample(
                     sample_id=record["variant_id"],
                     image=image,
                     boxes=boxes,
+                    boxes3d=boxes3d,
                     mask=mask,
+                    camera_views=cameras,
+                    lidar_frame=lidar,
                     anonymized=bool(self.descriptor.get("anonymized", True)),
                     meta={"generation": record},
                 )
@@ -102,3 +130,38 @@ def _read_manifest(path: Path) -> list[dict[str, Any]]:
         if line.strip():
             records.append(json.loads(line))
     return records
+
+
+def _load_camera(root: Path, payload: dict[str, Any]) -> CameraView:
+    return CameraView(
+        name=str(payload["name"]),
+        image=_load_hashed_array(root, payload.get("image_path"), payload.get("image_hash")),
+        depth=_load_hashed_array(root, payload.get("depth_path"), payload.get("depth_hash")),
+        intrinsic=_load_hashed_array(root, payload.get("intrinsic_path"), payload.get("intrinsic_hash")),
+        sensor_to_ego=_load_hashed_array(root, payload.get("sensor_to_ego_path"), payload.get("sensor_to_ego_hash")),
+        previous_image=_load_hashed_array(root, payload.get("previous_image_path"), payload.get("previous_image_hash")),
+    )
+
+
+def _load_lidar(root: Path, record: dict[str, Any]) -> LidarFrame | None:
+    path = record.get("lidar_path")
+    if path is None:
+        return None
+    points = _load_hashed_array(root, path, record.get("lidar_hash"))
+    if points is None:
+        return None
+    fields = tuple(record.get("lidar_fields") or ("x", "y", "z", "intensity", "ring"))
+    return LidarFrame(
+        points=np.asarray(points, dtype=np.float32),
+        fields=fields,
+        sensor_model=str(record.get("lidar_sensor_model") or "unknown"),
+    )
+
+
+def _load_hashed_array(root: Path, relative: str | None, expected_hash: str | None) -> np.ndarray | None:
+    if relative is None:
+        return None
+    array = np.load(root / relative, allow_pickle=False)
+    if expected_hash is not None and array_digest(array, length=32) != expected_hash:
+        raise ValueError(f"generated array hash mismatch: {relative}")
+    return np.ascontiguousarray(array)

@@ -6,8 +6,8 @@ import numpy as np
 from pydantic import Field
 
 from src.attacks import ATTACKS
-from src.attacks.base import AttackContext, AttackParams, BaseAttack
-from src.core.types import AttackGroup, CostClass, CameraView, SensorKind
+from src.attacks.base import AttackParams, BaseAttack
+from src.core.types import AttackGroup, CameraView, CostClass, SensorKind
 
 
 class CameraDropoutParams(AttackParams):
@@ -34,6 +34,7 @@ class CameraDropout(BaseAttack):
     cost_class: ClassVar[CostClass] = "cheap"
     required_sensors: ClassVar[frozenset[SensorKind]] = frozenset({"camera_rig"})
     affected_sensors: ClassVar[frozenset[SensorKind]] = frozenset({"camera_rig", "image"})
+    owner: ClassVar[str] = "group-c"
     params_model: ClassVar[type[AttackParams]] = CameraDropoutParams
 
     def apply(self, sample, severity, ctx):

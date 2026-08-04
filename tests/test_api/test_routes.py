@@ -18,7 +18,17 @@ async def test_attack_catalog_exposes_owner_and_params(client):
     items = response.json()
     assert items, "the catalog must not be empty"
     entry = items[0]
-    for field in ("name", "group", "cost_class", "severity_levels", "owner", "params_schema"):
+    for field in (
+        "name",
+        "group",
+        "cost_class",
+        "severity_levels",
+        "owner",
+        "params_schema",
+        "required_tasks",
+        "required_sensors",
+        "affected_sensors",
+    ):
         assert field in entry
 
 
@@ -34,6 +44,8 @@ async def test_model_and_dataset_catalogs(client):
     models = await client.get("/api/v1/catalog/models")
     datasets = await client.get("/api/v1/catalog/datasets")
     assert "blob_detector" in {item["name"] for item in models.json()}
+    assert "pointpillars" not in {item["name"] for item in models.json()}
+    assert "bevfusion" not in {item["name"] for item in models.json()}
     assert "synthetic_shapes" in {item["name"] for item in datasets.json()}
 
 

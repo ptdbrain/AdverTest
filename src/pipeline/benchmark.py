@@ -19,7 +19,7 @@ from src.core.hashing import array_digest, file_digest, stable_digest
 from src.core.types import Prediction, Sample
 from src.datasets import get_dataset
 from src.datasets.base import DatasetSource
-from src.datasets.io import boxes_payload
+from src.datasets.io import annotations_payload, boxes_payload
 from src.evaluation.detection_metrics import (
     DEFAULT_IOU_THRESHOLD,
     average_precision,
@@ -59,6 +59,17 @@ class AttackBenchmarkConfig(BaseModel):
     output_dir: str = "data/benchmarks"
 
 
+class TransferMatrixConfig(BaseModel):
+    """Evaluate immutable attacked generations across independent 2D models."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    generation_paths: list[str] = Field(min_length=1)
+    target_models: list[BenchmarkModelConfig] = Field(min_length=1)
+    iou_threshold: float = Field(default=DEFAULT_IOU_THRESHOLD, gt=0.0, lt=1.0)
+    output_dir: str = "data/benchmarks/transfer"
+
+
 @dataclass(frozen=True, slots=True)
 class BenchmarkArtifacts:
     benchmark_id: str
@@ -74,6 +85,20 @@ class BenchmarkArtifacts:
             "report_path": str(self.report_path),
             "summary_path": str(self.summary_path),
             "n_cells": self.n_cells,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class TransferMatrixArtifacts:
+    benchmark_id: str
+    root: Path
+    report_path: Path
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "benchmark_id": self.benchmark_id,
+            "root": str(self.root),
+            "report_path": str(self.report_path),
         }
 
 
@@ -193,7 +218,7 @@ class AttackDatasetBenchmark:
                 )
             checkpoint_hash = file_digest(checkpoint)
             params["weights"] = config.checkpoint
-        if config.name in {"yolo11", "faster_rcnn", "sam2_surrogate"} and (
+        if config.name in {"yolo11", "faster_rcnn", "sam2_surrogate", "rtdetr"} and (
             config.checkpoint is None
         ):
             raise ValueError(
@@ -263,7 +288,14 @@ class AttackDatasetBenchmark:
                 )
             if array_digest(clean.image, length=32) != record["source_hash"]:
                 raise ValueError(f"clean source hash changed for {source_id!r}")
-            label_hash = stable_digest(boxes_payload(clean.boxes), length=32)
+            label_hash = stable_digest(
+                (
+                    annotations_payload(clean.boxes, clean.boxes3d)
+                    if record.get("annotation_format") == "advertest-annotations-v2"
+                    else boxes_payload(clean.boxes)
+                ),
+                length=32,
+            )
             if label_hash != record["label_hash"]:
                 raise ValueError(f"clean label hash changed for {source_id!r}")
             clean_samples.append(clean)
@@ -380,6 +412,95 @@ class AttackDatasetBenchmark:
             for (key, _), prediction in zip(pending, predictions, strict=True):
                 cache[key] = prediction
         return [cache[key] for key in keys]
+
+
+class TransferMatrixBenchmark:
+    """Build a source-generation by target-model transfer matrix.
+
+    Each row is a completed generation, whose manifest already identifies the
+    surrogate that created it. Each column is an independently configured
+    target model. This class never invokes the attack generator.
+    """
+
+    version = "1.0.0"
+
+    def run(self, config: TransferMatrixConfig) -> TransferMatrixArtifacts:
+        roots = [Path(path).expanduser().resolve() for path in config.generation_paths]
+        identities = [self._source_identity(root) for root in roots]
+        benchmark_id = stable_digest(
+            {
+                "version": self.version,
+                "generations": [str(root) for root in roots],
+                "targets": [model.model_dump(mode="json") for model in config.target_models],
+                "iou": config.iou_threshold,
+            },
+            length=16,
+        )
+        root = Path(config.output_dir).expanduser().resolve() / benchmark_id
+        root.mkdir(parents=True, exist_ok=True)
+        rows: list[dict[str, Any]] = []
+        for generation_root, source in zip(roots, identities, strict=True):
+            targets: dict[str, dict[str, Any]] = {}
+            for model in config.target_models:
+                artifacts = AttackDatasetBenchmark().run(
+                    AttackBenchmarkConfig(
+                        generation_paths=[str(generation_root)],
+                        model=model,
+                        iou_threshold=config.iou_threshold,
+                        output_dir=str(root / "cells"),
+                    )
+                )
+                report = json.loads(artifacts.report_path.read_text(encoding="utf-8"))
+                cells = report["cells"]
+                targets[model.name] = {
+                    "benchmark_root": str(artifacts.root),
+                    "n_cells": len(cells),
+                    "mean_degradation": round(
+                        sum(float(cell["degradation"]) for cell in cells) / max(1, len(cells)),
+                        6,
+                    ),
+                    "mean_attack_success_rate": round(
+                        sum(float(cell["attack_success"]["rate"]) for cell in cells) / max(1, len(cells)),
+                        6,
+                    ),
+                }
+            rows.append({"source": source, "targets": targets})
+        report = {
+            "format": "advertest-transfer-matrix-v1",
+            "benchmark_id": benchmark_id,
+            "version": self.version,
+            "rows": rows,
+            "simulation_only": True,
+        }
+        report_path = root / "report.json"
+        _write_json(report_path, report)
+        _write_json(root / "config.json", config.model_dump(mode="json"))
+        return TransferMatrixArtifacts(benchmark_id, root, report_path)
+
+    @staticmethod
+    def _source_identity(root: Path) -> dict[str, Any]:
+        inspected = inspect_generated_dataset(root)
+        if not inspected["valid"]:
+            raise ValueError(f"generated dataset failed inspection: {root}")
+        records = [
+            json.loads(line)
+            for line in (root / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        surrogates = {
+            (record.get("surrogate"), record.get("surrogate_version"), record.get("checkpoint_hash"))
+            for record in records
+        }
+        if len(surrogates) != 1:
+            raise ValueError(f"generation has inconsistent surrogate provenance: {root}")
+        name, version, checkpoint_hash = next(iter(surrogates))
+        return {
+            "generation_id": inspected["generation_id"],
+            "attack": inspected["attack"],
+            "surrogate": name,
+            "surrogate_version": version,
+            "checkpoint_hash": checkpoint_hash,
+        }
 
 
 def _source_from_generation(config: AttackGenerationConfig) -> DatasetSource:

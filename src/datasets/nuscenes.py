@@ -12,8 +12,7 @@ from typing import Any
 import numpy as np
 from pydantic import Field
 
-from src.core.types import Box3D, CameraView, LidarFrame, Sample
-from src.datasets import DATASETS
+from src.core.types import CameraView, LidarFrame, Sample
 from src.datasets.base import DatasetParams, DatasetSource
 from src.datasets.io import load_image
 
@@ -26,9 +25,12 @@ class NuScenesParams(DatasetParams):
     limit: int | None = Field(default=None, ge=1)
 
 
-@DATASETS.register
 class NuScenesDataset(DatasetSource):
-    """nuScenes six-camera + HDL32E LiDAR samples with native 3D boxes."""
+    """Reserved nuScenes integration slot.
+
+    It is intentionally not registered until split resolution, calibrated
+    depth projection and native 3D labels are validated against nuScenes mini.
+    """
 
     name = "nuscenes"
     modality = "multi"

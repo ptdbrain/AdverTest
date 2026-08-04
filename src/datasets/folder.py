@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import ClassVar, Literal
 
+import numpy as np
 from pydantic import Field
 
 from src.core.types import Box, Sample
@@ -94,17 +95,24 @@ class FolderDataset(DatasetSource):
         )
         if limit is not None:
             paths = paths[:limit]
-        return [
-            Sample(
-                sample_id=path.stem,
-                image=load_image(path),
-                boxes=load_boxes(self.root / "labels" / f"{path.stem}.json"),
-                mask=load_mask(find_mask(self.root / "masks", path.stem)),
-                anonymized=self._anonymized,
-                meta={"source_path": str(path), "source_format": "advertest"},
+        samples: list[Sample] = []
+        for path in paths:
+            image = load_image(path)
+            samples.append(
+                Sample(
+                    sample_id=path.stem,
+                    image=image,
+                    boxes=load_boxes(self.root / "labels" / f"{path.stem}.json"),
+                    mask=load_mask(find_mask(self.root / "masks", path.stem)),
+                    depth=_load_depth(
+                        self.root / "depths" / f"{path.stem}.npy",
+                        image.shape[:2],
+                    ),
+                    anonymized=self._anonymized,
+                    meta={"source_path": str(path), "source_format": "advertest"},
+                )
             )
-            for path in paths
-        ]
+        return samples
 
     def _load_kitti(self, limit: int | None) -> list[Sample]:
         images_root = self.root / "image_2"
@@ -128,6 +136,20 @@ class FolderDataset(DatasetSource):
                 )
             )
         return samples
+
+
+def _load_depth(path: Path, image_shape: tuple[int, int]) -> np.ndarray | None:
+    """Load an optional metric/projection depth map for depth-aware weather."""
+    if not path.is_file():
+        return None
+    depth = np.load(path, allow_pickle=False).astype(np.float32, copy=False)
+    if depth.shape != image_shape:
+        raise ValueError(
+            f"depth map {path} shape {depth.shape!r} does not match image {image_shape!r}"
+        )
+    if not np.isfinite(depth).all() or np.any(depth <= 0):
+        raise ValueError(f"depth map {path} must contain finite positive values")
+    return np.ascontiguousarray(depth)
 
 
 def _load_kitti_boxes(path: Path) -> tuple[Box, ...]:

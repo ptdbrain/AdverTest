@@ -34,10 +34,11 @@ from src.core.types import (
     MAX_SEVERITY,
     AttackGroup,
     CostClass,
-    SensorKind,
+    LidarFrame,
     Modality,
     Sample,
-    LidarFrame,
+    SensorKind,
+    Task,
     validate_image,
 )
 
@@ -96,6 +97,8 @@ class BaseAttack(ABC):
     needs_gradients: ClassVar[bool] = False
     required_annotations: ClassVar[frozenset[RequiredAnnotation]] = frozenset()
     required_capabilities: ClassVar[frozenset[SurrogateCapability]] = frozenset()
+    #: Model tasks accepted by model-dependent attacks. Empty means any task.
+    required_tasks: ClassVar[frozenset[Task]] = frozenset()
     generation_mode: ClassVar[str] = "per_sample"
     #: Team member who owns this file — the only "assignment table" we need.
     owner: ClassVar[str] = "unassigned"
@@ -153,6 +156,12 @@ class BaseAttack(ABC):
                     f"attack {self.name!r} requires surrogate capabilities: "
                     f"{', '.join(missing)}"
                 )
+            if self.required_tasks and model.metadata().task not in self.required_tasks:
+                required = ", ".join(sorted(self.required_tasks))
+                raise ModelRequiredError(
+                    f"attack {self.name!r} requires model task(s): {required}; "
+                    f"got {model.metadata().task!r}"
+                )
         missing_annotations = [
             annotation
             for annotation in self.required_annotations
@@ -185,6 +194,15 @@ class BaseAttack(ABC):
         """Configured parameters, used in the cache key."""
         return self.params.model_dump(mode="json")
 
+    def model_queries_for_severity(self, severity: int) -> int:
+        """Worst-case inference queries for one sample at ``severity``.
+
+        Most attacks either have no model dependency or use gradients, which are
+        accounted for separately. Query-based attacks override this so generation
+        estimates and manifests state the exact black-box budget.
+        """
+        return 0
+
     @classmethod
     def describe(cls) -> dict[str, Any]:
         """Catalog entry for the API / CLI (plan §2 plugin declaration)."""
@@ -202,6 +220,7 @@ class BaseAttack(ABC):
             "needs_gradients": cls.needs_gradients,
             "required_annotations": sorted(cls.required_annotations),
             "required_capabilities": sorted(cls.required_capabilities),
+            "required_tasks": sorted(cls.required_tasks),
             "generation_mode": cls.generation_mode,
             "owner": cls.owner,
             "reference": cls.reference,

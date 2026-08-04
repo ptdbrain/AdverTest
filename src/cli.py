@@ -32,6 +32,8 @@ from src.pipeline import RunConfig, TestRunner
 from src.pipeline.benchmark import (
     AttackBenchmarkConfig,
     AttackDatasetBenchmark,
+    TransferMatrixBenchmark,
+    TransferMatrixConfig,
 )
 from src.pipeline.generator import (
     AttackDatasetGenerator,
@@ -54,6 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         "inspect-anonymized-dataset": _inspect_anonymized_dataset,
         "generate-attack": _generate_attack,
         "benchmark-attack-datasets": _benchmark_attack_datasets,
+        "benchmark-transfer-matrix": _benchmark_transfer_matrix,
         "train-patch": _train_patch,
         "inspect-attack-dataset": _inspect_attack_dataset,
     }
@@ -94,6 +97,11 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="AttackBenchmarkConfig JSON file",
     )
+    transfer = subparsers.add_parser(
+        "benchmark-transfer-matrix",
+        help="evaluate existing attacked datasets across independent target models",
+    )
+    transfer.add_argument("--config", required=True, help="TransferMatrixConfig JSON file")
     anonymize = subparsers.add_parser(
         "anonymize-dataset",
         help="blur detected faces and license plates in a KITTI folder",
@@ -178,6 +186,14 @@ def _benchmark_attack_datasets(args: argparse.Namespace) -> int:
     artifacts = AttackDatasetBenchmark().run(config)
     report = json.loads(artifacts.report_path.read_text(encoding="utf-8"))
     print(json.dumps({**artifacts.as_dict(), "cells": report["cells"]}, indent=2))
+    return 0
+
+
+def _benchmark_transfer_matrix(args: argparse.Namespace) -> int:
+    config = TransferMatrixConfig.model_validate(_read_json(args.config))
+    artifacts = TransferMatrixBenchmark().run(config)
+    report = json.loads(artifacts.report_path.read_text(encoding="utf-8"))
+    print(json.dumps({**artifacts.as_dict(), "rows": report["rows"]}, indent=2))
     return 0
 
 

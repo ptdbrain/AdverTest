@@ -98,6 +98,13 @@ def variant_key(
     )
 
 
-def clean_key(*, sample_id: str, model_version: str) -> str:
+def clean_key(*, sample_id: str, model_version: str, sample_hash: str | None = None) -> str:
     """Cache key for a clean prediction (reused across every comparison)."""
-    return stable_digest({"sample": sample_id, "model": model_version, "attack": "clean"})
+    return stable_digest(
+        {
+            "sample": sample_id,
+            "sample_hash": sample_hash,
+            "model": model_version,
+            "attack": "clean",
+        }
+    )

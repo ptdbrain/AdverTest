@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from src.attacks import get_attack
 from src.attacks.base import AttackContext

@@ -14,6 +14,7 @@ def _write_folder_dataset(root: Path, *, anonymized: bool) -> None:
     (root / "images").mkdir(parents=True)
     (root / "labels").mkdir()
     (root / "masks").mkdir()
+    (root / "depths").mkdir()
     image = np.full((16, 20, 3), 0.25, dtype=np.float32)
     np.save(root / "images" / "frame_001.npy", image, allow_pickle=False)
     (root / "labels" / "frame_001.json").write_text(
@@ -38,6 +39,11 @@ def _write_folder_dataset(root: Path, *, anonymized: bool) -> None:
         np.ones((16, 20), dtype=np.uint8),
         allow_pickle=False,
     )
+    np.save(
+        root / "depths" / "frame_001.npy",
+        np.full((16, 20), 12.0, dtype=np.float32),
+        allow_pickle=False,
+    )
     (root / "dataset.json").write_text(
         json.dumps({"anonymized": anonymized}),
         encoding="utf-8",
@@ -53,6 +59,7 @@ def test_folder_dataset_loads_canonical_arrays_and_annotations(tmp_path: Path) -
     assert sample.image.dtype == np.float32
     assert sample.boxes[0].label == "Car"
     assert sample.mask is not None
+    assert sample.depth is not None
 
 
 def test_folder_dataset_enforces_anonymization_manifest(tmp_path: Path) -> None:
