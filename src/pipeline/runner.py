@@ -22,7 +22,7 @@ from src.adapters import get_adapter
 from src.adapters.base import ModelAdapter
 from src.attacks import get_attack, load_attacks
 from src.attacks.base import AttackContext, BaseAttack
-from src.core.hashing import clean_key, stable_digest, variant_key
+from src.core.hashing import clean_key, sample_digest, stable_digest, variant_key
 from src.core.types import COST_WEIGHT, ModelInfo, Prediction, Sample
 from src.datasets import get_dataset
 from src.datasets.base import DatasetSource
@@ -213,6 +213,7 @@ class TestRunner:
                 params=attack.param_dict(),
                 severity=severity,
                 model_version=version,
+                sample_hash=sample_digest(variant),
             )
             for variant in variants
         ]
