@@ -15,7 +15,7 @@ from src.adapters import get_adapter
 from src.adapters.base import ModelAdapter
 from src.attacks import get_attack
 from src.attacks.base import AttackContext, BaseAttack
-from src.core.hashing import array_digest, file_digest, stable_digest
+from src.core.hashing import array_digest, file_digest, sample_digest, stable_digest
 from src.core.objectives import AttackObjective, ObjectiveKind
 from src.core.types import Sample, validate_image
 from src.datasets import get_dataset
@@ -122,7 +122,7 @@ class AttackDatasetGenerator:
         )
         root = Path(config.output_dir).expanduser().resolve() / source_name / attack.name / generation_id
         root.mkdir(parents=True, exist_ok=True)
-        for name in ("images", "labels", "masks", "artifacts"):
+        for name in ("images", "labels", "masks", "cameras", "lidar", "artifacts"):
             (root / name).mkdir(exist_ok=True)
         if config.preview:
             (root / "previews").mkdir(exist_ok=True)
@@ -351,6 +351,16 @@ class AttackDatasetGenerator:
         if attacked.mask is not None:
             mask_rel = Path("masks") / f"{variant_id}.npy"
             _write_npy(root / mask_rel, attacked.mask)
+        camera_paths: dict[str, str] = {}
+        for view in attacked.camera_views:
+            safe_name = view.name.replace("/", "_")
+            relative = Path("cameras") / f"{variant_id}-{safe_name}.npy"
+            _write_npy(root / relative, view.image)
+            camera_paths[view.name] = relative.as_posix()
+        lidar_path: Path | None = None
+        if attacked.lidar_frame is not None:
+            lidar_path = Path("lidar") / f"{variant_id}.npy"
+            _write_npy(root / lidar_path, attacked.lidar_frame.points)
         preview_rel: Path | None = None
         if preview:
             preview_rel = Path("previews") / f"{variant_id}.png"
@@ -391,6 +401,14 @@ class AttackDatasetGenerator:
             "label_hash": label_hash,
             "mask_path": mask_rel.as_posix() if mask_rel else None,
             "mask_hash": mask_hash,
+            "camera_paths": camera_paths,
+            "camera_names": [view.name for view in attacked.camera_views],
+            "lidar_path": lidar_path.as_posix() if lidar_path else None,
+            "lidar_hash": (
+                array_digest(attacked.lidar_frame.points, length=32)
+                if attacked.lidar_frame is not None else None
+            ),
+            "lidar_fields": list(attacked.lidar_frame.fields) if attacked.lidar_frame else None,
             "anonymized": source.anonymized,
         }
 
@@ -406,7 +424,7 @@ class AttackDatasetGenerator:
         status: str,
     ) -> dict[str, Any]:
         return {
-            "format": "advertest-generated-v1",
+            "format": "advertest-generated-v2",
             "generation_id": generation_id,
             "source": source,
             "source_fingerprint": source_fingerprint,
@@ -416,6 +434,7 @@ class AttackDatasetGenerator:
             "n_source_samples": n_source_samples,
             "n_variants": 0,
             "canonical_image_format": "npy-float32-hwc-0-1",
+            "multimodal_payloads": True,
             "estimate": estimate,
         }
 
@@ -497,19 +516,13 @@ def _same_optional_array(first: np.ndarray | None, second: np.ndarray | None) ->
 
 
 def _sample_digest(sample: Sample) -> str:
-    return stable_digest(
-        {
-            "sample_id": sample.sample_id,
-            "image_hash": array_digest(sample.image, length=32),
-            "labels": boxes_payload(sample.boxes),
-            "mask_hash": (
-                array_digest(sample.mask, length=32)
-                if sample.mask is not None
-                else None
-            ),
-        },
-        length=32,
-    )
+    # Keep labels/masks in the generation fingerprint while delegating all
+    # sensor payloads to the shared multimodal digest used by the run cache.
+    return stable_digest({
+        "sensors": sample_digest(sample, length=32),
+        "labels": boxes_payload(sample.boxes),
+        "mask_hash": array_digest(sample.mask, length=32) if sample.mask is not None else None,
+    }, length=32)
 
 
 def _dataset_fingerprint(samples: list[Sample]) -> str:
@@ -637,6 +650,21 @@ def _record_is_valid(root: Path, record: dict[str, Any]) -> bool:
         return False
     if array_digest(image, length=32) != record.get("output_hash"):
         return False
+    for camera_path in record.get("camera_paths", {}).values():
+        try:
+            camera = np.load(root / camera_path, allow_pickle=False)
+        except (OSError, ValueError):
+            return False
+        if camera.ndim not in (2, 3):
+            return False
+    lidar_path_value = record.get("lidar_path")
+    if lidar_path_value:
+        try:
+            lidar = np.load(root / lidar_path_value, allow_pickle=False)
+        except (OSError, ValueError):
+            return False
+        if lidar.ndim != 2 or array_digest(lidar, length=32) != record.get("lidar_hash"):
+            return False
     label_path = root / record.get("label_path", "")
     if not label_path.is_file():
         return False

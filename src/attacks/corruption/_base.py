@@ -17,6 +17,12 @@ try:
     # adapt only that compatibility boundary.
     import inspect
 
+    # imagecorruptions 1.1.2 still references the NumPy 1.x alias removed in
+    # NumPy 2.0. Add the compatibility alias locally before importing its
+    # corruption implementations.
+    if not hasattr(np, "float_"):
+        np.float_ = np.float64  # type: ignore[attr-defined]
+
     from imagecorruptions import corrupt
     from imagecorruptions import corruptions as _imagecorruptions
 

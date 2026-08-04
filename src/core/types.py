@@ -15,6 +15,7 @@ from typing import Any, Literal
 import numpy as np
 
 Modality = Literal["image", "lidar", "multi"]
+SensorKind = Literal["image", "camera_rig", "lidar"]
 CostClass = Literal["cheap", "medium", "expensive"]
 AttackGroup = Literal["A", "B", "C", "D", "E", "F"]
 Task = Literal["detection2d", "segmentation", "detection3d"]
@@ -75,6 +76,52 @@ class Box:
         return (self.x1, self.y1, self.x2, self.y2)
 
 
+@dataclass(frozen=True, slots=True)
+class Box3D:
+    """Minimal sensor-frame 3D cuboid used by multimodal attacks."""
+
+    x: float
+    y: float
+    z: float
+    length: float
+    width: float
+    height: float
+    yaw: float
+    label: str
+    score: float = 1.0
+    vx: float = 0.0
+    vy: float = 0.0
+    native_label: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CameraView:
+    """One calibrated camera view and an optional previous keyframe."""
+
+    name: str
+    image: np.ndarray
+    depth: np.ndarray | None = None
+    intrinsic: np.ndarray | None = None
+    sensor_to_ego: np.ndarray | None = None
+    previous_image: np.ndarray | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LidarFrame:
+    """Point cloud with named columns; ``ring`` is required for beam attacks."""
+
+    points: np.ndarray
+    fields: tuple[str, ...] = ("x", "y", "z", "intensity", "ring")
+    sensor_model: str = "unknown"
+
+    def column(self, name: str) -> np.ndarray:
+        try:
+            index = self.fields.index(name)
+        except ValueError as exc:
+            raise ValueError(f"LiDAR frame has no {name!r} field") from exc
+        return self.points[:, index]
+
+
 @dataclass(frozen=True, slots=True, eq=False)
 class Sample:
     """One evaluation unit: pixels, optional depth/LiDAR, and ground truth.
@@ -89,6 +136,9 @@ class Sample:
     mask: np.ndarray | None = None
     depth: np.ndarray | None = None
     lidar: np.ndarray | None = None
+    camera_views: tuple[CameraView, ...] = ()
+    lidar_frame: LidarFrame | None = None
+    boxes3d: tuple[Box3D, ...] = ()
     anonymized: bool = False
     meta: dict[str, Any] = field(default_factory=dict)
 
@@ -100,6 +150,16 @@ class Sample:
         """Return a copy carrying new pixels; ground truth is never modified."""
         return replace(self, image=image)
 
+    def with_camera_views(self, views: tuple[CameraView, ...] | list[CameraView]) -> Sample:
+        """Return a copy with views replaced and ``image`` synced to CAM_FRONT."""
+        normalized = tuple(views)
+        front = next((view.image for view in normalized if view.name == "CAM_FRONT"), self.image)
+        return replace(self, image=front, camera_views=normalized)
+
+    def with_lidar_frame(self, frame: LidarFrame | None) -> Sample:
+        """Return a copy carrying an attacked multimodal point cloud."""
+        return replace(self, lidar_frame=frame)
+
 
 @dataclass(frozen=True, slots=True)
 class Prediction:
@@ -107,6 +167,7 @@ class Prediction:
 
     sample_id: str
     boxes: tuple[Box, ...] = ()
+    boxes3d: tuple[Box3D, ...] = ()
     latency_ms: float = 0.0
 
 

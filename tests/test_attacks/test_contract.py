@@ -22,7 +22,7 @@ from src.adapters.base import ModelAdapter
 from src.attacks import load_attacks
 from src.attacks.base import AttackContext, BaseAttack
 from src.core.hashing import array_digest
-from src.core.types import GROUP_TITLES, Sample, validate_image
+from src.core.types import CameraView, GROUP_TITLES, LidarFrame, Sample, validate_image
 
 ATTACK_CLASSES = load_attacks().values()
 ATTACK_IDS = [attack.name for attack in ATTACK_CLASSES]
@@ -38,7 +38,35 @@ def _context(attack_cls: type[BaseAttack], adapter: ModelAdapter, seed: int = 7)
     )
 
 
-def _distance(sample: Sample, attacked: Sample) -> float:
+def _sample_for(attack_cls: type[BaseAttack], sample: Sample) -> Sample:
+    if "camera_rig" in attack_cls.required_sensors:
+        views = tuple(
+            CameraView(name, np.roll(sample.image, index * 2, axis=1), previous_image=sample.image.copy())
+            for index, name in enumerate(("CAM_FRONT", "CAM_FRONT_LEFT", "CAM_FRONT_RIGHT", "CAM_BACK", "CAM_BACK_LEFT", "CAM_BACK_RIGHT"))
+        )
+        sample = sample.with_camera_views(views)
+    if "lidar" in attack_cls.required_sensors:
+        rings = np.arange(32, dtype=np.float32).repeat(8)
+        points = np.column_stack((
+            np.linspace(1, 40, len(rings), dtype=np.float32),
+            np.sin(rings),
+            np.cos(rings),
+            np.full(len(rings), 1.0, dtype=np.float32),
+            rings,
+        ))
+        sample = sample.with_lidar_frame(LidarFrame(points, sensor_model="HDL32E"))
+    return sample
+
+
+def _distance(sample: Sample, attacked: Sample, attack_cls: type[BaseAttack]) -> float:
+    if "lidar" in attack_cls.affected_sensors:
+        assert attacked.lidar_frame is not None and sample.lidar_frame is not None
+        return float(abs(len(attacked.lidar_frame.points) - len(sample.lidar_frame.points))) + float(
+            np.linalg.norm(attacked.lidar_frame.points[:, :4].mean(axis=0) - sample.lidar_frame.points[:, :4].mean(axis=0))
+        )
+    if "camera_rig" in attack_cls.affected_sensors:
+        assert attacked.camera_views
+        return float(sum(np.linalg.norm(a.image - b.image) for a, b in zip(attacked.camera_views, sample.camera_views, strict=True)))
     return float(np.linalg.norm(attacked.image - sample.image))
 
 
@@ -64,8 +92,9 @@ def test_catalog_metadata_is_complete(attack_cls: type[BaseAttack]) -> None:
 
 
 def test_severity_zero_is_identity(attack_cls: type[BaseAttack], sample: Sample, adapter: ModelAdapter) -> None:
-    attacked = _attack(attack_cls).run(sample, 0, _context(attack_cls, adapter))
-    assert array_digest(attacked.image) == array_digest(sample.image)
+    source = _sample_for(attack_cls, sample)
+    attacked = _attack(attack_cls).run(source, 0, _context(attack_cls, adapter))
+    assert array_digest(attacked.image) == array_digest(source.image)
 
 
 def test_output_respects_image_contract(
@@ -73,8 +102,9 @@ def test_output_respects_image_contract(
     sample: Sample,
     adapter: ModelAdapter,
 ) -> None:
-    attacked = _attack(attack_cls).run(sample, 1, _context(attack_cls, adapter))
-    validate_image(attacked.image, like=sample.image)
+    source = _sample_for(attack_cls, sample)
+    attacked = _attack(attack_cls).run(source, 1, _context(attack_cls, adapter))
+    validate_image(attacked.image, like=source.image)
 
 
 def test_ground_truth_is_untouched(
@@ -82,14 +112,15 @@ def test_ground_truth_is_untouched(
     sample: Sample,
     adapter: ModelAdapter,
 ) -> None:
-    before = array_digest(sample.image)
+    source = _sample_for(attack_cls, sample)
+    before = array_digest(source.image)
     attacked = _attack(attack_cls).run(
-        sample,
+        source,
         attack_cls.severity_levels,
         _context(attack_cls, adapter),
     )
-    assert attacked.boxes == sample.boxes, "attacks change pixels, never labels"
-    assert array_digest(sample.image) == before, "the input sample must not be mutated"
+    assert attacked.boxes == source.boxes, "attacks change sensors, never labels"
+    assert array_digest(source.image) == before, "the input sample must not be mutated"
 
 
 def test_same_seed_gives_same_pixels(
@@ -97,17 +128,20 @@ def test_same_seed_gives_same_pixels(
     sample: Sample,
     adapter: ModelAdapter,
 ) -> None:
+    source = _sample_for(attack_cls, sample)
     first = _attack(attack_cls).run(
-        sample,
+        source,
         2,
         _context(attack_cls, adapter, seed=99),
     )
     second = _attack(attack_cls).run(
-        sample,
+        source,
         2,
         _context(attack_cls, adapter, seed=99),
     )
     assert array_digest(first.image) == array_digest(second.image)
+    if first.lidar_frame is not None:
+        assert array_digest(first.lidar_frame.points) == array_digest(second.lidar_frame.points)
 
 
 def test_attack_actually_changes_the_image(
@@ -115,8 +149,9 @@ def test_attack_actually_changes_the_image(
     sample: Sample,
     adapter: ModelAdapter,
 ) -> None:
-    attacked = _attack(attack_cls).run(sample, 1, _context(attack_cls, adapter))
-    assert _distance(sample, attacked) > 0.0
+    source = _sample_for(attack_cls, sample)
+    attacked = _attack(attack_cls).run(source, 1, _context(attack_cls, adapter))
+    assert _distance(source, attacked, attack_cls) > 0.0
 
 
 def test_effect_grows_with_severity(
@@ -124,13 +159,14 @@ def test_effect_grows_with_severity(
     sample: Sample,
     adapter: ModelAdapter,
 ) -> None:
-    weak = _attack(attack_cls).run(sample, 1, _context(attack_cls, adapter))
+    source = _sample_for(attack_cls, sample)
+    weak = _attack(attack_cls).run(source, 1, _context(attack_cls, adapter))
     strong = _attack(attack_cls).run(
-        sample,
+        source,
         attack_cls.severity_levels,
         _context(attack_cls, adapter),
     )
-    assert _distance(sample, strong) >= _distance(sample, weak), (
+    assert _distance(source, strong, attack_cls) >= _distance(source, weak, attack_cls), (
         "severity must be ordered: severity 5 cannot perturb less than severity 1 (sanity check #2)"
     )
 
@@ -142,7 +178,7 @@ def test_out_of_range_severity_is_rejected(
 ) -> None:
     with pytest.raises(ValueError):
         _attack(attack_cls).run(
-            sample,
+            _sample_for(attack_cls, sample),
             attack_cls.severity_levels + 1,
             _context(attack_cls, adapter),
         )

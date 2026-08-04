@@ -34,8 +34,10 @@ from src.core.types import (
     MAX_SEVERITY,
     AttackGroup,
     CostClass,
+    SensorKind,
     Modality,
     Sample,
+    LidarFrame,
     validate_image,
 )
 
@@ -82,6 +84,10 @@ class BaseAttack(ABC):
     #: Plan §2 group: A corruptions, B weather, C occlusion, D white-box, E patch, F black-box.
     group: ClassVar[AttackGroup]
     modality: ClassVar[Modality] = "image"
+    #: Inputs and payloads touched by the attack.  ``modality`` remains the
+    #: compatibility/catalog summary used by older clients.
+    required_sensors: ClassVar[frozenset[SensorKind]] = frozenset({"image"})
+    affected_sensors: ClassVar[frozenset[SensorKind]] = frozenset({"image"})
     cost_class: ClassVar[CostClass] = "cheap"
     severity_levels: ClassVar[int] = MAX_SEVERITY
     #: True when :meth:`apply` calls ``ctx.model`` (white-box / query-based).
@@ -114,7 +120,17 @@ class BaseAttack(ABC):
         attacked = self.apply(sample, severity, ctx)
         image = np.clip(attacked.image, 0.0, 1.0).astype(np.float32, copy=False)
         validate_image(image, like=sample.image)
-        return attacked.with_image(image)
+        # Image attacks retain the historical image contract.  Sensor-only
+        # attacks may intentionally leave the canonical image unchanged.
+        if "image" in self.affected_sensors:
+            attacked = attacked.with_image(image)
+        elif not np.array_equal(attacked.image, sample.image):
+            raise ValueError(f"attack {self.name!r} changed an undeclared image payload")
+        if "lidar" in self.affected_sensors:
+            if attacked.lidar_frame is None:
+                raise ValueError(f"attack {self.name!r} did not return a LiDAR frame")
+            validate_lidar_frame(attacked.lidar_frame)
+        return attacked
 
     def validate_requirements(
         self,
@@ -148,6 +164,10 @@ class BaseAttack(ABC):
                 f"attack {self.name!r} requires annotations: "
                 f"{', '.join(sorted(missing_annotations))}"
             )
+        if "camera_rig" in self.required_sensors and not sample.camera_views:
+            raise ValueError(f"attack {self.name!r} requires camera views")
+        if "lidar" in self.required_sensors and sample.lidar_frame is None and sample.lidar is None:
+            raise ValueError(f"attack {self.name!r} requires a LiDAR frame")
 
     @abstractmethod
     def apply(self, sample: Sample, severity: int, ctx: AttackContext) -> Sample:
@@ -174,6 +194,8 @@ class BaseAttack(ABC):
             "group": cls.group,
             "title": (cls.__doc__ or "").strip().splitlines()[0] if cls.__doc__ else "",
             "modality": cls.modality,
+            "required_sensors": sorted(cls.required_sensors),
+            "affected_sensors": sorted(cls.affected_sensors),
             "cost_class": cls.cost_class,
             "severity_levels": cls.severity_levels,
             "needs_model": cls.needs_model,
@@ -185,3 +207,15 @@ class BaseAttack(ABC):
             "reference": cls.reference,
             "params_schema": cls.params_model.model_json_schema(),
         }
+
+
+def validate_lidar_frame(frame: LidarFrame) -> None:
+    """Validate the multimodal point-cloud contract."""
+    if not isinstance(frame.points, np.ndarray):
+        raise TypeError("LiDAR points must be a numpy array")
+    if frame.points.ndim != 2 or frame.points.shape[1] != len(frame.fields):
+        raise ValueError("LiDAR points must be shaped (N, len(fields))")
+    if not np.issubdtype(frame.points.dtype, np.floating):
+        raise ValueError("LiDAR points must use a floating dtype")
+    if not np.isfinite(frame.points).all():
+        raise ValueError("LiDAR points contain NaN or inf")
