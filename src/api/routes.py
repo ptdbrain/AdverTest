@@ -12,9 +12,12 @@ from src.api.jobs import LocalRunWorker, SqliteRunStore
 from src.api.schemas import (
     AttackCatalogItem,
     CostEstimateOut,
+    CreateReviewIn,
     DatasetCatalogItem,
     ModelCatalogItem,
     PreflightOut,
+    ResolveReviewIn,
+    ReviewOut,
     RunJobOut,
     RunReportOut,
 )
@@ -117,6 +120,14 @@ async def cancel_run(run_id: str) -> RunJobOut:
     return _job_out(_require_run(run_id))
 
 
+@router.post("/runs/{run_id}/flag-reviews")
+async def auto_flag_reviews(run_id: str, threshold: float = Query(default=30.0)) -> dict[str, Any]:
+    """Auto-create review items for cells exceeding degradation threshold."""
+    _require_run(run_id)
+    created = _store.auto_flag_reviews(run_id, threshold=threshold)
+    return {"run_id": run_id, "created_reviews": created, "count": len(created)}
+
+
 @router.websocket("/runs/{run_id}/events/ws")
 async def run_events(run_id: str, websocket: WebSocket) -> None:
     await websocket.accept()
@@ -137,6 +148,49 @@ async def run_events(run_id: str, websocket: WebSocket) -> None:
     except WebSocketDisconnect:
         return
 
+
+# ---- Review endpoints ----
+
+@router.get("/reviews", response_model=list[ReviewOut])
+async def list_reviews(status: str | None = Query(default=None)) -> list[ReviewOut]:
+    rows = _store.list_reviews(status=status)
+    return [ReviewOut(**row) for row in rows]
+
+
+@router.get("/reviews/{review_id}", response_model=ReviewOut)
+async def get_review(review_id: str) -> ReviewOut:
+    row = _store.get_review(review_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"unknown review {review_id!r}")
+    return ReviewOut(**row)
+
+
+@router.post("/reviews", status_code=201, response_model=ReviewOut)
+async def create_review(body: CreateReviewIn) -> ReviewOut:
+    review_id = _store.create_review(
+        run_id=body.run_id,
+        attack=body.attack,
+        severity=body.severity,
+        degradation=body.degradation,
+        dataset=body.dataset,
+        model=body.model,
+        flagged_by=body.flagged_by,
+        notes=body.notes,
+    )
+    row = _store.get_review(review_id)
+    return ReviewOut(**row)
+
+
+@router.patch("/reviews/{review_id}", response_model=ReviewOut)
+async def resolve_review(review_id: str, body: ResolveReviewIn) -> ReviewOut:
+    success = _store.resolve_review(review_id, body.decision, body.decision_note, body.resolved_by)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"unknown review {review_id!r}")
+    row = _store.get_review(review_id)
+    return ReviewOut(**row)
+
+
+# ---- Helpers ----
 
 def _require_run(run_id: str) -> dict[str, Any]:
     item = _store.get(run_id)

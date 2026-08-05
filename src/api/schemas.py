@@ -139,3 +139,44 @@ class RunJobOut(BaseModel):
     detail: dict[str, Any] = Field(default_factory=dict)
     report: RunReportOut | None = None
     error: str | None = None
+
+
+class ReviewOut(BaseModel):
+    """Review queue item."""
+
+    review_id: str
+    run_id: str
+    attack: str
+    severity: int
+    dataset: str = ""
+    model: str = ""
+    degradation: float = 0.0
+    status: str = "PENDING"
+    decision: str | None = None
+    decision_note: str | None = None
+    flagged_by: str = "system_auto"
+    resolved_by: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class CreateReviewIn(BaseModel):
+    """Manual review creation request."""
+
+    run_id: str
+    attack: str
+    severity: int
+    degradation: float = 0.0
+    dataset: str = ""
+    model: str = ""
+    flagged_by: str = "manual"
+    notes: str = ""
+
+
+class ResolveReviewIn(BaseModel):
+    """Review resolution request."""
+
+    decision: str  # ACCEPT_RISK | REQUEST_RETRAIN
+    decision_note: str
+    resolved_by: str = "reviewer"
+
