@@ -56,6 +56,22 @@ class SqliteRunStore:
                     severity INTEGER NOT NULL, payload_json TEXT NOT NULL,
                     PRIMARY KEY (run_id, sample_id, attack, severity)
                 );
+                CREATE TABLE IF NOT EXISTS reviews (
+                    review_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    attack TEXT NOT NULL,
+                    severity INTEGER NOT NULL,
+                    dataset TEXT NOT NULL DEFAULT '',
+                    model TEXT NOT NULL DEFAULT '',
+                    degradation REAL NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'PENDING',
+                    decision TEXT,
+                    decision_note TEXT,
+                    flagged_by TEXT NOT NULL DEFAULT 'system_auto',
+                    resolved_by TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -197,6 +213,80 @@ class SqliteRunStore:
             "INSERT INTO test_run_events(run_id, state, payload_json, created_at) VALUES (?, ?, ?, ?)",
             (run_id, state, json.dumps(payload), _now()),
         )
+
+    # ---- Review CRUD ----
+
+    def auto_flag_reviews(self, run_id: str, *, threshold: float = 30.0) -> list[str]:
+        """Create review items for cells exceeding the degradation threshold."""
+        item = self.get(run_id)
+        if item is None or item["report"] is None:
+            return []
+        report = item["report"]
+        config = json.loads(
+            self._connection().execute(
+                "SELECT config_json FROM test_runs WHERE run_id=?", (run_id,)
+            ).fetchone()["config_json"]
+        )
+        created_ids: list[str] = []
+        now = _now()
+        with self._lock, self._connection() as connection:
+            for cell in report.get("cells", []):
+                if cell.get("degradation", 0) >= threshold:
+                    review_id = f"REV-{uuid.uuid4().hex[:8]}"
+                    connection.execute(
+                        """INSERT OR IGNORE INTO reviews
+                           (review_id, run_id, attack, severity, dataset, model, degradation, status, flagged_by, created_at, updated_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', 'system_auto', ?, ?)""",
+                        (
+                            review_id, run_id, cell["attack"], cell["severity"],
+                            report.get("dataset", config.get("dataset", "")),
+                            report.get("model", config.get("model", "")),
+                            cell["degradation"], now, now,
+                        ),
+                    )
+                    created_ids.append(review_id)
+        return created_ids
+
+    def create_review(self, run_id: str, attack: str, severity: int, degradation: float,
+                      dataset: str, model: str, flagged_by: str, notes: str = "") -> str:
+        """Manually create a review item."""
+        review_id = f"REV-{uuid.uuid4().hex[:8]}"
+        now = _now()
+        with self._lock, self._connection() as connection:
+            connection.execute(
+                """INSERT INTO reviews
+                   (review_id, run_id, attack, severity, dataset, model, degradation, status, flagged_by, decision_note, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)""",
+                (review_id, run_id, attack, severity, dataset, model, degradation, flagged_by, notes, now, now),
+            )
+        return review_id
+
+    def list_reviews(self, status: str | None = None) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            if status:
+                rows = connection.execute(
+                    "SELECT * FROM reviews WHERE status=? ORDER BY created_at DESC", (status,)
+                ).fetchall()
+            else:
+                rows = connection.execute("SELECT * FROM reviews ORDER BY created_at DESC").fetchall()
+        return [dict(row) for row in rows]
+
+    def get_review(self, review_id: str) -> dict[str, Any] | None:
+        with self._connection() as connection:
+            row = connection.execute("SELECT * FROM reviews WHERE review_id=?", (review_id,)).fetchone()
+        return dict(row) if row else None
+
+    def resolve_review(self, review_id: str, decision: str, decision_note: str, resolved_by: str) -> bool:
+        with self._lock, self._connection() as connection:
+            row = connection.execute("SELECT status FROM reviews WHERE review_id=?", (review_id,)).fetchone()
+            if row is None:
+                return False
+            connection.execute(
+                """UPDATE reviews SET status='RESOLVED', decision=?, decision_note=?, resolved_by=?, updated_at=?
+                   WHERE review_id=?""",
+                (decision, decision_note, resolved_by, _now(), review_id),
+            )
+        return True
 
 
 class LocalRunWorker:
