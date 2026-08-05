@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from src.adapters import load_adapters
@@ -55,6 +56,7 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api/v1")
+app.mount("/data", StaticFiles(directory="data"), name="data")
 
 
 @app.middleware("http")
