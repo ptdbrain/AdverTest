@@ -25,8 +25,13 @@ from src.anonymization import (
     inspect_anonymized_dataset,
 )
 from src.attacks import load_attacks
+from src.attacks.recipes import AttackRecipe, RandomNRequest
 from src.config import get_settings
-from src.datasets import load_datasets
+from src.datasets import get_dataset, load_datasets
+from src.datasets.contracts import DatasetVersion, SplitManifest
+from src.datasets.splits import SplitBuilder, SplitPolicy
+from src.datasets.versioning import DatasetIngestor, IngestConfig
+from src.evaluation.model_comparison import ComparisonInput, checkpoint_gate, compare_models
 from src.evaluation.report import RunReport
 from src.pipeline import RunConfig, TestRunner
 from src.pipeline.benchmark import (
@@ -41,7 +46,14 @@ from src.pipeline.generator import (
     RecipeGenerationConfig,
     inspect_generated_dataset,
 )
-from src.training import PatchTrainer, PatchTrainingConfig
+from src.services.person_d import PersonDServices
+from src.training import (
+    PatchTrainer,
+    PatchTrainingConfig,
+    TrainingDatasetBuilder,
+    TrainingDatasetConfig,
+    TrainingRunConfig,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -62,7 +74,25 @@ def main(argv: list[str] | None = None) -> int:
         "train-patch": _train_patch,
         "inspect-attack-dataset": _inspect_attack_dataset,
     }
-    return handlers[args.command](args)
+    handlers.update(
+        {
+            "dataset-ingest": _dataset_ingest,
+            "dataset-split": _dataset_split,
+            "dataset-validate": _dataset_validate,
+            "recipe-validate": _recipe_validate,
+            "recipe-sample": _recipe_sample,
+            "build-training-dataset": _build_training_dataset,
+            "benchmark-run": _benchmark_attack_datasets,
+            "compare-models": _compare_models,
+            "training-estimate": _training_estimate,
+            "training-run": _training_run,
+        }
+    )
+    try:
+        return handlers[args.command](args)
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        print(json.dumps({"valid": False, "error": f"{type(exc).__name__}: {exc}"}, indent=2))
+        return 2
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -133,6 +163,20 @@ def _build_parser() -> argparse.ArgumentParser:
         help="verify a generated dataset descriptor, manifest, and hashes",
     )
     inspect_dataset.add_argument("--path", required=True, help="generation root")
+    for name in (
+        "dataset-ingest",
+        "dataset-split",
+        "dataset-validate",
+        "recipe-validate",
+        "recipe-sample",
+        "build-training-dataset",
+        "benchmark-run",
+        "compare-models",
+        "training-estimate",
+        "training-run",
+    ):
+        command = subparsers.add_parser(name, help=f"Person D {name} JSON service")
+        command.add_argument("--config", required=True, help="JSON config file")
     return parser
 
 
@@ -239,6 +283,88 @@ def _inspect_attack_dataset(args: argparse.Namespace) -> int:
     result = inspect_generated_dataset(args.path)
     print(json.dumps(result, indent=2))
     return 0 if result["valid"] else 1
+
+
+def _dataset_ingest(args: argparse.Namespace) -> int:
+    payload = _read_json(args.config)
+    source_payload = payload["source"]
+    source = get_dataset(source_payload["name"], **source_payload.get("params", {}))
+    version = DatasetIngestor(payload["output_dir"]).ingest(
+        source, IngestConfig.model_validate(payload["ingest"])
+    )
+    print(version.model_dump_json(indent=2))
+    return 0
+
+
+def _dataset_split(args: argparse.Namespace) -> int:
+    payload = _read_json(args.config)
+    manifest = SplitBuilder().build(
+        DatasetVersion.model_validate(payload["dataset_version"]),
+        SplitPolicy.model_validate(payload["policy"]),
+    )
+    print(manifest.model_dump_json(indent=2))
+    return 0
+
+
+def _dataset_validate(args: argparse.Namespace) -> int:
+    payload = _read_json(args.config)
+    result = SplitBuilder().validate(
+        DatasetVersion.model_validate(payload["dataset_version"]),
+        SplitManifest.model_validate(payload["split_manifest"]),
+    )
+    print(result.model_dump_json(indent=2))
+    return 0 if result.valid else 1
+
+
+def _recipe_validate(args: argparse.Namespace) -> int:
+    payload = _read_json(args.config)
+    result = PersonDServices.default().recipes.validate(
+        AttackRecipe.model_validate(payload["recipe"]), **payload.get("context", {})
+    )
+    print(result.model_dump_json(indent=2))
+    return 0 if result.valid else 1
+
+
+def _recipe_sample(args: argparse.Namespace) -> int:
+    request = RandomNRequest.model_validate(_read_json(args.config))
+    recipes = PersonDServices.default().recipes.sample(request)
+    print(json.dumps({"recipes": [item.model_dump(mode="json") for item in recipes]}, indent=2))
+    return 0
+
+
+def _build_training_dataset(args: argparse.Namespace) -> int:
+    config = TrainingDatasetConfig.model_validate(_read_json(args.config))
+    manifest = TrainingDatasetBuilder().build(config)
+    print(manifest.model_dump_json(indent=2))
+    return 0
+
+
+def _compare_models(args: argparse.Namespace) -> int:
+    payload = _read_json(args.config)
+    comparison = compare_models(
+        ComparisonInput.model_validate(payload["baseline"]),
+        ComparisonInput.model_validate(payload["candidate"]),
+    )
+    result = {
+        "comparison": comparison.model_dump(mode="json"),
+        "gate": checkpoint_gate(comparison).model_dump(mode="json"),
+    }
+    print(json.dumps(result, indent=2))
+    return 0 if comparison.paired else 1
+
+
+def _training_estimate(args: argparse.Namespace) -> int:
+    config = TrainingRunConfig.model_validate(_read_json(args.config))
+    trainer = PersonDServices.default().training.registry.get(config.trainer_name)
+    print(trainer.estimate(config).model_dump_json(indent=2))
+    return 0
+
+
+def _training_run(args: argparse.Namespace) -> int:
+    config = TrainingRunConfig.model_validate(_read_json(args.config))
+    report = PersonDServices.default().training.worker().run(config)
+    print(report.model_dump_json(indent=2))
+    return 0 if report.state == "COMPLETED" else 1
 
 
 def _read_json(path: str) -> dict[str, Any]:
