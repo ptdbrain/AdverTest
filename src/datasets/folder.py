@@ -9,6 +9,7 @@ from typing import ClassVar, Literal
 import numpy as np
 from pydantic import Field
 
+from src.core.hashing import file_digest
 from src.core.types import Box, Sample
 from src.datasets import DATASETS
 from src.datasets.base import (
@@ -44,6 +45,7 @@ class FolderDataset(DatasetSource):
 
     name: ClassVar[str] = "folder_dataset"
     owner: ClassVar[str] = "core"
+    loader_version: ClassVar[str] = "folder-v1"
     params_model: ClassVar[type[DatasetParams]] = FolderDatasetParams
 
     def __init__(self, **params: object) -> None:
@@ -98,18 +100,29 @@ class FolderDataset(DatasetSource):
         samples: list[Sample] = []
         for path in paths:
             image = load_image(path)
+            boxes = load_boxes(self.root / "labels" / f"{path.stem}.json")
             samples.append(
                 Sample(
                     sample_id=path.stem,
                     image=image,
-                    boxes=load_boxes(self.root / "labels" / f"{path.stem}.json"),
+                    boxes=boxes,
                     mask=load_mask(find_mask(self.root / "masks", path.stem)),
                     depth=_load_depth(
                         self.root / "depths" / f"{path.stem}.npy",
                         image.shape[:2],
                     ),
                     anonymized=self._anonymized,
-                    meta={"source_path": str(path), "source_format": "advertest"},
+                    meta={
+                        "source_path": str(path),
+                        "source_uri": (
+                            f"folder://advertest/{path.relative_to(images_root).as_posix()}"
+                        ),
+                        "source_format": "advertest",
+                        "native_labels": tuple(box.label for box in boxes),
+                        "loader_version": self.loader_version,
+                        "split": self._dataset_split(),
+                        "anonymization_manifest_hash": self._anonymization_manifest_hash(),
+                    },
                 )
             )
         return samples
@@ -126,16 +139,41 @@ class FolderDataset(DatasetSource):
         samples: list[Sample] = []
         for path in paths:
             label_path = self.root / "label_2" / f"{path.stem}.txt"
+            boxes = _load_kitti_boxes(label_path)
             samples.append(
                 Sample(
                     sample_id=path.stem,
                     image=load_image(path),
-                    boxes=_load_kitti_boxes(label_path),
+                    boxes=boxes,
                     anonymized=self._anonymized,
-                    meta={"source_path": str(path), "source_format": "kitti"},
+                    meta={
+                        "source_path": str(path),
+                        "source_uri": f"folder://kitti/{path.name}",
+                        "source_format": "kitti",
+                        "native_labels": _native_kitti_labels(label_path),
+                        "loader_version": self.loader_version,
+                        "split": self._dataset_split(),
+                        "anonymization_manifest_hash": self._anonymization_manifest_hash(),
+                    },
                 )
             )
         return samples
+
+    def _dataset_split(self) -> str:
+        descriptor = self.root / "dataset.json"
+        if not descriptor.is_file():
+            return "unspecified"
+        payload = json.loads(descriptor.read_text(encoding="utf-8"))
+        return str(payload.get("split", "unspecified"))
+
+    def _anonymization_manifest_hash(self) -> str | None:
+        typed: FolderDatasetParams = self.params  # type: ignore[assignment]
+        manifest = (
+            self.root / typed.anonymization_manifest
+            if typed.anonymization_manifest
+            else self.root / "dataset.json"
+        )
+        return file_digest(manifest, length=64) if manifest.is_file() else None
 
 
 def _load_depth(path: Path, image_shape: tuple[int, int]) -> np.ndarray | None:
@@ -171,3 +209,13 @@ def _load_kitti_boxes(path: Path) -> tuple[Box, ...]:
             )
         )
     return tuple(boxes)
+
+
+def _native_kitti_labels(path: Path) -> tuple[str, ...]:
+    if not path.is_file():
+        return ()
+    return tuple(
+        fields[0]
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if (fields := line.split())
+    )

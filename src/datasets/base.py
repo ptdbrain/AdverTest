@@ -45,6 +45,7 @@ class DatasetSource(ABC):
     anonymized: ClassVar[bool] = False
     modality: ClassVar[Modality] = "image"
     owner: ClassVar[str] = "unassigned"
+    loader_version: ClassVar[str] = "1.0.0"
     params_model: ClassVar[type[DatasetParams]] = DatasetParams
 
     def __init__(self, **params: Any) -> None:
