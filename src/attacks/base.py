@@ -19,7 +19,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict
@@ -43,6 +43,9 @@ from src.core.types import (
     Task,
     validate_image,
 )
+
+if TYPE_CHECKING:
+    from src.pipeline.annotations import SpatialTransform
 
 
 class AttackParams(BaseModel):
@@ -180,6 +183,38 @@ class BaseAttack(ABC):
     def param_dict(self) -> dict[str, Any]:
         """Configured parameters, used in the cache key."""
         return self.params.model_dump(mode="json")
+
+    def resolve_parameters(self, severity: int) -> dict[str, Any]:
+        """Return the exact configured and per-severity values used by a step."""
+        if not 0 <= severity <= self.severity_levels:
+            raise ValueError(
+                f"severity for {self.name!r} must be 0..{self.severity_levels}, "
+                f"got {severity}"
+            )
+        configured = self.param_dict()
+        resolved = dict(configured)
+        for name, value in configured.items():
+            if (
+                severity > 0
+                and name.endswith("_per_severity")
+                and isinstance(value, (list, tuple))
+                and value
+            ):
+                resolved[name.removesuffix("_per_severity")] = self.level(
+                    severity,
+                    value,
+                )
+        resolved["severity"] = severity
+        return resolved
+
+    def spatial_transform(
+        self,
+        sample: Sample,
+        severity: int,
+        ctx: AttackContext,
+    ) -> SpatialTransform | None:
+        """Optional geometry emitted by attacks that move image coordinates."""
+        return None
 
     def model_queries_for_severity(self, severity: int) -> int:
         """Worst-case inference queries for one sample at ``severity``.
