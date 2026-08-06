@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -34,8 +35,16 @@ class DefenseProfile(_FrozenContract):
 
     @model_validator(mode="after")
     def validate_ratios(self) -> Self:
-        if self.clean_replay_ratio + self.generated_ratio <= 0.0:
-            raise ValueError("defense profile requires clean or generated samples")
+        if not math.isclose(
+            self.clean_replay_ratio + self.generated_ratio,
+            1.0,
+            abs_tol=1e-9,
+        ):
+            raise ValueError("clean_replay_ratio and generated_ratio must sum to 1")
+        if self.hard_example_ratio > self.generated_ratio:
+            raise ValueError("hard_example_ratio cannot exceed generated_ratio")
+        if len(set(self.recipe_ids)) != len(self.recipe_ids):
+            raise ValueError("recipe_ids must be unique")
         return self
 
 
