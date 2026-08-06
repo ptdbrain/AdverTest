@@ -52,3 +52,72 @@ class SplitValidationReport(_FrozenContract):
     errors: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
     report_hash: str
+
+
+class GeneratedStepRecord(_FrozenContract):
+    position: int = Field(ge=0)
+    attack_name: str
+    implementation_version: str
+    severity: int = Field(ge=0, le=5)
+    requested_seed: int = Field(ge=0)
+    derived_seed: int = Field(ge=0)
+    resolved_parameters: dict[str, Any] = Field(default_factory=dict)
+    input_hash: str
+    output_hash: str
+    intermediate_path: str
+    cost: float = Field(ge=0.0)
+    transform_log: dict[str, Any] | None = None
+    status: Literal["completed", "not_selected_by_probability"]
+
+
+class GeneratedVariantRecord(_FrozenContract):
+    schema_version: Literal["3.0.0"] = "3.0.0"
+    variant_id: str
+    source_sample_id: str
+    source_dataset_version_id: str
+    source_hash: str
+    source_sample_hash: str
+    ground_truth_hash: str
+    recipe_hash: str
+    catalog_version: str
+    ordered_steps: tuple[GeneratedStepRecord, ...]
+    intermediate_paths: tuple[str, ...]
+    intermediate_hashes: tuple[str, ...]
+    output_hash: str
+    image_path: str
+    label_path: str
+    label_hash: str
+    annotation_format: str = "advertest-annotations-v2"
+    mask_path: str | None = None
+    mask_hash: str | None = None
+    intended_use: Literal["training", "benchmark", "review"]
+    validation_status: Literal["passed", "failed"]
+    status: Literal["incomplete", "failed", "complete"]
+    anonymized: bool
+    transform_logs: tuple[dict[str, Any], ...] = ()
+    camera_paths: dict[str, str] = Field(default_factory=dict)
+    camera_payloads: tuple[dict[str, Any], ...] = ()
+    lidar_path: str | None = None
+    lidar_hash: str | None = None
+    lidar_fields: tuple[str, ...] | None = None
+    lidar_sensor_model: str | None = None
+    preview_path: str | None = None
+
+
+class GeneratedDatasetVersion(_FrozenContract):
+    format: Literal["advertest-generated-v3"] = "advertest-generated-v3"
+    schema_version: Literal["3.0.0"] = "3.0.0"
+    generation_id: str
+    version_id: str
+    source_dataset_version_id: str
+    source_manifest_hash: str
+    recipe_hash: str
+    catalog_version: str
+    intended_use: Literal["training", "benchmark", "review"]
+    status: Literal["in_progress", "incomplete", "failed", "complete"]
+    anonymized: bool
+    n_source_samples: int = Field(ge=0)
+    n_variants: int = Field(ge=0)
+    manifest_hash: str | None = None
+    validation_status: Literal["pending", "passed", "failed"] = "pending"
+    lineage_report_hash: str | None = None

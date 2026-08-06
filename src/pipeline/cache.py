@@ -14,9 +14,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from src.core.contracts import MaskWireV1
+from src.core.hashing import stable_digest
 from src.core.types import (
     Box,
     Box3D,
@@ -183,3 +184,85 @@ class SqliteCache:
             (key, json.dumps(payload)),
         )
         self._connection.commit()
+
+
+class GenerationCache:
+    """Separate generation-resume cache keyed only by generation provenance."""
+
+    def __init__(self, path: str | Path) -> None:
+        database = Path(path).expanduser().resolve()
+        database.parent.mkdir(parents=True, exist_ok=True)
+        self._connection = sqlite3.connect(
+            database,
+            timeout=30,
+            check_same_thread=False,
+        )
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS generation_cache "
+            "(cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL)"
+        )
+        self.hits = 0
+        self.misses = 0
+
+    @staticmethod
+    def key(
+        *,
+        dataset_version_id: str,
+        source_hash: str,
+        recipe_hash: str,
+        implementation_versions: tuple[str, ...],
+        seed: int,
+        surrogate_version: str | None,
+    ) -> str:
+        return stable_digest(
+            {
+                "cache_type": "generation",
+                "dataset_version_id": dataset_version_id,
+                "source_hash": source_hash,
+                "recipe_hash": recipe_hash,
+                "implementation_versions": implementation_versions,
+                "seed": seed,
+                "surrogate_version": surrogate_version,
+            },
+            length=64,
+        )
+
+    def get(self, key: str) -> dict[str, Any] | None:
+        row = self._connection.execute(
+            "SELECT payload FROM generation_cache WHERE cache_key=?",
+            (key,),
+        ).fetchone()
+        if row is None:
+            self.misses += 1
+            return None
+        self.hits += 1
+        return json.loads(row[0])
+
+    def put(self, key: str, payload: dict[str, Any]) -> None:
+        self._connection.execute(
+            "INSERT OR REPLACE INTO generation_cache(cache_key, payload) VALUES (?, ?)",
+            (key, json.dumps(payload, sort_keys=True)),
+        )
+        self._connection.commit()
+
+
+def prediction_cache_key(
+    *,
+    generated_output_hash: str,
+    model_version: str,
+    checkpoint_hash: str | None,
+    preprocessing_version: str,
+    thresholds: dict[str, float],
+) -> str:
+    """Prediction-cache identity cannot collide with generation-resume keys."""
+    return stable_digest(
+        {
+            "cache_type": "prediction",
+            "generated_output_hash": generated_output_hash,
+            "model_version": model_version,
+            "checkpoint_hash": checkpoint_hash,
+            "preprocessing_version": preprocessing_version,
+            "thresholds": thresholds,
+        },
+        length=64,
+    )

@@ -38,6 +38,7 @@ from src.pipeline.benchmark import (
 from src.pipeline.generator import (
     AttackDatasetGenerator,
     AttackGenerationConfig,
+    RecipeGenerationConfig,
     inspect_generated_dataset,
 )
 from src.training import PatchTrainer, PatchTrainingConfig
@@ -55,6 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         "anonymize-dataset": _anonymize_dataset,
         "inspect-anonymized-dataset": _inspect_anonymized_dataset,
         "generate-attack": _generate_attack,
+        "generate-recipe": _generate_recipe,
         "benchmark-attack-datasets": _benchmark_attack_datasets,
         "benchmark-transfer-matrix": _benchmark_transfer_matrix,
         "train-patch": _train_patch,
@@ -88,6 +90,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="create a reloadable attacked dataset from a JSON config",
     )
     generate.add_argument("--config", required=True, help="AttackGenerationConfig JSON file")
+    generate_recipe = subparsers.add_parser(
+        "generate-recipe",
+        help="create a versioned dataset from an ordered attack recipe",
+    )
+    generate_recipe.add_argument(
+        "--config",
+        required=True,
+        help="RecipeGenerationConfig JSON file",
+    )
     benchmark = subparsers.add_parser(
         "benchmark-attack-datasets",
         help="benchmark completed attack datasets with one model",
@@ -176,6 +187,13 @@ def _show_run(args: argparse.Namespace) -> int:
 
 def _generate_attack(args: argparse.Namespace) -> int:
     config = AttackGenerationConfig.model_validate(_read_json(args.config))
+    report = AttackDatasetGenerator().generate(config)
+    print(json.dumps(report.as_dict(), indent=2))
+    return 0
+
+
+def _generate_recipe(args: argparse.Namespace) -> int:
+    config = RecipeGenerationConfig.model_validate(_read_json(args.config))
     report = AttackDatasetGenerator().generate(config)
     print(json.dumps(report.as_dict(), indent=2))
     return 0
