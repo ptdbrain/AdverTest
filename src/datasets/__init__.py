@@ -15,6 +15,7 @@ from src.datasets.base import (
     DatasetParams,
     DatasetSource,
 )
+from src.datasets.leakage import LeakageReport, LeakageValidator
 
 DATASETS: Registry[DatasetSource] = Registry("dataset")
 
@@ -41,6 +42,8 @@ __all__ = [
     "DatasetInfo",
     "DatasetParams",
     "DatasetSource",
+    "LeakageReport",
+    "LeakageValidator",
     "get_dataset",
     "load_datasets",
 ]
