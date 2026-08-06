@@ -9,17 +9,51 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageDraw
 
-from src.core.types import Prediction, Sample
+from src.core.hashing import array_digest
+from src.core.types import (
+    DetectionPrediction,
+    ModelPrediction,
+    Sample,
+    SegmentationPrediction,
+)
 
 
-def prediction_payload(prediction: Prediction) -> dict[str, Any]:
-    return {
+def prediction_payload(prediction: ModelPrediction) -> dict[str, Any]:
+    common = {
         "sample_id": prediction.sample_id,
         "latency_ms": round(prediction.latency_ms, 4),
-        "boxes": [
-            {"xyxy": list(box.as_tuple()), "label": box.label, "score": round(box.score, 6)} for box in prediction.boxes
-        ],
+        "metadata": prediction.metadata,
     }
+    if isinstance(prediction, DetectionPrediction):
+        return {
+            "prediction_type": "detection",
+            **common,
+            "boxes": [
+                {
+                    "xyxy": list(box.as_tuple()),
+                    "label": box.label,
+                    "score": round(box.score, 6),
+                }
+                for box in prediction.boxes
+            ],
+        }
+    if isinstance(prediction, SegmentationPrediction):
+        return {
+            "prediction_type": "segmentation",
+            **common,
+            "prompt_id": prediction.prompt_id,
+            "instances": [
+                {
+                    "instance_id": instance.instance_id,
+                    "label": instance.label,
+                    "score": round(instance.score, 6),
+                    "mask_shape": list(instance.mask.shape),
+                    "mask_digest": array_digest(instance.mask),
+                }
+                for instance in prediction.instances
+            ],
+        }
+    raise TypeError(f"unsupported prediction type: {type(prediction).__name__}")
 
 
 class EvidenceWriter:
@@ -35,8 +69,8 @@ class EvidenceWriter:
         severity: int,
         clean: Sample,
         attacked: Sample,
-        clean_prediction: Prediction,
-        attacked_prediction: Prediction,
+        clean_prediction: DetectionPrediction,
+        attacked_prediction: DetectionPrediction,
     ) -> dict[str, str]:
         safe_id = clean.sample_id.replace("/", "_").replace("\\", "_")
         root = self.root / attack / f"severity-{severity}" / safe_id
@@ -68,8 +102,8 @@ def _save_comparison(
     path: Path,
     clean: np.ndarray,
     attacked: np.ndarray,
-    clean_prediction: Prediction,
-    attacked_prediction: Prediction,
+    clean_prediction: DetectionPrediction,
+    attacked_prediction: DetectionPrediction,
 ) -> None:
     left = Image.fromarray(np.rint(np.clip(clean, 0.0, 1.0) * 255).astype(np.uint8)).convert("RGB")
     right = Image.fromarray(np.rint(np.clip(attacked, 0.0, 1.0) * 255).astype(np.uint8)).convert("RGB")
@@ -81,7 +115,7 @@ def _save_comparison(
     canvas.save(path)
 
 
-def _draw_boxes(image: Image.Image, prediction: Prediction, color: str) -> None:
+def _draw_boxes(image: Image.Image, prediction: DetectionPrediction, color: str) -> None:
     draw = ImageDraw.Draw(image)
     for box in prediction.boxes:
         draw.rectangle(box.as_tuple(), outline=color, width=2)

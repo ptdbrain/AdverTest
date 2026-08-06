@@ -190,14 +190,54 @@ class Sample:
         return replace(self, lidar_frame=frame)
 
 
-@dataclass(frozen=True, slots=True)
-class Prediction:
-    """Model output for a single sample, already post-processed."""
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DetectionPrediction:
+    """Post-processed 2D/3D detection output for one sample."""
 
     sample_id: str
     boxes: tuple[Box, ...] = ()
     boxes3d: tuple[Box3D, ...] = ()
     latency_ms: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True, eq=False)
+class MaskPrediction:
+    """One instance mask with an optional normalized semantic label."""
+
+    instance_id: str
+    mask: np.ndarray
+    label: str | None = None
+    score: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.mask, np.ndarray):
+            raise TypeError(f"mask must be np.ndarray, got {type(self.mask).__name__}")
+        if self.mask.ndim != 2:
+            raise ValueError(f"mask must be 2D, got shape {self.mask.shape}")
+        if self.mask.dtype != np.bool_:
+            raise ValueError(f"mask must have bool dtype, got {self.mask.dtype}")
+        if not np.isfinite(self.score) or not 0.0 <= self.score <= 1.0:
+            raise ValueError(f"mask score must be finite and in [0, 1], got {self.score!r}")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SegmentationPrediction:
+    """Post-processed instance-segmentation output for one sample."""
+
+    sample_id: str
+    instances: tuple[MaskPrediction, ...] = ()
+    prompt_id: str | None = None
+    latency_ms: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+ModelPrediction = DetectionPrediction | SegmentationPrediction
+
+# Backward-compatible name for existing detection-only consumers. Constructors
+# are intentionally keyword-only so extending the schema cannot silently bind a
+# positional argument to the wrong field.
+Prediction = DetectionPrediction
 
 
 @dataclass(frozen=True, slots=True)
