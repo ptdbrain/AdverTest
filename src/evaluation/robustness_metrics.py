@@ -32,6 +32,7 @@ from collections.abc import Sequence
 import numpy as np
 
 from src.core.types import GROUP_CATEGORY
+from src.evaluation.contracts import MetricEnvelope
 from src.evaluation.report import RunReport
 
 #: Plan §3 metric 13: equal weight per category unless the caller says otherwise.
@@ -41,6 +42,55 @@ DEFAULT_CATEGORY_WEIGHTS: dict[str, float] = {
     "occlusion": 0.25,
     "adversarial": 0.25,
 }
+
+
+def degradation_metrics(
+    clean: float,
+    attacked: float,
+    *,
+    higher_is_better: bool = True,
+    version: str = "1.0.0",
+) -> dict[str, MetricEnvelope]:
+    """Return unit-explicit absolute, relative, and degradation headlines."""
+    absolute_delta = attacked - clean
+    worsening = clean - attacked if higher_is_better else attacked - clean
+    degradation = worsening / abs(clean) if clean else 0.0
+    relative_change = absolute_delta / abs(clean) if clean else 0.0
+    common = {"version": version, "higher_is_better": higher_is_better}
+    return {
+        "degradation_ratio": MetricEnvelope(
+            name="degradation_ratio",
+            value=degradation,
+            unit="ratio",
+            percent_value=degradation * 100.0,
+            metadata={"direction": "worse_is_positive"},
+            **common,
+        ),
+        "degradation_pct": MetricEnvelope(
+            name="degradation_pct",
+            value=degradation * 100.0,
+            unit="percent",
+            percent_value=degradation * 100.0,
+            metadata={"direction": "worse_is_positive"},
+            **common,
+        ),
+        "absolute_point_delta": MetricEnvelope(
+            name="absolute_point_delta",
+            value=absolute_delta,
+            unit="points",
+            percent_value=None,
+            metadata={"direction": "candidate_minus_clean"},
+            **common,
+        ),
+        "relative_change": MetricEnvelope(
+            name="relative_change",
+            value=relative_change,
+            unit="ratio",
+            percent_value=relative_change * 100.0,
+            metadata={"direction": "candidate_minus_clean"},
+            **common,
+        ),
+    }
 
 
 def ap_grid(report: RunReport) -> dict[str, dict[int, float]]:
@@ -156,6 +206,17 @@ def bootstrap_ci(
 
 def summary(report: RunReport, *, normalize_score: bool = True) -> dict[str, object]:
     """Everything above in one dict, ready to serialise next to the raw report."""
+    headline_metrics = {
+        "clean": _envelope("clean", report.ap_clean, "score"),
+        "mpc": _envelope("mpc", mpc(report), "score"),
+        "rpc": _envelope("rpc", rpc(report), "ratio"),
+        "robust_score_plan": _envelope(
+            "robust_score_plan", robust_score(report), "points"
+        ),
+        "robust_score_normalized": _envelope(
+            "robust_score_normalized", robust_score(report, normalize=True), "points"
+        ),
+    }
     return {
         "ap_clean": round(report.ap_clean, 4),
         "mpc": round(mpc(report), 4),
@@ -168,8 +229,24 @@ def summary(report: RunReport, *, normalize_score: bool = True) -> dict[str, obj
         "covered_categories": covered_categories(report),
         "severity_monotonicity": severity_monotonicity(report),
         "normalize_score": normalize_score,
+        "headline_metrics": {
+            name: metric.model_dump(mode="json")
+            for name, metric in headline_metrics.items()
+        },
     }
 
 
 def _ratio(numerator: float, denominator: float) -> float:
     return float(numerator / denominator) if denominator > 0.0 else 0.0
+
+
+def _envelope(name: str, value: float, unit: str) -> MetricEnvelope:
+    percent_value = value * 100.0 if unit == "ratio" else None
+    return MetricEnvelope(
+        name=name,
+        value=value,
+        unit=unit,  # type: ignore[arg-type]
+        percent_value=percent_value,
+        version="1.0.0",
+        higher_is_better=True,
+    )

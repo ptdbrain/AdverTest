@@ -10,6 +10,7 @@ from src.evaluation.robustness_metrics import (
     bootstrap_ci,
     category_scores,
     covered_categories,
+    degradation_metrics,
     mpc,
     resilience_rate,
     robust_score,
@@ -122,3 +123,11 @@ def test_summary_carries_every_headline_number() -> None:
     for key in ("ap_clean", "mpc", "rpc", "robust_score_plan", "robust_score_normalized"):
         assert key in payload
     assert payload["covered_categories"] == ["occlusion"]
+
+
+def test_degradation_metrics_have_explicit_units_and_direction() -> None:
+    metrics = degradation_metrics(0.8, 0.6, higher_is_better=True)
+    assert metrics["degradation_ratio"].unit == "ratio"
+    assert metrics["degradation_ratio"].percent_value == pytest.approx(25.0)
+    assert metrics["absolute_point_delta"].value == pytest.approx(-0.2)
+    assert metrics["relative_change"].higher_is_better is True
