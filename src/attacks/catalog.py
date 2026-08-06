@@ -243,6 +243,13 @@ class AttackCatalog:
             attack_cls.name: attack_cls for attack_cls in attack_classes
         }
 
+    def get(self, name: str) -> AttackMetadata:
+        try:
+            attack_cls = self._attack_classes[name]
+        except KeyError:
+            raise AttackCatalogError(f"unknown catalog attack: {name!r}") from None
+        return metadata_for_attack(attack_cls)
+
     def list(
         self,
         *,
