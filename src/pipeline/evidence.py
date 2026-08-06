@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -16,6 +16,49 @@ from src.core.types import (
     Sample,
     SegmentationPrediction,
 )
+
+
+class TaskEvidenceSerializer(Protocol):
+    """Rendering boundary implemented by the task/model owning team."""
+
+    task: str
+
+    def write(
+        self,
+        *,
+        root: Path,
+        clean: Sample,
+        attacked: Sample,
+        clean_prediction: ModelPrediction,
+        attacked_prediction: ModelPrediction,
+    ) -> dict[str, str]: ...
+
+
+def write_task_evidence(
+    serializer: TaskEvidenceSerializer,
+    *,
+    root: str | Path,
+    clean: Sample,
+    attacked: Sample,
+    clean_prediction: ModelPrediction,
+    attacked_prediction: ModelPrediction,
+) -> dict[str, str]:
+    """Delegate boxes/masks/boundaries to the registered task serializer."""
+    if clean.sample_id != attacked.sample_id:
+        raise ValueError("clean and attacked evidence must refer to the same sample")
+    if clean_prediction.sample_id != clean.sample_id:
+        raise ValueError("clean prediction sample_id does not match evidence sample")
+    if attacked_prediction.sample_id != attacked.sample_id:
+        raise ValueError("attacked prediction sample_id does not match evidence sample")
+    evidence_root = Path(root).expanduser().resolve()
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    return serializer.write(
+        root=evidence_root,
+        clean=clean,
+        attacked=attacked,
+        clean_prediction=clean_prediction,
+        attacked_prediction=attacked_prediction,
+    )
 
 
 def prediction_payload(prediction: ModelPrediction) -> dict[str, Any]:
