@@ -16,8 +16,7 @@ import sqlite3
 from pathlib import Path
 from typing import Protocol
 
-import numpy as np
-
+from src.core.contracts import MaskWireV1
 from src.core.types import (
     Box,
     Box3D,
@@ -122,7 +121,7 @@ class SqliteCache:
                 instances=tuple(
                     MaskPrediction(
                         instance_id=instance["instance_id"],
-                        mask=_decode_mask(instance["mask"]),
+                        mask=MaskWireV1.model_validate(instance["mask"]).to_array(),
                         label=instance.get("label"),
                         score=instance.get("score", 1.0),
                     )
@@ -167,7 +166,7 @@ class SqliteCache:
                 "instances": [
                     {
                         "instance_id": instance.instance_id,
-                        "mask": _encode_mask(instance.mask),
+                        "mask": MaskWireV1.from_array(instance.mask).model_dump(mode="json"),
                         "label": instance.label,
                         "score": instance.score,
                     }
@@ -184,46 +183,3 @@ class SqliteCache:
             (key, json.dumps(payload)),
         )
         self._connection.commit()
-
-
-def _encode_mask(mask: np.ndarray) -> dict[str, object]:
-    """Encode a boolean mask as deterministic row-major zero-first RLE."""
-    flat = mask.reshape(-1)
-    runs: list[int] = []
-    expected = False
-    count = 0
-    for value in flat:
-        current = bool(value)
-        if current == expected:
-            count += 1
-        else:
-            runs.append(count)
-            expected = current
-            count = 1
-    runs.append(count)
-    return {"version": "1.0.0", "shape": list(mask.shape), "runs": runs}
-
-
-def _decode_mask(payload: dict[str, object]) -> np.ndarray:
-    if payload.get("version") != "1.0.0":
-        raise ValueError(f"unsupported mask encoding version: {payload.get('version')!r}")
-    raw_shape = payload.get("shape")
-    raw_runs = payload.get("runs")
-    if (
-        not isinstance(raw_shape, list)
-        or len(raw_shape) != 2
-        or not all(isinstance(value, int) and value >= 0 for value in raw_shape)
-        or not isinstance(raw_runs, list)
-        or not all(isinstance(value, int) and value >= 0 for value in raw_runs)
-    ):
-        raise ValueError("invalid mask RLE payload")
-    shape = (raw_shape[0], raw_shape[1])
-    values = np.concatenate(
-        [
-            np.full(run, index % 2 == 1, dtype=np.bool_)
-            for index, run in enumerate(raw_runs)
-        ]
-    )
-    if values.size != shape[0] * shape[1]:
-        raise ValueError("mask RLE length does not match shape")
-    return values.reshape(shape)
