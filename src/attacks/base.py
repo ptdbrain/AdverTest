@@ -207,11 +207,15 @@ class BaseAttack(ABC):
     @classmethod
     def describe(cls) -> dict[str, Any]:
         """Catalog entry for the API / CLI (plan §2 plugin declaration)."""
+        from src.attacks.catalog import metadata_for_attack
+
+        metadata = metadata_for_attack(cls).model_dump(mode="json")
         return {
+            **metadata,
             "name": cls.name,
             "version": cls.version,
             "group": cls.group,
-            "title": (cls.__doc__ or "").strip().splitlines()[0] if cls.__doc__ else "",
+            "title": metadata["display_name"],
             "modality": cls.modality,
             "required_sensors": sorted(cls.required_sensors),
             "affected_sensors": sorted(cls.affected_sensors),
@@ -225,7 +229,6 @@ class BaseAttack(ABC):
             "generation_mode": cls.generation_mode,
             "category": cls.reporting_category(),
             "owner": cls.owner,
-            "reference": cls.reference,
             "params_schema": cls.params_model.model_json_schema(),
         }
 

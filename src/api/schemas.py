@@ -33,6 +33,22 @@ class AttackCatalogItem(BaseModel):
     owner: str
     reference: str = ""
     params_schema: dict[str, Any] = Field(default_factory=dict)
+    catalog_version: str = "1.0.0"
+    implementation_version: str = "1.0.0"
+    display_name: str = ""
+    plain_summary: str = ""
+    technical_summary: str = ""
+    scenario: str = ""
+    rationale: str = ""
+    failure_symptoms: list[str] = Field(default_factory=list)
+    severity_map: dict[int, str] = Field(default_factory=dict)
+    compatibility: dict[str, Any] = Field(default_factory=dict)
+    runtime_class: str = "instant"
+    defense_hint: str = ""
+    deterministic: bool = True
+    supports_online: bool = True
+    supports_offline: bool = True
+    production_status: str = "production"
 
 
 class ModelCatalogItem(BaseModel):
@@ -179,4 +195,3 @@ class ResolveReviewIn(BaseModel):
     decision: str  # ACCEPT_RISK | REQUEST_RETRAIN
     decision_note: str
     resolved_by: str = "reviewer"
-

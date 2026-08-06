@@ -9,10 +9,12 @@ report heatmap, and the contract tests.
 from __future__ import annotations
 
 from src.attacks.base import AttackContext, AttackParams, BaseAttack, ModelRequiredError
+from src.attacks.catalog import CATALOG_ENTRIES, AttackCatalog, AttackMetadata
 from src.core.registry import Registry, discover
 from src.core.types import AttackGroup, CostClass, Modality
 
 ATTACKS: Registry[BaseAttack] = Registry("attack")
+ATTACK_CATALOG = AttackCatalog(CATALOG_ENTRIES)
 
 _loaded = False
 
@@ -21,8 +23,9 @@ def load_attacks() -> Registry[BaseAttack]:
     """Import every attack module once, then return the populated registry."""
     global _loaded
     if not _loaded:
-        _loaded = True
         discover(__name__)
+        ATTACK_CATALOG.bind(ATTACKS.values())
+        _loaded = True
     return ATTACKS
 
 
@@ -53,7 +56,10 @@ def select_attacks(
 
 __all__ = [
     "ATTACKS",
+    "ATTACK_CATALOG",
+    "AttackCatalog",
     "AttackContext",
+    "AttackMetadata",
     "AttackParams",
     "BaseAttack",
     "ModelRequiredError",
