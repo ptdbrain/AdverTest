@@ -160,3 +160,30 @@ def test_acceptance_gate_evaluation() -> None:
     gate_res_fail_robust = YoloTrainer.evaluate_acceptance_gate(baseline, candidate_fail_robust)
     assert gate_res_fail_robust["passed"] is False
     assert gate_res_fail_robust["robust_gate_passed"] is False
+
+
+def test_build_robust_yolo_dataset(tmp_path: Path) -> None:
+    from src.training.yolo_dataset_formatter import (
+        build_robust_yolo_dataset,
+        create_starter_kitti_dataset,
+    )
+
+    clean_dir = tmp_path / "clean_kitti"
+    create_starter_kitti_dataset(output_dir=clean_dir, num_samples=10)
+
+    robust_dir = tmp_path / "robust_kitti"
+    yaml_path = build_robust_yolo_dataset(
+        clean_yolo_dir=clean_dir,
+        output_dir=robust_dir,
+        mode="r1",
+        clean_ratio=0.5,
+        seed=42,
+    )
+
+    assert yaml_path.is_file()
+    train_images = list((robust_dir / "images" / "train").glob("*.jpg"))
+    assert len(train_images) == 9  # 10 - 1 val = 9 train
+    # Check that augmented images exist
+    aug_images = [img for img in train_images if "aug_" in img.name]
+    assert len(aug_images) > 0
+

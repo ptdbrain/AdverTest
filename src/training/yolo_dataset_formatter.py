@@ -156,7 +156,7 @@ def create_starter_kitti_dataset(
     rng = random.Random(seed)
     from PIL import ImageDraw
 
-    n_val = max(10, int(num_samples * 0.2))
+    n_val = max(1, int(num_samples * 0.15))
     for i in range(num_samples):
         split = "val" if i < n_val else "train"
         img = Image.new("RGB", (640, 640), color=(
@@ -261,5 +261,196 @@ def ensure_kitti_dataset(
         seed=seed,
         max_samples=max_samples,
     )
+
+
+def build_robust_yolo_dataset(
+    clean_yolo_dir: str | Path,
+    output_dir: str | Path,
+    mode: str = "r1",
+    target_cluster: str | None = None,
+    clean_ratio: float = 0.5,
+    attack_severities: tuple[int, ...] = (1, 2, 3),
+    seed: int = 20260807,
+) -> Path:
+    """Builds an augmented YOLO dataset mixing clean images with non-whitebox attacks for defense training (R1/R2).
+
+    White-box attacks (Group D) are strictly excluded to ensure realistic black-box & environmental robustness
+    and fast GPU execution.
+    """
+    import numpy as np
+    from src.attacks import get_attack
+    from src.attacks.base import AttackContext
+    from src.core.types import Box, Sample
+
+    clean_dir = Path(clean_yolo_dir).expanduser().resolve()
+    out_dir = Path(output_dir).expanduser().resolve()
+
+    clean_train_img = clean_dir / "images" / "train"
+    clean_train_lbl = clean_dir / "labels" / "train"
+    clean_val_img = clean_dir / "images" / "val"
+    clean_val_lbl = clean_dir / "labels" / "val"
+
+    if not clean_train_img.is_dir():
+        raise FileNotFoundError(f"Clean training images directory not found at: {clean_train_img}")
+
+    yaml_path = out_dir / "kitti.yaml"
+    out_train_img = out_dir / "images" / "train"
+    out_train_lbl = out_dir / "labels" / "train"
+    out_val_img = out_dir / "images" / "val"
+    out_val_lbl = out_dir / "labels" / "val"
+
+    # Reuse existing generated dataset if valid
+    if out_train_img.is_dir() and any(out_train_img.iterdir()) and yaml_path.is_file():
+        print(f"[*] Reusing existing robust dataset at: {out_dir}")
+        return yaml_path
+
+    for d in (out_train_img, out_train_lbl, out_val_img, out_val_lbl):
+        d.mkdir(parents=True, exist_ok=True)
+
+    # 1. Validation split is 100% clean benchmark
+    val_images = sorted(clean_val_img.glob("*.png")) + sorted(clean_val_img.glob("*.jpg"))
+    for v_img in val_images:
+        dst_v_img = out_val_img / v_img.name
+        dst_v_lbl = out_val_lbl / f"{v_img.stem}.txt"
+        src_v_lbl = clean_val_lbl / f"{v_img.stem}.txt"
+        if not dst_v_img.exists():
+            try:
+                dst_v_img.symlink_to(v_img.resolve())
+            except OSError:
+                shutil.copy2(v_img, dst_v_img)
+        if src_v_lbl.is_file() and not dst_v_lbl.exists():
+            shutil.copy2(src_v_lbl, dst_v_lbl)
+
+    # 2. Configure Non-Whitebox Attack Pool (Strictly excluding Group D)
+    normalized_mode = mode.lower()
+    if normalized_mode in ("r1", "robust-mix"):
+        attack_names = (
+            "fog",
+            "snow",
+            "gaussian_noise",
+            "motion_blur",
+            "brightness",
+            "contrast",
+            "sensor_fault",
+            "random_erasing",
+            "object_occlusion",
+            "camera_dropout",
+        )
+    else:
+        # R2 Targeted Repair mode
+        cluster = (target_cluster or "").lower()
+        if "fog" in cluster or "weather" in cluster:
+            attack_names = ("fog", "snow", "brightness", "motion_blur")
+        elif "sensor" in cluster or "occlusion" in cluster:
+            attack_names = ("sensor_fault", "random_erasing", "object_occlusion", "camera_dropout")
+        elif "noise" in cluster:
+            attack_names = ("gaussian_noise", "speckle_noise", "impulse_noise")
+        else:
+            attack_names = ("fog", "sensor_fault", "gaussian_noise", "random_erasing")
+
+    # Instantiate attacks
+    loaded_attacks: list[tuple[str, Any]] = []
+    for name in attack_names:
+        try:
+            atk = get_attack(name)
+            loaded_attacks.append((name, atk))
+        except Exception as err:
+            print(f"[!] Warning: Skipping attack {name}: {err}")
+
+    if not loaded_attacks:
+        raise RuntimeError("No non-whitebox attacks could be loaded for robust dataset generation.")
+
+    # 3. Process Train Images
+    train_images = sorted(clean_train_img.glob("*.png")) + sorted(clean_train_img.glob("*.jpg"))
+    if not train_images:
+        raise ValueError(f"No images found in clean train directory {clean_train_img}")
+
+    rng = random.Random(seed)
+    shuffled_indices = list(range(len(train_images)))
+    rng.shuffle(shuffled_indices)
+
+    num_clean = max(1, int(len(train_images) * clean_ratio))
+
+    print(f"\n[*] Generating Robust Dataset for {normalized_mode.upper()}:")
+    print(f"    - Base clean images  : {len(train_images)}")
+    print(f"    - Clean images kept  : {num_clean} ({clean_ratio * 100:.0f}%)")
+    print(f"    - Attacked images gen: {len(train_images) - num_clean} ({(1 - clean_ratio) * 100:.0f}%)")
+    print(f"    - Attack pool        : {', '.join(attack_names)}")
+
+    for idx, img_idx in enumerate(shuffled_indices):
+        img_path = train_images[img_idx]
+        stem = img_path.stem
+        src_lbl = clean_train_lbl / f"{stem}.txt"
+
+        if idx < num_clean:
+            # Clean sample
+            dst_img = out_train_img / img_path.name
+            dst_lbl = out_train_lbl / f"{stem}.txt"
+            if not dst_img.exists():
+                try:
+                    dst_img.symlink_to(img_path.resolve())
+                except OSError:
+                    shutil.copy2(img_path, dst_img)
+            if src_lbl.is_file() and not dst_lbl.exists():
+                shutil.copy2(src_lbl, dst_lbl)
+        else:
+            # Attacked / Corrupted sample
+            atk_name, atk_inst = loaded_attacks[rng.randint(0, len(loaded_attacks) - 1)]
+            sev = rng.choice(attack_severities)
+
+            dst_img_name = f"aug_{atk_name}_s{sev}_{img_path.name}"
+            dst_img = out_train_img / dst_img_name
+            dst_lbl = out_train_lbl / f"aug_{atk_name}_s{sev}_{stem}.txt"
+
+            if not dst_img.exists():
+                with Image.open(img_path) as pil_img:
+                    rgb_img = pil_img.convert("RGB")
+                    img_np = np.asarray(rgb_img, dtype=np.float32) / 255.0
+
+                h_px, w_px = img_np.shape[0], img_np.shape[1]
+                boxes_list: list[Box] = []
+                if src_lbl.is_file():
+                    for line in src_lbl.read_text(encoding="utf-8").strip().splitlines():
+                        parts = line.strip().split()
+                        if len(parts) >= 5:
+                            try:
+                                c_id = parts[0]
+                                cx, cy, bw, bh = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
+                                x1 = max(0.0, (cx - bw / 2.0) * w_px)
+                                y1 = max(0.0, (cy - bh / 2.0) * h_px)
+                                x2 = min(float(w_px), (cx + bw / 2.0) * w_px)
+                                y2 = min(float(h_px), (cy + bh / 2.0) * h_px)
+                                if x2 > x1 and y2 > y1:
+                                    boxes_list.append(Box(x1=x1, y1=y1, x2=x2, y2=y2, label=c_id))
+                            except ValueError:
+                                pass
+
+                sample = Sample(sample_id=stem, image=img_np, boxes=tuple(boxes_list))
+                ctx = AttackContext(rng=np.random.default_rng(seed + idx))
+                try:
+                    attacked_sample = atk_inst.run(sample, sev, ctx)
+                except Exception:
+                    # Fallback to image-level noise or fog if sample doesn't satisfy attack requirements
+                    fallback_atk = get_attack("gaussian_noise")
+                    attacked_sample = fallback_atk.run(sample, 2, ctx)
+
+                out_img_np = np.clip(attacked_sample.image * 255.0, 0.0, 255.0).astype(np.uint8)
+                Image.fromarray(out_img_np).save(dst_img, quality=95)
+
+            if src_lbl.is_file() and not dst_lbl.exists():
+                shutil.copy2(src_lbl, dst_lbl)
+
+    yaml_content = f"""path: {out_dir.as_posix()}
+train: images/train
+val: images/val
+names:
+  0: Pedestrian
+  1: Cyclist
+  2: Car
+"""
+    yaml_path.write_text(yaml_content, encoding="utf-8")
+    print(f"      Robust dataset manifest written to: {yaml_path}")
+    return yaml_path
+
 
 

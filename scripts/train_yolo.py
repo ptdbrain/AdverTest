@@ -39,7 +39,10 @@ except ImportError:
 
 from src.training.base import TrainerCallbacks
 from src.training.contracts import TrainingRunConfig
-from src.training.yolo_dataset_formatter import ensure_kitti_dataset
+from src.training.yolo_dataset_formatter import (
+    build_robust_yolo_dataset,
+    ensure_kitti_dataset,
+)
 from src.training.yolo_trainer import YoloTrainer
 
 
@@ -213,24 +216,6 @@ def main() -> int:
     print(f"[*] Output Directory     : {args.output_dir}")
     print("=" * 75)
 
-    # Prepare KITTI dataset via torchvision or raw folder
-    data_yaml_path: Path | None = None
-    if not args.dry_run:
-        print("\n[1/5] Preparing KITTI dataset (torchvision / local conversion)...")
-        data_yaml_path = ensure_kitti_dataset(
-            kitti_raw_dir=args.data_root,
-            output_dir=args.yolo_data_dir,
-            download=args.download,
-            val_ratio=0.15,
-            seed=args.seed,
-            max_samples=args.max_samples,
-        )
-        print(f"      Dataset ready at: {data_yaml_path}")
-    else:
-        print("\n[1/5] Skipping KITTI auto-conversion (dry-run mode).")
-
-
-
     # Normalize mode
     mode = args.mode.lower()
     if mode in ("b0", "baseline"):
@@ -248,6 +233,34 @@ def main() -> int:
         defense_profile_id = f"profile-repaired-r2-{args.target_cluster}"
         clean_ratio = 0.4
         gen_ratio = 0.6
+
+    # Prepare KITTI dataset via torchvision or raw folder
+    data_yaml_path: Path | None = None
+    if not args.dry_run:
+        print("\n[1/5] Preparing KITTI dataset (torchvision / local conversion)...")
+        clean_yaml_path = ensure_kitti_dataset(
+            kitti_raw_dir=args.data_root,
+            output_dir=args.yolo_data_dir,
+            download=args.download,
+            val_ratio=0.15,
+            seed=args.seed,
+            max_samples=args.max_samples,
+        )
+        if mode in ("b0", "baseline"):
+            data_yaml_path = clean_yaml_path
+        else:
+            robust_out_dir = Path(args.yolo_data_dir).parent / f"{Path(args.yolo_data_dir).name}_{mode}"
+            data_yaml_path = build_robust_yolo_dataset(
+                clean_yolo_dir=args.yolo_data_dir,
+                output_dir=robust_out_dir,
+                mode=mode,
+                target_cluster=args.target_cluster,
+                clean_ratio=clean_ratio,
+                seed=args.seed,
+            )
+        print(f"      Dataset ready at: {data_yaml_path}")
+    else:
+        print("\n[1/5] Skipping KITTI auto-conversion (dry-run mode).")
 
     epochs = 2 if args.dry_run else args.epochs
     run_id = f"run-{model_version}-{int(time.time())}"
