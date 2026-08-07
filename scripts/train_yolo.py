@@ -31,12 +31,19 @@ try:
 except ImportError:
     HAS_TORCH = False
 
+try:
+    from ultralytics import YOLO  # type: ignore[import-untyped]
+    HAS_ULTRALYTICS = True
+except ImportError:
+    HAS_ULTRALYTICS = False
+
 from src.training.base import TrainerCallbacks
-from src.training.contracts import DefenseProfile, TrainingRunConfig
+from src.training.contracts import TrainingRunConfig
+from src.training.yolo_dataset_formatter import convert_kitti_to_yolo
 from src.training.yolo_trainer import YoloTrainer
 
 
-def check_environment() -> dict[str, str | bool | int]:
+def check_environment() -> dict[str, Any]:
     if HAS_TORCH:
         has_cuda = torch.cuda.is_available()
         device_name = torch.cuda.get_device_name(0) if has_cuda else "CPU"
@@ -44,7 +51,7 @@ def check_environment() -> dict[str, str | bool | int]:
         torch_ver = torch.__version__
     else:
         has_cuda = False
-        device_name = "CPU (torch not installed in current python interpreter)"
+        device_name = "CPU (PyTorch not found)"
         device_count = 0
         torch_ver = "N/A"
 
@@ -53,8 +60,8 @@ def check_environment() -> dict[str, str | bool | int]:
         "device_name": device_name,
         "device_count": device_count,
         "torch_version": torch_ver,
+        "ultralytics_available": HAS_ULTRALYTICS,
     }
-
 
 
 def parse_args() -> argparse.Namespace:
@@ -67,6 +74,18 @@ def parse_args() -> argparse.Namespace:
         choices=["b0", "r1", "r2", "baseline", "robust-mix", "targeted-repair"],
         default="b0",
         help="Training mode: b0 (clean baseline), r1 (robust mix), r2 (targeted repair)",
+    )
+    parser.add_argument(
+        "--data-root",
+        type=str,
+        default="data/Kitti/raw",
+        help="Path to KITTI raw dataset directory (contains image_2 and label_2)",
+    )
+    parser.add_argument(
+        "--yolo-data-dir",
+        type=str,
+        default="data/yolo_kitti",
+        help="Target directory for converted YOLO dataset",
     )
     parser.add_argument(
         "--base-checkpoint",
@@ -123,6 +142,12 @@ def parse_args() -> argparse.Namespace:
         help="Output directory for checkpoints and metrics",
     )
     parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=None,
+        help="Limit number of samples for fast testing/debugging",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Quick dry-run without full epochs for sanity check",
@@ -134,18 +159,39 @@ def main() -> int:
     args = parse_args()
     env = check_environment()
 
-    print("=" * 70)
+    print("=" * 75)
     print(" AdverTest — YOLO11 Robust Training Pipeline (Person B)")
-    print("=" * 70)
-    print(f"[*] PyTorch Version : {env['torch_version']}")
-    print(f"[*] Compute Device  : {env['device_name']} (CUDA: {env['cuda_available']})")
-    print(f"[*] Training Mode   : {args.mode.upper()}")
-    print(f"[*] Target Epochs   : {args.epochs}")
-    print(f"[*] Batch Size      : {args.batch_size}")
-    print(f"[*] Learning Rate   : {args.lr}")
-    print(f"[*] Random Seed     : {args.seed}")
-    print(f"[*] Output Directory: {args.output_dir}")
-    print("=" * 70)
+    print("=" * 75)
+    print(f"[*] PyTorch Version      : {env['torch_version']}")
+    print(f"[*] Ultralytics Available : {env['ultralytics_available']}")
+    print(f"[*] Compute Device       : {env['device_name']} (CUDA: {env['cuda_available']})")
+    print(f"[*] Training Mode        : {args.mode.upper()}")
+    print(f"[*] Target Epochs        : {args.epochs}")
+    print(f"[*] Batch Size           : {args.batch_size}")
+    print(f"[*] Learning Rate        : {args.lr}")
+    print(f"[*] Random Seed          : {args.seed}")
+    print(f"[*] Output Directory     : {args.output_dir}")
+    print("=" * 75)
+
+    # Convert KITTI dataset to YOLO format if present
+    data_yaml_path: Path | None = None
+    kitti_raw_path = Path(args.data_root)
+    if kitti_raw_path.is_dir() and not args.dry_run:
+        print("\n[1/5] Checking / Converting KITTI to YOLO dataset format...")
+        try:
+            data_yaml_path = convert_kitti_to_yolo(
+                kitti_raw_dir=kitti_raw_path,
+                output_dir=args.yolo_data_dir,
+                val_ratio=0.15,
+                seed=args.seed,
+                max_samples=args.max_samples,
+            )
+            print(f"      Dataset YAML generated at: {data_yaml_path}")
+        except Exception as exc:
+            print(f"      [Notice] Could not auto-convert KITTI ({exc}). Using mock/standard mode.")
+            data_yaml_path = None
+    else:
+        print("\n[1/5] Skipping KITTI auto-conversion (dry-run or data-root not found).")
 
     # Normalize mode
     mode = args.mode.lower()
@@ -186,12 +232,13 @@ def main() -> int:
             "clean_ratio": clean_ratio,
             "generated_ratio": gen_ratio,
             "cuda": env["cuda_available"],
+            "data_yaml": str(data_yaml_path) if data_yaml_path else None,
         },
     )
 
     trainer = YoloTrainer(checkpoints_dir=args.output_dir)
 
-    print("\n[1/4] Validating Configuration & Resource Estimation...")
+    print("\n[2/5] Validating Configuration & Resource Estimation...")
     val_report = trainer.validate_config(config)
     if not val_report.valid:
         print(f"[!] Validation Failed: {val_report.errors}")
@@ -204,7 +251,7 @@ def main() -> int:
     print(f"      Estimated Disk Space: {estimate.storage_bytes / (1024 * 1024):.1f} MB")
     print(f"      Estimated Wall Time : {estimate.wall_time_seconds} s")
 
-    print("\n[2/4] Preparing Dataset & Checking Leakage...")
+    print("\n[3/5] Preparing Dataset & Checking Anti-Leakage...")
     try:
         data_prep = trainer.prepare_data(config)
         print(f"      Manifest ID: {data_prep.manifest_id}")
@@ -213,7 +260,13 @@ def main() -> int:
         print(f"[!] Leakage / Data Error: {exc}")
         return 1
 
-    print("\n[3/4] Running Training Loop...")
+    print("\n[4/5] Running Training Loop...")
+    if env["ultralytics_available"] and data_yaml_path:
+        print("      >>> Executing Real Ultralytics PyTorch Training Engine on GPU/CPU <<<")
+    else:
+        print("      >>> Notice: Ultralytics not installed in local env. Executing simulation/validation mode. <<<")
+        print("      >>> On Google Colab with `uv pip install -e \".[models-gpu]\"`, this will run full GPU training. <<<")
+
     start_time = time.perf_counter()
 
     def on_epoch(epoch: int, metrics: dict[str, float]) -> None:
@@ -237,7 +290,7 @@ def main() -> int:
     report = trainer.train(config, callbacks)
     duration = time.perf_counter() - start_time
 
-    print(f"\n[4/4] Training Finished in {duration:.2f}s with State: {report.state}")
+    print(f"\n[5/5] Training Finished in {duration:.2f}s with State: {report.state}")
     if report.state != "COMPLETED":
         print(f"[!] Errors: {report.errors}")
         return 1
@@ -251,13 +304,13 @@ def main() -> int:
         final_metrics = report.epoch_metrics[-1]
         baseline_metrics = {"clean_map50_95": 0.685, "robust_score": 62.0}
         gate_result = YoloTrainer.evaluate_acceptance_gate(baseline_metrics, final_metrics)
-        print("\n" + "=" * 70)
+        print("\n" + "=" * 75)
         print(" CHECKPOINT ACCEPTANCE GATE EVALUATION")
-        print("=" * 70)
+        print("=" * 75)
         print(f"[*] Gate Passed          : {'PASSED (ACCEPT)' if gate_result['passed'] else 'REJECTED'}")
         print(f"[*] Clean Delta          : {gate_result['clean_delta']:+.4f} (Max drop allowed: -0.0200)")
         print(f"[*] RobustScore Delta    : {gate_result['robust_score_delta']:+.2f} (Min gain required: +8.0)")
-        print("=" * 70)
+        print("=" * 75)
 
     # Save summary report JSON
     summary_path = Path(args.output_dir) / run_id / "training_summary.json"
