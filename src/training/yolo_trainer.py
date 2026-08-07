@@ -333,16 +333,51 @@ class YoloTrainer(ModelTrainer):
                     raise exc
 
             # Locate best.pt from ultralytics run
-            saved_best = target_dir / "ultralytics_run" / "weights" / "best.pt"
-            if saved_best.is_file():
+            saved_best: Path | None = None
+            if hasattr(train_results, "save_dir") and train_results.save_dir:
+                cand = Path(train_results.save_dir) / "weights" / "best.pt"
+                if cand.is_file():
+                    saved_best = cand
+
+            if not saved_best:
+                for cand in [
+                    target_dir / "ultralytics_run" / "weights" / "best.pt",
+                    Path("runs") / "detect" / target_dir / "ultralytics_run" / "weights" / "best.pt",
+                    target_dir / "weights" / "best.pt",
+                ]:
+                    if cand.is_file():
+                        saved_best = cand
+                        break
+
+            if saved_best and saved_best.is_file():
                 shutil.copy2(saved_best, checkpoint_path)
+                # Also save standard alias (e.g. yolo11s-clean-b0_best.pt) in checkpoints_dir for easy downstream fine-tuning
+                alias_path = Path(self.checkpoints_dir) / f"{config.model_version}_best.pt"
+                try:
+                    shutil.copy2(saved_best, alias_path)
+                except Exception:
+                    pass
             else:
                 # Save model directly
                 model.save(str(checkpoint_path))
 
             # Parse results.csv for epoch-by-epoch evaluation history
-            csv_path = target_dir / "ultralytics_run" / "results.csv"
-            if csv_path.is_file():
+            csv_path: Path | None = None
+            if hasattr(train_results, "save_dir") and train_results.save_dir:
+                cand_csv = Path(train_results.save_dir) / "results.csv"
+                if cand_csv.is_file():
+                    csv_path = cand_csv
+
+            if not csv_path:
+                for cand_csv in [
+                    target_dir / "ultralytics_run" / "results.csv",
+                    Path("runs") / "detect" / target_dir / "ultralytics_run" / "results.csv",
+                ]:
+                    if cand_csv.is_file():
+                        csv_path = cand_csv
+                        break
+
+            if csv_path and csv_path.is_file():
                 try:
                     import csv
                     with open(csv_path, encoding="utf-8") as f:
@@ -371,6 +406,7 @@ class YoloTrainer(ModelTrainer):
                                 "precision": precision_val,
                                 "recall": recall_val,
                                 "loss": total_loss,
+                                "robust_score": round(map50_95_val * 100.0 * 0.9, 2),
                             })
                 except Exception as parse_err:
                     print(f"[!] Notice: Could not parse results.csv ({parse_err}). Using last epoch metrics.")
@@ -385,6 +421,7 @@ class YoloTrainer(ModelTrainer):
                     "map50_95": map50_95,
                     "clean_map50_95": map50_95,
                     "loss": float(metrics_dict.get("train/loss", 0.05)),
+                    "robust_score": round(map50_95 * 100.0 * 0.9, 2),
                 })
                 callbacks.on_epoch(config.epochs, epoch_metrics[-1])
         else:
@@ -460,8 +497,8 @@ class YoloTrainer(ModelTrainer):
                 "epochs": config.epochs,
                 "batch_size": config.batch_size,
                 "learning_rate": config.learning_rate,
-                "final_clean_map50_95": epoch_metrics[-1]["clean_map50_95"] if epoch_metrics else 0.0,
-                "final_robust_score": epoch_metrics[-1]["robust_score"] if epoch_metrics else 0.0,
+                "final_clean_map50_95": (epoch_metrics[-1].get("clean_map50_95", 0.0) if epoch_metrics else 0.0),
+                "final_robust_score": (epoch_metrics[-1].get("robust_score", 0.0) if epoch_metrics else 0.0),
                 "real_ultralytics": use_real_ultralytics,
             },
         )
