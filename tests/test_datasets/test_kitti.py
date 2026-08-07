@@ -117,6 +117,11 @@ def test_anonymized_load_preserves_ids_and_pixels(kitti_root: Path) -> None:
     assert samples[0].image.dtype == np.float32
     assert samples[0].image.shape == (IMAGE_HEIGHT, IMAGE_WIDTH, 3)
     assert samples[0].anonymized is True
+    assert samples[0].meta["source_uri"] == "kitti://000000"
+    assert samples[0].meta["native_labels"] == ("Car", "Pedestrian", "DontCare")
+    assert samples[0].meta["loader_version"] == Kitti.loader_version
+    assert samples[0].meta["split"] == "val"
+    assert len(samples[0].meta["anonymization_manifest_hash"]) == 64
 
 
 def test_split_and_explicit_sample_ids_are_honoured(kitti_root: Path) -> None:

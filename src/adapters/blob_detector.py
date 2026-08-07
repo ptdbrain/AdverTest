@@ -27,7 +27,7 @@ from src.adapters import MODELS
 from src.adapters.base import ModelAdapter
 from src.core.image_ops import box_blur, box_slice, luminance, spread_to_channels
 from src.core.objectives import AttackObjective, SurrogateCapability
-from src.core.types import Box, ModelInfo, Prediction, Sample, Task
+from src.core.types import Box, DetectionPrediction, ModelInfo, Sample, Task
 
 #: Aspect-ratio cut points separating the three normalised classes.
 CAR_MIN_ASPECT = 1.25
@@ -73,13 +73,19 @@ class BlobDetector(ModelAdapter):
 
     # ------------------------------------------------------------------ predict
 
-    def predict(self, samples: Sequence[Sample]) -> list[Prediction]:
-        predictions: list[Prediction] = []
+    def predict(self, samples: Sequence[Sample]) -> list[DetectionPrediction]:
+        predictions: list[DetectionPrediction] = []
         for sample in samples:
             started = perf_counter()
             boxes = self.postprocess(self._detect(sample.image))
             elapsed_ms = (perf_counter() - started) * 1000.0
-            predictions.append(Prediction(sample.sample_id, boxes, elapsed_ms))
+            predictions.append(
+                DetectionPrediction(
+                    sample_id=sample.sample_id,
+                    boxes=boxes,
+                    latency_ms=elapsed_ms,
+                )
+            )
         return predictions
 
     def metadata(self) -> ModelInfo:

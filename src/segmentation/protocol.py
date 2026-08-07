@@ -52,6 +52,48 @@ class MaskValidationResult:
     valid_region_fraction: float
 
 
+@dataclass(frozen=True, slots=True)
+class GroundTruthBoxPrompt:
+    """Fixed GT-box prompt persisted in the SAM benchmark manifest."""
+
+    prompt_id: str
+    object_id: int
+    coordinates: tuple[float, float, float, float]
+
+    def __post_init__(self) -> None:
+        x1, y1, x2, y2 = self.coordinates
+        if x2 <= x1 or y2 <= y1:
+            raise ValueError("ground-truth box prompt must satisfy x1 < x2 and y1 < y2")
+
+
+def fixed_box_prompts(sample: Sample) -> tuple[GroundTruthBoxPrompt, ...]:
+    """Read immutable GT-box prompts supplied by ingestion/BenchmarkProtocol.
+
+    The dataset platform persists these records under ``meta.sam_prompts``;
+    deriving a new prompt from a detector prediction is intentionally forbidden.
+    """
+    raw = sample.meta.get("sam_prompts")
+    if not isinstance(raw, (tuple, list)):
+        raise ValueError("SAM sample is missing fixed ground-truth box prompts")
+    prompts: list[GroundTruthBoxPrompt] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("sam_prompts entries must be dictionaries")
+        coordinates = tuple(float(value) for value in item.get("coordinates", ()))
+        if len(coordinates) != 4:
+            raise ValueError("SAM box prompt requires four coordinates")
+        prompts.append(
+            GroundTruthBoxPrompt(
+                prompt_id=str(item["prompt_id"]),
+                object_id=int(item["object_id"]),
+                coordinates=coordinates,  # type: ignore[arg-type]
+            )
+        )
+    if not prompts:
+        raise ValueError("SAM sample requires at least one fixed ground-truth box prompt")
+    return tuple(prompts)
+
+
 def object_size_bucket(area_pixels: int) -> str:
     """COCO-like size buckets, stable across metric and training reports."""
     if area_pixels < 32**2:

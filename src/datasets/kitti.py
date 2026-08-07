@@ -11,7 +11,7 @@ from typing import Any, ClassVar, Literal
 import numpy as np
 from pydantic import Field
 
-from src.core.hashing import stable_digest
+from src.core.hashing import file_digest, stable_digest
 from src.core.types import Box, Modality, Sample
 from src.datasets import DATASETS
 from src.datasets.base import DatasetInfo, DatasetParams, DatasetSource
@@ -56,6 +56,7 @@ class Kitti(DatasetSource):
     anonymized: ClassVar[bool] = False
     modality: ClassVar[Modality] = "image"
     owner: ClassVar[str] = "core"
+    loader_version: ClassVar[str] = "kitti-2d-v1"
     params_model: ClassVar[type[DatasetParams]] = KittiParams
 
     def __init__(self, **params: Any) -> None:
@@ -147,7 +148,6 @@ class Kitti(DatasetSource):
         )
         variant = stable_digest(
             {
-                "root": str(self.root),
                 "anonymize": settings.anonymize,
                 "difficulty": settings.difficulty,
                 "merge_van_truck": settings.merge_van_truck,
@@ -162,10 +162,36 @@ class Kitti(DatasetSource):
             meta={
                 "image_id": image_id,
                 "source_path": str(image_path),
+                "source_uri": f"kitti://{image_id}",
                 "source_format": "kitti",
+                "native_labels": self._native_labels(
+                    self.label_dir / f"{image_id}.txt"
+                ),
+                "loader_version": self.loader_version,
+                "split": settings.split,
+                "anonymization_manifest_hash": self._anonymization_manifest_hash(),
                 "dropped_labels": dropped,
             },
         )
+
+    @staticmethod
+    def _native_labels(path: Path) -> tuple[str, ...]:
+        if not path.is_file():
+            return ()
+        return tuple(
+            fields[0]
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if (fields := line.split())
+        )
+
+    def _anonymization_manifest_hash(self) -> str | None:
+        settings: KittiParams = self.params  # type: ignore[assignment]
+        manifest = (
+            Path(settings.manifest_path).expanduser()
+            if settings.manifest_path
+            else self.root / "manifest.jsonl"
+        )
+        return file_digest(manifest, length=64) if manifest.is_file() else None
 
     def _read_labels(
         self, path: Path, shape: tuple[int, int]

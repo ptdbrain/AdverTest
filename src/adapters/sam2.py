@@ -19,7 +19,8 @@ from src.adapters import MODELS
 from src.adapters.base import GradientsNotSupportedError, ModelAdapter
 from src.core.hashing import file_digest
 from src.core.objectives import AttackObjective, SurrogateCapability
-from src.core.types import ModelInfo, Prediction, Sample, SegmentationPrediction, SegmentationPrompt
+from src.core.types import MaskPrediction, ModelInfo, ModelPrediction, Sample, SegmentationPrediction
+from src.segmentation.protocol import GroundTruthBoxPrompt, fixed_box_prompts
 
 
 @MODELS.register
@@ -62,22 +63,14 @@ class Sam2Adapter(ModelAdapter):
             runnable=True,
         )
 
-    def predict(self, samples: Sequence[Sample]) -> list[Prediction]:
-        """Compatibility method; use :meth:`predict_masks` for SAM results."""
-        prompts = [
-            tuple(SegmentationPrompt("box", box.as_tuple(), object_id=index + 1) for index, box in enumerate(sample.boxes))
-            for sample in samples
-        ]
-        # The generic base type cannot yet express masks; this method validates
-        # the runnable path then intentionally requires consumers to use the
-        # typed SAM contract rather than discarding predictions.
-        self.predict_masks(samples, prompts)
-        raise RuntimeError("SAM2 outputs SegmentationPrediction; call predict_masks(samples, prompts)")
+    def predict(self, samples: Sequence[Sample]) -> list[ModelPrediction]:
+        """Run the generic benchmark path with manifest-persisted GT prompts."""
+        return list(self.predict_masks(samples, [fixed_box_prompts(sample) for sample in samples]))
 
     def predict_masks(
         self,
         samples: Sequence[Sample],
-        prompts: Sequence[Sequence[SegmentationPrompt]],
+        prompts: Sequence[Sequence[GroundTruthBoxPrompt]],
     ) -> list[SegmentationPrediction]:
         if len(samples) != len(prompts):
             raise ValueError("provide one prompt collection per sample")
@@ -88,11 +81,8 @@ class Sam2Adapter(ModelAdapter):
                 raise ValueError("SAM2 requires at least one fixed benchmark prompt per sample")
             started = perf_counter()
             predictor.set_image(self.to_backend_image(sample.image))
-            masks: list[np.ndarray] = []
-            scores: list[float] = []
+            instances: list[MaskPrediction] = []
             for prompt in sample_prompts:
-                if prompt.prompt_type != "box":
-                    raise ValueError("SAM2 independent benchmark currently supports ground-truth box prompts only")
                 output_masks, output_scores, _ = predictor.predict(
                     box=np.asarray(prompt.coordinates, dtype=np.float32), multimask_output=False
                 )
@@ -101,17 +91,26 @@ class Sam2Adapter(ModelAdapter):
                 mask = np.asarray(output_masks[0])
                 if mask.shape != sample.image.shape[:2]:
                     raise RuntimeError("SAM2 did not return a mask at original sample resolution")
-                masks.append((mask > self.mask_threshold).astype(np.uint8))
-                scores.append(float(output_scores[0]))
+                instances.append(
+                    MaskPrediction(
+                        instance_id=str(prompt.object_id),
+                        mask=(mask > self.mask_threshold).astype(np.bool_),
+                        score=float(output_scores[0]),
+                    )
+                )
             results.append(
                 SegmentationPrediction(
                     sample_id=sample.sample_id,
-                    model_version_id=self.metadata().version,
-                    masks=tuple(masks),
-                    mask_scores=tuple(scores),
-                    prompts=tuple(sample_prompts),
+                    instances=tuple(instances),
+                    prompt_id=_prompt_set_id(sample_prompts),
                     latency_ms=(perf_counter() - started) * 1000.0,
-                    preprocessing_version=self.metadata().preprocessing_version,
+                    metadata={
+                        "model_version_id": self.metadata().version,
+                        "preprocessing_version": self.metadata().preprocessing_version,
+                        "prompt_coordinates": {
+                            prompt.prompt_id: prompt.coordinates for prompt in sample_prompts
+                        },
+                    },
                 )
             )
         return results
@@ -177,3 +176,7 @@ class Sam2Adapter(ModelAdapter):
                 raise RuntimeError("adapter 'sam2' requires SAM2ImagePredictor from the official SAM2 package") from exc
             self._predictor = SAM2ImagePredictor(self._load_model())
         return self._predictor
+
+
+def _prompt_set_id(prompts: Sequence[GroundTruthBoxPrompt]) -> str:
+    return "|".join(prompt.prompt_id for prompt in prompts)

@@ -107,7 +107,20 @@ def test_catalog_metadata_is_complete(attack_cls: type[BaseAttack]) -> None:
     assert attack_cls.group in GROUP_TITLES, "group must be one of A..F (plan §2)"
     assert attack_cls.cost_class in {"cheap", "medium", "expensive"}
     assert 1 <= attack_cls.severity_levels <= 10
-    assert described["title"], "first docstring line is used as the catalog title"
+    assert described["display_name"]
+    assert described["plain_summary"]
+    assert described["technical_summary"]
+    assert described["scenario"]
+    assert described["rationale"]
+    assert described["failure_symptoms"]
+    assert len(described["severity_map"]) == attack_cls.severity_levels + 1
+    assert described["compatibility"]
+    assert described["runtime_class"] in {"instant", "short", "long"}
+    assert described["defense_hint"]
+    assert described["reference"]
+    assert described["implementation_version"] == attack_cls.version
+    assert isinstance(described["deterministic"], bool)
+    assert described["supports_offline"] is True
     assert described["params_schema"]["type"] == "object"
     if attack_cls.needs_gradients:
         assert attack_cls.needs_model, "gradient attacks must also declare needs_model"

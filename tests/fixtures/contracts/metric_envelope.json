@@ -1,0 +1,12 @@
+{
+  "name": "degradation",
+  "value": 0.185,
+  "unit": "ratio",
+  "percent_value": 18.5,
+  "version": "1.0.0",
+  "higher_is_better": false,
+  "ci95": [0.15, 0.22],
+  "metadata": {
+    "protocol_id": "protocol-fixture-1"
+  }
+}

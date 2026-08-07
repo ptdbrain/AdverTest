@@ -15,12 +15,30 @@ from src.adapters import get_adapter
 from src.adapters.base import ModelAdapter
 from src.attacks import get_attack
 from src.attacks.base import AttackContext, BaseAttack
+from src.attacks.recipes import AttackRecipe, AttackRecipeStep
 from src.core.hashing import array_digest, file_digest, sample_digest, stable_digest
 from src.core.objectives import AttackObjective, ObjectiveKind
 from src.core.types import Sample, validate_image
 from src.datasets import get_dataset
 from src.datasets.base import DatasetSource
+from src.datasets.contracts import (
+    GeneratedDatasetVersion,
+    GeneratedStepRecord,
+    GeneratedVariantRecord,
+)
 from src.datasets.io import annotations_payload, load_image, load_mask
+from src.datasets.leakage import (
+    GeneratedLeakageInput,
+    GeneratedLineageRecord,
+    LeakageValidator,
+)
+from src.datasets.versioning import DatasetIngestor, IngestConfig
+from src.pipeline.cache import GenerationCache
+from src.pipeline.composition import (
+    CompositionContext,
+    CompositionEngine,
+    CompositionResult,
+)
 
 
 class SurrogateConfig(BaseModel):
@@ -64,6 +82,54 @@ class AttackGenerationConfig(BaseModel):
             raise ValueError("severities must be non-negative")
         return self
 
+    def to_recipes(self, *, implementation_version: str) -> tuple[AttackRecipe, ...]:
+        """Represent every legacy severity as an ordinary one-step recipe."""
+        return tuple(
+            AttackRecipe(
+                name=f"legacy-{self.attack_name}-severity-{severity}",
+                steps=(
+                    AttackRecipeStep(
+                        position=0,
+                        attack_name=self.attack_name,
+                        implementation_version=implementation_version,
+                        severity=severity,
+                        parameters=self.attack_params,
+                        seed=self.seed,
+                        expected_cost=1.0,
+                    ),
+                ),
+                metadata={"legacy_attack_generation": True},
+            )
+            for severity in self.severities
+        )
+
+
+class RecipeGenerationConfig(BaseModel):
+    """Versioned source plus one ordered recipe and intended artifact use."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    dataset_name: str | None = None
+    dataset_params: dict[str, Any] = Field(default_factory=dict)
+    input_dir: str | None = None
+    input_format: Literal["advertest", "kitti"] = "advertest"
+    anonymization_manifest: str | None = None
+    logical_source_id: str
+    recipe: AttackRecipe
+    seed: int = Field(ge=0)
+    surrogate: SurrogateConfig | None = None
+    output_dir: str = "data/attacked"
+    intended_use: Literal["training", "benchmark", "review"] = "training"
+    preview: bool = True
+    limit: int | None = Field(default=None, ge=1)
+    fail_fast: bool = True
+
+    @model_validator(mode="after")
+    def validate_source(self) -> RecipeGenerationConfig:
+        if (self.dataset_name is None) == (self.input_dir is None):
+            raise ValueError("provide exactly one of dataset_name or input_dir")
+        return self
+
 
 @dataclass(frozen=True, slots=True)
 class GenerationReport:
@@ -98,10 +164,360 @@ class GenerationReport:
 class AttackDatasetGenerator:
     """Create a reloadable attack dataset and provenance manifest."""
 
-    def generate(self, config: AttackGenerationConfig) -> GenerationReport:
+    def generate(
+        self,
+        config: AttackGenerationConfig | RecipeGenerationConfig,
+    ) -> GenerationReport:
+        if isinstance(config, RecipeGenerationConfig):
+            return self._generate_recipe(config)
+        return self._generate_legacy(config)
+
+    def _generate_recipe(self, config: RecipeGenerationConfig) -> GenerationReport:
+        source = self._recipe_source(config)
+        source.require_anonymized()
+        output_root = Path(config.output_dir).expanduser().resolve()
+        source_version = DatasetIngestor(output_root / "_source_versions").ingest(
+            source,
+            IngestConfig(
+                name=config.dataset_name or "folder-source",
+                logical_source_id=config.logical_source_id,
+            ),
+        )
+        samples = source.load(config.limit)
+        if not samples:
+            raise ValueError("source dataset returned no samples")
+        surrogate = self._recipe_surrogate(config)
+        objective = self._recipe_objective(config)
+        generation_id = stable_digest(
+            {
+                "source_dataset_version_id": source_version.version_id,
+                "source_manifest_hash": source_version.manifest_hash,
+                "recipe_hash": config.recipe.recipe_hash,
+                "catalog_version": config.recipe.catalog_version,
+                "seed": config.seed,
+                "intended_use": config.intended_use,
+                "surrogate_version": (
+                    surrogate.metadata().version if surrogate is not None else None
+                ),
+                "preview": config.preview,
+            },
+            length=20,
+        )
+        root = output_root / "recipes" / generation_id
+        for name in ("images", "labels", "masks", "intermediates"):
+            (root / name).mkdir(parents=True, exist_ok=True)
+        if config.preview:
+            (root / "previews").mkdir(exist_ok=True)
+        _write_json(root / "config.json", config.model_dump(mode="json"))
+        manifest_path = root / "manifest.jsonl"
+        existing_records = {
+            row["variant_id"]: row for row in _read_manifest(manifest_path)
+        }
+        descriptor = GeneratedDatasetVersion(
+            generation_id=generation_id,
+            version_id=f"generated-{generation_id}",
+            source_dataset_version_id=source_version.version_id,
+            source_manifest_hash=source_version.manifest_hash,
+            recipe_hash=config.recipe.recipe_hash,
+            catalog_version=config.recipe.catalog_version,
+            intended_use=config.intended_use,
+            status="in_progress",
+            anonymized=True,
+            n_source_samples=len(samples),
+            n_variants=len(existing_records),
+        )
+        _write_json(root / "dataset.json", descriptor.model_dump(mode="json"))
+        cache = GenerationCache(root / ".generation-cache.sqlite3")
+        resumed = 0
+        engine = CompositionEngine()
+        try:
+            for sample in samples:
+                variant_id = stable_digest(
+                    {
+                        "source_dataset_version_id": source_version.version_id,
+                        "source_sample_hash": _sample_digest(sample),
+                        "recipe_hash": config.recipe.recipe_hash,
+                        "seed": config.seed,
+                        "surrogate_version": (
+                            surrogate.metadata().version
+                            if surrogate is not None
+                            else None
+                        ),
+                    },
+                    length=24,
+                )
+                cache_key = GenerationCache.key(
+                    dataset_version_id=source_version.version_id,
+                    source_hash=array_digest(sample.image, length=32),
+                    recipe_hash=config.recipe.recipe_hash,
+                    implementation_versions=tuple(
+                        step.implementation_version for step in config.recipe.steps
+                    ),
+                    seed=config.seed,
+                    surrogate_version=(
+                        surrogate.metadata().version
+                        if surrogate is not None
+                        else None
+                    ),
+                )
+                existing = existing_records.get(variant_id)
+                if (
+                    existing is not None
+                    and cache.get(cache_key) is not None
+                    and _recipe_record_is_valid(root, existing)
+                ):
+                    resumed += 1
+                    continue
+                result = engine.execute(
+                    sample,
+                    config.recipe,
+                    CompositionContext(
+                        run_seed=config.seed,
+                        model=surrogate,
+                        objective=objective,
+                        fail_fast=config.fail_fast,
+                        available_artifacts=frozenset({"patch_artifact"}),
+                    ),
+                )
+                if not result.loadable or result.final_sample is None:
+                    raise ValueError(
+                        f"recipe variant {variant_id} failed: {result.errors}"
+                    )
+                record = self._persist_recipe_variant(
+                    root,
+                    source_version.version_id,
+                    sample,
+                    result.final_sample,
+                    config,
+                    variant_id,
+                    result,
+                )
+                payload = record.model_dump(mode="json")
+                existing_records[variant_id] = payload
+                _write_manifest(manifest_path, list(existing_records.values()))
+                cache.put(
+                    cache_key,
+                    {
+                        "variant_id": variant_id,
+                        "output_hash": record.output_hash,
+                        "status": record.status,
+                    },
+                )
+        except Exception:
+            failed = descriptor.model_copy(
+                update={
+                    "status": "incomplete",
+                    "n_variants": len(existing_records),
+                    "validation_status": "failed",
+                }
+            )
+            _write_json(root / "dataset.json", failed.model_dump(mode="json"))
+            raise
+        ordered = sorted(
+            existing_records.values(),
+            key=lambda row: row["variant_id"],
+        )
+        lineage = LeakageValidator().validate_generated(
+            GeneratedLeakageInput(
+                version_id=f"generated-{generation_id}",
+                records=tuple(
+                    GeneratedLineageRecord(
+                        generated_id=record["variant_id"],
+                        source_sample_id=record["source_sample_id"],
+                        source_version_id=record["source_dataset_version_id"],
+                        recipe_id=config.recipe.recipe_id,
+                        transform_log_hash=stable_digest(
+                            record.get("transform_logs", ()),
+                            length=64,
+                        ),
+                        seed=config.seed,
+                        artifact_kind="generated",
+                        allowed_uses=(config.intended_use,),
+                    )
+                    for record in ordered
+                ),
+            )
+        )
+        if not lineage.passed:
+            raise ValueError(
+                f"generated lineage validation failed: "
+                f"{[finding.code for finding in lineage.errors]}"
+            )
+        manifest_hash = stable_digest(ordered, length=32)
+        complete = descriptor.model_copy(
+            update={
+                "status": "complete",
+                "n_variants": len(ordered),
+                "manifest_hash": manifest_hash,
+                "validation_status": "passed",
+                "lineage_report_hash": lineage.report_hash,
+            }
+        )
+        _write_json(root / "dataset.json", complete.model_dump(mode="json"))
+        return GenerationReport(
+            generation_id=generation_id,
+            root=root,
+            source=config.dataset_name or Path(config.input_dir or "").name,
+            attack=f"recipe:{config.recipe.name}",
+            n_source_samples=len(samples),
+            n_variants=len(ordered),
+            resumed_variants=resumed,
+            estimated_canonical_bytes=sum(sample.image.nbytes for sample in samples),
+            estimated_gradient_steps=0,
+            estimated_model_queries=0,
+        )
+
+    @staticmethod
+    def _recipe_source(config: RecipeGenerationConfig) -> DatasetSource:
+        if config.dataset_name is not None:
+            return get_dataset(config.dataset_name, **config.dataset_params)
+        return get_dataset(
+            "folder_dataset",
+            root=config.input_dir,
+            input_format=config.input_format,
+            anonymization_manifest=config.anonymization_manifest,
+        )
+
+    @staticmethod
+    def _recipe_surrogate(
+        config: RecipeGenerationConfig,
+    ) -> ModelAdapter | None:
+        if config.surrogate is None:
+            return None
+        params = dict(config.surrogate.params)
+        if config.surrogate.checkpoint is not None:
+            params.setdefault("weights", config.surrogate.checkpoint)
+        params.setdefault("device", config.surrogate.device)
+        try:
+            return get_adapter(config.surrogate.name, **params)
+        except TypeError:
+            params.pop("device", None)
+            return get_adapter(config.surrogate.name, **params)
+
+    @staticmethod
+    def _recipe_objective(config: RecipeGenerationConfig) -> AttackObjective:
+        if config.surrogate is None:
+            return AttackObjective()
+        return AttackObjective(
+            kind=config.surrogate.objective,
+            target_label=config.surrogate.target_label,
+            target_box_index=config.surrogate.target_box_index,
+        )
+
+    @staticmethod
+    def _persist_recipe_variant(
+        root: Path,
+        source_dataset_version_id: str,
+        source: Sample,
+        generated: Sample,
+        config: RecipeGenerationConfig,
+        variant_id: str,
+        result: CompositionResult,
+    ) -> GeneratedVariantRecord:
+        intermediate_paths: list[str] = []
+        for step_record, array in zip(
+            result.step_records,
+            result.intermediate_arrays,
+            strict=True,
+        ):
+            relative = (
+                Path("intermediates")
+                / variant_id
+                / f"{step_record.position}.npy"
+            )
+            (root / relative).parent.mkdir(parents=True, exist_ok=True)
+            _write_npy(root / relative, array)
+            intermediate_paths.append(relative.as_posix())
+        image_relative = Path("images") / f"{variant_id}.npy"
+        label_relative = Path("labels") / f"{variant_id}.json"
+        _write_npy(root / image_relative, generated.image)
+        label_payload = annotations_payload(generated.boxes, generated.boxes3d)
+        _write_json(root / label_relative, label_payload)
+        mask_relative: Path | None = None
+        if generated.mask is not None:
+            mask_relative = Path("masks") / f"{variant_id}.npy"
+            _write_npy(root / mask_relative, generated.mask)
+        preview_relative: Path | None = None
+        if config.preview:
+            preview_relative = Path("previews") / f"{variant_id}.png"
+            _write_png(root / preview_relative, generated.image)
+        ordered_steps = tuple(
+            GeneratedStepRecord(
+                position=step.position,
+                attack_name=step.attack_name,
+                implementation_version=step.implementation_version,
+                severity=step.severity,
+                requested_seed=step.requested_seed,
+                derived_seed=step.derived_seed,
+                resolved_parameters=step.resolved_parameters,
+                input_hash=step.input_hash,
+                output_hash=step.output_hash or step.input_hash,
+                intermediate_path=intermediate_paths[index],
+                cost=step.cost,
+                transform_log=(
+                    step.transform_log.model_dump(mode="json")
+                    if step.transform_log is not None
+                    else None
+                ),
+                status=step.status,
+            )
+            for index, step in enumerate(result.step_records)
+        )
+        ground_truth_hash = stable_digest(
+            {
+                "annotations": label_payload,
+                "mask": (
+                    array_digest(source.mask, length=32)
+                    if source.mask is not None
+                    else None
+                ),
+            },
+            length=32,
+        )
+        return GeneratedVariantRecord(
+            variant_id=variant_id,
+            source_sample_id=source.sample_id,
+            source_dataset_version_id=source_dataset_version_id,
+            source_hash=array_digest(source.image, length=32),
+            source_sample_hash=_sample_digest(source),
+            ground_truth_hash=ground_truth_hash,
+            recipe_hash=config.recipe.recipe_hash,
+            catalog_version=config.recipe.catalog_version,
+            ordered_steps=ordered_steps,
+            intermediate_paths=tuple(intermediate_paths),
+            intermediate_hashes=result.intermediate_hashes,
+            output_hash=array_digest(generated.image, length=32),
+            image_path=image_relative.as_posix(),
+            label_path=label_relative.as_posix(),
+            label_hash=stable_digest(label_payload, length=32),
+            mask_path=mask_relative.as_posix() if mask_relative else None,
+            mask_hash=(
+                array_digest(generated.mask, length=32)
+                if generated.mask is not None
+                else None
+            ),
+            intended_use=config.intended_use,
+            validation_status="passed",
+            status="complete",
+            anonymized=source.anonymized,
+            transform_logs=tuple(
+                log.model_dump(mode="json") for log in result.transform_logs
+            ),
+            preview_path=(
+                preview_relative.as_posix() if preview_relative else None
+            ),
+        )
+
+    def _generate_legacy(self, config: AttackGenerationConfig) -> GenerationReport:
         source = self._source(config)
         source.require_anonymized()
         attack = get_attack(config.attack_name, **config.attack_params)
+        legacy_recipes = {
+            recipe.steps[0].severity: recipe
+            for recipe in config.to_recipes(
+                implementation_version=attack.version,
+            )
+        }
         effective_limit = config.limit
         if effective_limit is None and attack.name == "cw_l2":
             effective_limit = 100
@@ -187,6 +603,23 @@ class AttackDatasetGenerator:
                         artifact_path,
                         config.preview,
                     )
+                    legacy_recipe = legacy_recipes[severity]
+                    record["recipe_hash"] = legacy_recipe.recipe_hash
+                    record["catalog_version"] = legacy_recipe.catalog_version
+                    record["ordered_steps"] = [
+                        {
+                            "position": 0,
+                            "attack_name": attack.name,
+                            "implementation_version": attack.version,
+                            "severity": severity,
+                            "requested_seed": legacy_recipe.steps[0].seed,
+                            "derived_seed": derived_seed,
+                            "resolved_parameters": attack.resolve_parameters(severity),
+                            "input_hash": array_digest(sample.image),
+                            "output_hash": array_digest(attacked.image),
+                            "status": "completed",
+                        }
+                    ]
                     by_variant[variant_id] = record
                     _write_manifest(root / "manifest.jsonl", list(by_variant.values()))
         except Exception as exc:
@@ -755,6 +1188,30 @@ def _record_is_valid(root: Path, record: dict[str, Any]) -> bool:
         if array_digest(artifact, length=32) != record.get("patch_artifact_hash"):
             return False
     return True
+
+
+def _recipe_record_is_valid(root: Path, record: dict[str, Any]) -> bool:
+    try:
+        typed = GeneratedVariantRecord.model_validate(record)
+    except ValueError:
+        return False
+    if typed.status != "complete" or typed.validation_status != "passed":
+        return False
+    if len(typed.intermediate_paths) != len(typed.intermediate_hashes):
+        return False
+    for relative, expected_hash in zip(
+        typed.intermediate_paths,
+        typed.intermediate_hashes,
+        strict=True,
+    ):
+        try:
+            intermediate = np.load(root / relative, allow_pickle=False)
+            validate_image(intermediate)
+        except (OSError, TypeError, ValueError):
+            return False
+        if array_digest(intermediate) != expected_hash:
+            return False
+    return _record_is_valid(root, record)
 
 
 def _read_manifest(path: Path) -> list[dict[str, Any]]:

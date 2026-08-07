@@ -10,6 +10,19 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
+from src.training.base import ModelTrainer, TrainerCallbacks
+from src.training.contracts import TrainingRunConfig
+from src.training.report import (
+    CheckpointMetadata,
+    ExportedCheckpoint,
+    MetricSnapshot,
+    PreparedTrainingData,
+    TrainerMetadata,
+    TrainingEstimate,
+    TrainingReport,
+    ValidationReport,
+)
+
 
 Stage = Literal["b0", "r1", "r2"]
 
@@ -86,21 +99,60 @@ def sam_r2_config(dataset_manifest_id: str, parent_model_version: str, failure_c
     )
 
 
-class Sam2Trainer:
+class Sam2Trainer(ModelTrainer):
     """SAM-specific configuration preflight for the shared trainer worker."""
 
     version = "sam2-trainer-contract-v1"
 
-    def validate_config(self, config: Sam2TrainingConfig) -> None:
-        config.validate()
+    def validate_config(self, config: TrainingRunConfig) -> ValidationReport:
+        errors: list[str] = []
+        if config.trainer_name != "sam2":
+            errors.append("Sam2Trainer requires trainer_name='sam2'")
+        stage = config.metadata.get("sam_stage")
+        if stage not in {"b0", "r1", "r2"}:
+            errors.append("training metadata must set sam_stage to b0, r1, or r2")
+        if stage in {"r1", "r2"} and not config.model_version:
+            errors.append("SAM robust stages require parent model_version")
+        if stage == "r2" and not config.metadata.get("failure_cluster_ids"):
+            errors.append("SAM-R2 requires stable failure_cluster_ids metadata")
+        return ValidationReport(valid=not errors, errors=tuple(errors))
 
-    def estimate(self, config: Sam2TrainingConfig, *, samples: int = 0) -> dict[str, int | bool | str]:
-        config.validate()
-        return {
-            "trainer_version": self.version,
-            "epochs": config.epochs,
-            "effective_batch_size": config.batch_size * config.gradient_accumulation,
-            "estimated_sample_updates": samples * config.epochs,
-            "amp": config.amp,
-            "freeze_image_encoder": config.freeze_image_encoder,
-        }
+    def estimate(self, config: TrainingRunConfig) -> TrainingEstimate:
+        validation = self.validate_config(config)
+        if not validation.valid:
+            raise ValueError("invalid SAM2 training config: " + "; ".join(validation.errors))
+        accumulation = int(config.metadata.get("gradient_accumulation", 1))
+        # Conservative estimate is intentionally explicit until the runtime
+        # telemetry calibration is available on the provisioned GPU worker.
+        gpu_hours = config.epochs * config.batch_size * accumulation * 0.02
+        return TrainingEstimate(
+            gpu_hours=gpu_hours,
+            storage_bytes=int(config.metadata.get("estimated_storage_bytes", 0)),
+            wall_time_seconds=int(gpu_hours * 3600),
+        )
+
+    def prepare_data(self, config: TrainingRunConfig) -> PreparedTrainingData:
+        manifest_hash = str(config.metadata.get("training_manifest_hash", ""))
+        if not manifest_hash:
+            raise ValueError("SAM2 training requires training_manifest_hash metadata from TrainingDatasetBuilder")
+        return PreparedTrainingData(
+            manifest_id=str(config.metadata.get("training_manifest_id", config.split_manifest_id)),
+            manifest_hash=manifest_hash,
+            lineage_valid=bool(config.metadata.get("lineage_valid", False)),
+            leakage_report_id=str(config.metadata.get("leakage_report_id", "")) or None,
+        )
+
+    def train(self, config: TrainingRunConfig, callbacks: TrainerCallbacks) -> TrainingReport:
+        raise RuntimeError(
+            "SAM2 runtime training requires the provisioned official SAM2 package, checkpoint, "
+            "and GPU worker; configuration and orchestration are ready"
+        )
+
+    def evaluate_checkpoint(self, checkpoint: CheckpointMetadata) -> MetricSnapshot:
+        raise RuntimeError("SAM2 checkpoint evaluation requires the provisioned runtime adapter")
+
+    def export_checkpoint(self, checkpoint: CheckpointMetadata) -> ExportedCheckpoint:
+        raise RuntimeError("SAM2 checkpoint export requires the provisioned runtime adapter")
+
+    def metadata(self) -> TrainerMetadata:
+        return TrainerMetadata(name="sam2", task="segmentation", version=self.version)

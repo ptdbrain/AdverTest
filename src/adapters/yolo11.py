@@ -13,7 +13,7 @@ from src.adapters import MODELS
 from src.adapters.base import ModelAdapter
 from src.core.hashing import file_digest
 from src.core.objectives import AttackObjective, SurrogateCapability
-from src.core.types import Box, ModelInfo, Prediction, Sample
+from src.core.types import Box, DetectionPrediction, ModelInfo, Sample
 
 COCO_MAP = {0: "Pedestrian", 1: "Cyclist", 2: "Car"}
 COCO_REVERSE = {label: class_id for class_id, label in COCO_MAP.items()}
@@ -85,9 +85,9 @@ class Yolo11Adapter(ModelAdapter):
             ),
         )
 
-    def predict(self, samples: Sequence[Sample]) -> list[Prediction]:
+    def predict(self, samples: Sequence[Sample]) -> list[DetectionPrediction]:
         backend = self._load()
-        predictions: list[Prediction] = []
+        predictions: list[DetectionPrediction] = []
         for chunk in self._chunks(samples):
             started = perf_counter()
             results = backend.predict(
@@ -103,10 +103,10 @@ class Yolo11Adapter(ModelAdapter):
             elapsed_ms = (perf_counter() - started) * 1000.0 / max(1, len(chunk))
             for sample, result in zip(chunk, results, strict=True):
                 predictions.append(
-                    Prediction(
-                        sample.sample_id,
-                        self.postprocess(self.convert(self._rows(result))),
-                        elapsed_ms,
+                    DetectionPrediction(
+                        sample_id=sample.sample_id,
+                        boxes=self.postprocess(self.convert(self._rows(result))),
+                        latency_ms=elapsed_ms,
                     )
                 )
         return predictions

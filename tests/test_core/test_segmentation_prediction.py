@@ -3,20 +3,17 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.core.types import SegmentationPrediction, SegmentationPrompt
+from src.core.types import MaskPrediction, SegmentationPrediction
 
 
-def test_segmentation_prediction_requires_prompt_aligned_outputs() -> None:
-    prompt = SegmentationPrompt("box", (1, 1, 4, 4), object_id=1)
-    prediction = SegmentationPrediction("sample", "sam-b0", (np.ones((4, 4)),), (0.9,), (prompt,))
-    assert prediction.prompts[0].object_id == 1
+def test_segmentation_prediction_carries_fixed_prompt_id_and_instances() -> None:
+    prediction = SegmentationPrediction(
+        sample_id="sample", prompt_id="gt-box:sample:1",
+        instances=(MaskPrediction(instance_id="1", mask=np.ones((4, 4), dtype=np.bool_), score=0.9),),
+    )
+    assert prediction.prompt_id == "gt-box:sample:1"
 
 
-def test_segmentation_prediction_rejects_misaligned_outputs() -> None:
-    with pytest.raises(ValueError, match="identical lengths"):
-        SegmentationPrediction("sample", "sam-b0", (), (0.9,), ())
-
-
-def test_box_prompt_is_validated() -> None:
-    with pytest.raises(ValueError, match="x1 < x2"):
-        SegmentationPrompt("box", (4, 1, 1, 4), object_id=1)
+def test_mask_prediction_rejects_non_boolean_masks() -> None:
+    with pytest.raises(ValueError, match="bool dtype"):
+        MaskPrediction(instance_id="1", mask=np.ones((4, 4), dtype=np.uint8))

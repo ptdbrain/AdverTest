@@ -8,7 +8,10 @@ from typing import Any, Literal, Sequence
 
 import numpy as np
 
-from src.core.types import SegmentationPrediction, Sample
+from src.core.types import ModelPrediction, SegmentationPrediction, Sample
+from src.evaluation.base import EvaluationResult
+from src.evaluation.contracts import FailureCase, MetricEnvelope
+from src.pipeline.protocol import BenchmarkProtocol
 from src.segmentation.protocol import object_size_bucket, validate_segmentation_sample
 
 METRIC_IMPLEMENTATION = "advertest-segmentation-v1"
@@ -34,7 +37,7 @@ class MaskFailurePolicy:
 @dataclass(frozen=True, slots=True)
 class MaskEvaluation:
     sample_id: str
-    object_id: int | str | None
+    object_id: str
     iou: float
     dice: float
     pixel_precision: float
@@ -119,17 +122,18 @@ def evaluate_prediction(
     if prediction.sample_id != sample.sample_id:
         raise ValueError("prediction/sample IDs do not match")
     results: list[MaskEvaluation] = []
-    for mask, score, prompt in zip(prediction.masks, prediction.mask_scores, prediction.prompts, strict=True):
+    if not prediction.prompt_id:
+        raise ValueError("SAM benchmark prediction must retain its fixed prompt_id")
+    for instance in prediction.instances:
+        mask = instance.mask
         if mask.shape != sample.mask.shape:  # type: ignore[union-attr]
             raise ValueError("prediction mask must use original sample resolution")
-        object_id = prompt.object_id
-        if object_id is None:
-            raise ValueError("SAM benchmark prompts must identify their ground-truth object")
+        object_id = instance.instance_id
         target_id = int(object_id)
         if target_id not in validation.instance_ids:
             raise ValueError(f"prompt object ID {target_id} does not exist in ground truth")
         target = sample.mask == target_id  # type: ignore[operator]
-        predicted = np.asarray(mask) >= 0.5
+        predicted = np.asarray(mask, dtype=bool)
         iou = binary_iou(predicted, target)
         dice = dice_score(predicted, target)
         precision, recall = pixel_precision_recall(predicted, target)
@@ -146,7 +150,7 @@ def evaluate_prediction(
                 pixel_recall=recall,
                 boundary_iou=boundary,
                 boundary_f_score=f_score,
-                confidence=float(score),
+                confidence=float(instance.score),
                 predicted_area_ratio=float(predicted.sum() / target.sum()) if target.any() else 0.0,
                 failure_reason=reason,
                 object_size=validation.object_sizes[target_id],
@@ -192,6 +196,83 @@ def segmentation_metric_suite(
         "miou_by_class": {label: float(np.mean([item.iou for item in values])) for label, values in by_class.items()},
         "failures": [item.as_dict() for item in evaluations],
     }
+
+
+class SegmentationEvaluator:
+    """Person C evaluator plugin for D's protocol-locked benchmark runner."""
+
+    task = "segmentation"
+    metric_versions = {
+        "miou": METRIC_IMPLEMENTATION,
+        "boundary_iou": METRIC_IMPLEMENTATION,
+        "mask_failure_rate": METRIC_IMPLEMENTATION,
+    }
+
+    def __init__(self, *, policy: MaskFailurePolicy = MaskFailurePolicy()) -> None:
+        self.policy = policy
+
+    def evaluate(
+        self,
+        predictions: Sequence[ModelPrediction],
+        samples: Sequence[Sample],
+        protocol: BenchmarkProtocol,
+    ) -> EvaluationResult:
+        segmentation = tuple(item for item in predictions if isinstance(item, SegmentationPrediction))
+        if len(segmentation) != len(predictions):
+            raise TypeError("SegmentationEvaluator accepts SegmentationPrediction values only")
+        suite = segmentation_metric_suite(segmentation, samples, policy=self.policy)
+        evaluations = [item for sample in samples for item in evaluate_prediction(sample, next(prediction for prediction in segmentation if prediction.sample_id == sample.sample_id), policy=self.policy)]
+        headline = _metric("miou", suite["miou"], higher_is_better=True)
+        supplemental = (
+            _metric("boundary_iou", suite["boundary_iou"], higher_is_better=True),
+            _metric("mask_failure_rate", suite["mask_failure_rate_ratio"], higher_is_better=False),
+        )
+        per_sample: dict[str, tuple[MetricEnvelope, ...]] = {}
+        for sample in samples:
+            own = [item for item in evaluations if item.sample_id == sample.sample_id]
+            if own:
+                per_sample[sample.sample_id] = (
+                    _metric("miou", float(np.mean([item.iou for item in own])), higher_is_better=True),
+                    _metric("boundary_iou", float(np.mean([item.boundary_iou for item in own])), higher_is_better=True),
+                    _metric("mask_failure_rate", float(np.mean([item.failed for item in own])), higher_is_better=False),
+                )
+        failures = tuple(
+            FailureCase(
+                case_id=f"{protocol.protocol_id}:{item.sample_id}:{item.object_id}",
+                sample_id=item.sample_id,
+                model_id="sam2",
+                protocol_id=protocol.protocol_id,
+                clean_metrics=(),
+                attacked_metrics=(
+                    _metric("miou", item.iou, higher_is_better=True),
+                    _metric("boundary_iou", item.boundary_iou, higher_is_better=True),
+                ),
+                reason=item.failure_reason,
+                affected_object_id=item.object_id,
+                metadata={"failure_policy_version": self.policy.version, "object_size": item.object_size},
+            )
+            for item in evaluations
+            if item.failed
+        )
+        return EvaluationResult(
+            task="segmentation",
+            protocol_id=protocol.protocol_id,
+            headline=headline,
+            supplemental_metrics=supplemental,
+            per_sample_metrics=per_sample,
+            failures=failures,
+        )
+
+
+def _metric(name: str, value: float, *, higher_is_better: bool) -> MetricEnvelope:
+    return MetricEnvelope(
+        name=name,
+        value=value,
+        unit="ratio",
+        percent_value=value * 100.0,
+        version=METRIC_IMPLEMENTATION,
+        higher_is_better=higher_is_better,
+    )
 
 
 def _failure_reason(predicted: np.ndarray, instance_mask: np.ndarray, target_id: int, iou: float, boundary: float, policy: MaskFailurePolicy) -> FailureReason:

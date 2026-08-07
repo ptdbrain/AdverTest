@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.core.types import Sample, SegmentationPrediction, SegmentationPrompt
+from src.core.types import MaskPrediction, Sample, SegmentationPrediction
 from src.evaluation.segmentation_metrics import binary_iou, evaluate_prediction, segmentation_metric_suite
 
 
@@ -17,7 +17,10 @@ def _sample() -> Sample:
 
 
 def _prediction(mask: np.ndarray) -> SegmentationPrediction:
-    return SegmentationPrediction("s1", "sam-b0", (mask,), (0.9,), (SegmentationPrompt("box", (2, 2, 7, 7), 1),))
+    return SegmentationPrediction(
+        sample_id="s1", prompt_id="gt-box:s1:1",
+        instances=(MaskPrediction(instance_id="1", mask=mask.astype(np.bool_), score=0.9),),
+    )
 
 
 def test_perfect_mask_metrics_are_one() -> None:

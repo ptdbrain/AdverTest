@@ -8,6 +8,7 @@ import pytest
 
 from src.datasets import get_dataset
 from src.datasets.base import AnonymizationRequiredError
+from src.datasets.folder import FolderDataset
 
 
 def _write_folder_dataset(root: Path, *, anonymized: bool) -> None:
@@ -60,6 +61,11 @@ def test_folder_dataset_loads_canonical_arrays_and_annotations(tmp_path: Path) -
     assert sample.boxes[0].label == "Car"
     assert sample.mask is not None
     assert sample.depth is not None
+    assert sample.meta["source_uri"] == "folder://advertest/frame_001.npy"
+    assert sample.meta["native_labels"] == ("Car",)
+    assert sample.meta["loader_version"] == FolderDataset.loader_version
+    assert sample.meta["split"] == "unspecified"
+    assert len(sample.meta["anonymization_manifest_hash"]) == 64
 
 
 def test_folder_dataset_enforces_anonymization_manifest(tmp_path: Path) -> None:

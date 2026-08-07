@@ -1,0 +1,13 @@
+{
+  "model_id": "sam2",
+  "version": "sam2-fixture-1",
+  "task": "segmentation",
+  "framework": "pytorch",
+  "checkpoint_hash": "sha256:fixture-sam2-checkpoint",
+  "preprocessing_version": "sam2-preprocess-v1",
+  "parent_version": null,
+  "contract_version": "1.0.0",
+  "metadata": {
+    "owner": "person-c"
+  }
+}

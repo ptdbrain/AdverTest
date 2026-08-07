@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from src.core.types import Box, Prediction, Sample
+from src.core.types import Box, DetectionPrediction, Sample
 
 DEFAULT_IOU_THRESHOLD = 0.5
 
@@ -114,7 +114,7 @@ def match_boxes(
 
 
 def average_precision(
-    predictions: Sequence[Prediction],
+    predictions: Sequence[DetectionPrediction],
     samples: Sequence[Sample],
     iou_threshold: float = DEFAULT_IOU_THRESHOLD,
 ) -> float:
@@ -124,7 +124,7 @@ def average_precision(
 
 
 def average_precision_per_class(
-    predictions: Sequence[Prediction],
+    predictions: Sequence[DetectionPrediction],
     samples: Sequence[Sample],
     iou_threshold: float = DEFAULT_IOU_THRESHOLD,
 ) -> dict[str, float]:
@@ -139,7 +139,7 @@ def average_precision_per_class(
 
 
 def detection_metric_suite(
-    predictions: Sequence[Prediction],
+    predictions: Sequence[DetectionPrediction],
     samples: Sequence[Sample],
 ) -> dict[str, Any]:
     """Detection metrics with explicit non-COCO provenance.
@@ -176,7 +176,13 @@ def detection_metric_suite(
             for sample in samples
         ]
         by_size[bucket] = average_precision(
-            [by_id.get(sample.sample_id, Prediction(sample.sample_id)) for sample in scoped_samples],
+            [
+                by_id.get(
+                    sample.sample_id,
+                    DetectionPrediction(sample_id=sample.sample_id),
+                )
+                for sample in scoped_samples
+            ],
             scoped_samples,
             0.5,
         )
@@ -191,7 +197,7 @@ def detection_metric_suite(
 
 
 def bootstrap_average_precision(
-    predictions: Sequence[Prediction],
+    predictions: Sequence[DetectionPrediction],
     samples: Sequence[Sample],
     *,
     iou_threshold: float = DEFAULT_IOU_THRESHOLD,
@@ -210,18 +216,29 @@ def bootstrap_average_precision(
         # Duplicate source IDs need unique IDs because metric lookups are keyed
         # by sample ID. Preserve each paired prediction under a sampled alias.
         copied_samples: list[Sample] = []
-        copied_predictions: list[Prediction] = []
+        copied_predictions: list[DetectionPrediction] = []
         for position, sample in enumerate(sampled):
             alias = f"{sample.sample_id}#bootstrap-{position}"
             copied_samples.append(Sample(sample_id=alias, image=sample.image, boxes=sample.boxes))
-            prediction = by_id.get(sample.sample_id, Prediction(sample.sample_id))
-            copied_predictions.append(Prediction(alias, prediction.boxes, prediction.boxes3d, prediction.latency_ms))
+            prediction = by_id.get(
+                sample.sample_id,
+                DetectionPrediction(sample_id=sample.sample_id),
+            )
+            copied_predictions.append(
+                DetectionPrediction(
+                    sample_id=alias,
+                    boxes=prediction.boxes,
+                    boxes3d=prediction.boxes3d,
+                    latency_ms=prediction.latency_ms,
+                    metadata=prediction.metadata,
+                )
+            )
         values.append(average_precision(copied_predictions, copied_samples, iou_threshold))
     return tuple(float(value) for value in np.quantile(values, [0.025, 0.975]))
 
 
 def detection_summary(
-    predictions: Sequence[Prediction],
+    predictions: Sequence[DetectionPrediction],
     samples: Sequence[Sample],
     iou_threshold: float = DEFAULT_IOU_THRESHOLD,
 ) -> DetectionSummary:
@@ -233,7 +250,10 @@ def detection_summary(
     detections = 0
     ground_truths = 0
     for sample in samples:
-        predicted = by_sample.get(sample.sample_id, Prediction(sample.sample_id)).boxes
+        predicted = by_sample.get(
+            sample.sample_id,
+            DetectionPrediction(sample_id=sample.sample_id),
+        ).boxes
         matches = match_boxes(predicted, sample.boxes, iou_threshold)
         matched = len(matches)
         true_positives += matched
@@ -251,8 +271,8 @@ def detection_summary(
 
 
 def detection_attack_success_rate(
-    clean_predictions: Sequence[Prediction],
-    attacked_predictions: Sequence[Prediction],
+    clean_predictions: Sequence[DetectionPrediction],
+    attacked_predictions: Sequence[DetectionPrediction],
     samples: Sequence[Sample],
     iou_threshold: float = DEFAULT_IOU_THRESHOLD,
 ) -> AttackSuccessSummary:
@@ -264,11 +284,11 @@ def detection_attack_success_rate(
     for sample in samples:
         clean_boxes = clean_by_sample.get(
             sample.sample_id,
-            Prediction(sample.sample_id),
+            DetectionPrediction(sample_id=sample.sample_id),
         ).boxes
         attacked_boxes = attacked_by_sample.get(
             sample.sample_id,
-            Prediction(sample.sample_id),
+            DetectionPrediction(sample_id=sample.sample_id),
         ).boxes
         clean_truths = set(match_boxes(clean_boxes, sample.boxes, iou_threshold).values())
         attacked_truths = set(match_boxes(attacked_boxes, sample.boxes, iou_threshold).values())
@@ -280,7 +300,7 @@ def detection_attack_success_rate(
 def _collect_hits(
     label: str,
     samples: Sequence[Sample],
-    by_sample: dict[str, Prediction],
+    by_sample: dict[str, DetectionPrediction],
     iou_threshold: float,
 ) -> tuple[list[tuple[float, bool]], int]:
     """Per-class ``(score, is_true_positive)`` pairs plus the ground-truth count."""
@@ -289,7 +309,13 @@ def _collect_hits(
     for sample in samples:
         truths = [box for box in sample.boxes if box.label == label]
         n_truths += len(truths)
-        candidates = [box for box in by_sample.get(sample.sample_id, Prediction(sample.sample_id)).boxes]
+        candidates = [
+            box
+            for box in by_sample.get(
+                sample.sample_id,
+                DetectionPrediction(sample_id=sample.sample_id),
+            ).boxes
+        ]
         selected = [box for box in candidates if box.label == label]
         matches = match_boxes(selected, truths, iou_threshold)
         flags.extend((box.score, index in matches) for index, box in enumerate(selected))

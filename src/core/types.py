@@ -190,67 +190,54 @@ class Sample:
         return replace(self, lidar_frame=frame)
 
 
-@dataclass(frozen=True, slots=True)
-class Prediction:
-    """Model output for a single sample, already post-processed."""
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DetectionPrediction:
+    """Post-processed 2D/3D detection output for one sample."""
 
     sample_id: str
     boxes: tuple[Box, ...] = ()
     boxes3d: tuple[Box3D, ...] = ()
     latency_ms: float = 0.0
-
-
-PromptType = Literal["box", "point"]
-
-
-@dataclass(frozen=True, slots=True)
-class SegmentationPrompt:
-    """Immutable benchmark prompt for one prompted segmentation target.
-
-    The independent SAM benchmark uses ``box`` prompts derived from reviewed
-    ground truth.  Keeping this object alongside every prediction prevents a
-    benchmark from silently changing the prompt between clean/attacked runs.
-    """
-
-    prompt_type: PromptType
-    coordinates: tuple[float, ...]
-    object_id: int | str | None = None
-
-    def __post_init__(self) -> None:
-        expected = 4 if self.prompt_type == "box" else 2
-        if len(self.coordinates) != expected:
-            raise ValueError(f"{self.prompt_type} prompt needs {expected} coordinates")
-        if self.prompt_type == "box":
-            x1, y1, x2, y2 = self.coordinates
-            if x2 <= x1 or y2 <= y1:
-                raise ValueError("box prompt must satisfy x1 < x2 and y1 < y2")
-
-
-@dataclass(frozen=True, slots=True, eq=False)
-class SegmentationPrediction:
-    """Runnable SAM-family output; masks are aligned with ``prompts``.
-
-    ``masks`` are boolean or probability arrays at original sample resolution.
-    ``mask_scores`` are model confidence values, never evaluation metrics.
-    """
-
-    sample_id: str
-    model_version_id: str
-    masks: tuple[np.ndarray, ...]
-    mask_scores: tuple[float, ...]
-    prompts: tuple[SegmentationPrompt, ...]
-    latency_ms: float = 0.0
-    preprocessing_version: str = "default"
     metadata: dict[str, Any] = field(default_factory=dict)
 
+
+@dataclass(frozen=True, slots=True, kw_only=True, eq=False)
+class MaskPrediction:
+    """One instance mask with an optional normalized semantic label."""
+
+    instance_id: str
+    mask: np.ndarray
+    label: str | None = None
+    score: float = 1.0
+
     def __post_init__(self) -> None:
-        if not (len(self.masks) == len(self.mask_scores) == len(self.prompts)):
-            raise ValueError("masks, mask_scores, and prompts must have identical lengths")
-        for mask in self.masks:
-            if not isinstance(mask, np.ndarray) or mask.ndim != 2:
-                raise ValueError("each segmentation mask must be a two-dimensional ndarray")
-            if not np.isfinite(mask).all():
-                raise ValueError("segmentation mask contains NaN or inf")
+        if not isinstance(self.mask, np.ndarray):
+            raise TypeError(f"mask must be np.ndarray, got {type(self.mask).__name__}")
+        if self.mask.ndim != 2:
+            raise ValueError(f"mask must be 2D, got shape {self.mask.shape}")
+        if self.mask.dtype != np.bool_:
+            raise ValueError(f"mask must have bool dtype, got {self.mask.dtype}")
+        if not np.isfinite(self.score) or not 0.0 <= self.score <= 1.0:
+            raise ValueError(f"mask score must be finite and in [0, 1], got {self.score!r}")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SegmentationPrediction:
+    """Post-processed instance-segmentation output for one sample."""
+
+    sample_id: str
+    instances: tuple[MaskPrediction, ...] = ()
+    prompt_id: str | None = None
+    latency_ms: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+ModelPrediction = DetectionPrediction | SegmentationPrediction
+
+# Backward-compatible name for existing detection-only consumers. Constructors
+# are intentionally keyword-only so extending the schema cannot silently bind a
+# positional argument to the wrong field.
+Prediction = DetectionPrediction
 
 
 @dataclass(frozen=True, slots=True)
