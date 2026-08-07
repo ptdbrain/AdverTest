@@ -208,7 +208,10 @@ def download_kitti_torchvision(root_dir: str | Path = "data/Kitti") -> Path:
     root_path.mkdir(parents=True, exist_ok=True)
 
     print(f"[*] Downloading KITTI dataset via torchvision into: {root_path} ...")
-    tv_datasets.Kitti(root=str(root_path), split="train", download=True)
+    try:
+        tv_datasets.Kitti(root=str(root_path), train=True, download=True)
+    except TypeError:
+        tv_datasets.Kitti(root=str(root_path), split="train", download=True)
 
     candidates = [
         root_path / "Kitti" / "raw",

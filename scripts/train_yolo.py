@@ -176,6 +176,12 @@ def parse_args() -> argparse.Namespace:
         help="Number of DataLoader worker threads for fast GPU feeding (default: 8)",
     )
     parser.add_argument(
+        "--eval-interval", "-n",
+        type=int,
+        default=1,
+        help="Evaluate on validation dataset every N epochs (default: 1, e.g. 5 means eval at epoch 5, 10, 15...)",
+    )
+    parser.add_argument(
         "--download",
         action="store_true",
         help="Download official KITTI dataset using torchvision.datasets.Kitti",
@@ -209,6 +215,7 @@ def main() -> int:
     print(f"[*] Target Epochs        : {args.epochs}")
     print(f"[*] Batch Size           : {args.batch_size}")
     print(f"[*] Learning Rate        : {args.lr}")
+    print(f"[*] Eval Interval        : Every {args.eval_interval} epoch(s)")
     print(f"[*] Random Seed          : {args.seed}")
     print(f"[*] Output Directory     : {args.output_dir}")
     print("=" * 75)
@@ -274,11 +281,10 @@ def main() -> int:
             "amp": args.amp,
             "cache": args.cache,
             "workers": args.workers,
+            "eval_interval": args.eval_interval,
             "data_yaml": str(data_yaml_path) if data_yaml_path else None,
         },
     )
-
-
 
     trainer = YoloTrainer(checkpoints_dir=args.output_dir)
 
@@ -316,12 +322,14 @@ def main() -> int:
     def on_epoch(epoch: int, metrics: dict[str, float]) -> None:
         clean_map = metrics.get("clean_map50_95", 0.0)
         attack_map = metrics.get("attacked_map50_95", 0.0)
+        map50 = metrics.get("map50", 0.0)
         robust_sc = metrics.get("robust_score", 0.0)
         loss = metrics.get("loss", 0.0)
         print(
-            f"  Epoch [{epoch:02d}/{epochs:02d}] "
+            f"  [Eval @ Epoch {epoch:02d}/{epochs:02d}] "
             f"Loss: {loss:.4f} | "
-            f"Clean mAP: {clean_map:.4f} | "
+            f"mAP50: {map50:.4f} | "
+            f"mAP50-95: {clean_map:.4f} | "
             f"Attacked mAP: {attack_map:.4f} | "
             f"RobustScore: {robust_sc:.1f}"
         )
