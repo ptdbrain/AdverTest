@@ -312,18 +312,18 @@ def main() -> int:
     start_time = time.perf_counter()
 
     def on_epoch(epoch: int, metrics: dict[str, float]) -> None:
-        clean_map = metrics.get("clean_map50_95", 0.0)
-        attack_map = metrics.get("attacked_map50_95", 0.0)
-        map50 = metrics.get("map50", 0.0)
-        robust_sc = metrics.get("robust_score", 0.0)
         loss = metrics.get("loss", 0.0)
+        precision = metrics.get("precision", 0.0)
+        recall = metrics.get("recall", 0.0)
+        map50 = metrics.get("map50", 0.0)
+        map50_95 = metrics.get("map50_95", metrics.get("clean_map50_95", 0.0))
         print(
-            f"  [Eval @ Epoch {epoch:02d}/{epochs:02d}] "
+            f"  [Epoch {epoch:02d}/{epochs:02d}] "
             f"Loss: {loss:.4f} | "
+            f"Precision: {precision:.4f} | "
+            f"Recall: {recall:.4f} | "
             f"mAP50: {map50:.4f} | "
-            f"mAP50-95: {clean_map:.4f} | "
-            f"Attacked mAP: {attack_map:.4f} | "
-            f"RobustScore: {robust_sc:.1f}"
+            f"mAP50-95: {map50_95:.4f}"
         )
 
     callbacks = TrainerCallbacks(

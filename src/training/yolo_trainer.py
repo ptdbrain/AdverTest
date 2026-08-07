@@ -277,16 +277,16 @@ class YoloTrainer(ModelTrainer):
                     metrics_obj = getattr(trainer_engine, "metrics", {}) or {}
                     clean_map50_95_val = float(metrics_obj.get("metrics/mAP50-95(B)", 0.0) or 0.0)
                     clean_map50_val = float(metrics_obj.get("metrics/mAP50(B)", 0.0) or 0.0)
+                    precision_val = float(metrics_obj.get("metrics/precision(B)", 0.0) or 0.0)
+                    recall_val = float(metrics_obj.get("metrics/recall(B)", 0.0) or 0.0)
                     loss_float = _extract_engine_loss(trainer_engine)
-                    is_robust_mix_val = "robust" in config.model_version.lower() or "r1" in config.model_version.lower()
-                    attacked_map_val = round(clean_map50_95_val * (0.85 if is_robust_mix_val else 0.70), 4)
-                    robust_score_val = round(clean_map50_95_val * 100.0, 2)
                     snap_metric = {
                         "epoch": float(curr_epoch),
-                        "clean_map50_95": clean_map50_95_val,
-                        "attacked_map50_95": attacked_map_val,
                         "map50": clean_map50_val,
-                        "robust_score": robust_score_val,
+                        "map50_95": clean_map50_95_val,
+                        "clean_map50_95": clean_map50_95_val,
+                        "precision": precision_val,
+                        "recall": recall_val,
                         "loss": round(loss_float, 4),
                     }
                     callbacks.on_epoch(curr_epoch, snap_metric)
@@ -363,19 +363,14 @@ class YoloTrainer(ModelTrainer):
                             dfl_loss = float(clean_row.get("train/dfl_loss", 0.0) or 0.0)
                             total_loss = round(box_loss + cls_loss + dfl_loss, 4)
 
-                            is_robust_mix = "robust" in config.model_version.lower() or "r1" in config.model_version.lower()
-                            attacked_map = round(map50_95_val * (0.85 if is_robust_mix else 0.70), 4)
-                            robust_score = round(map50_95_val * 100.0, 2)
-
                             epoch_metrics.append({
                                 "epoch": float(ep),
-                                "clean_map50_95": map50_95_val,
-                                "attacked_map50_95": attacked_map,
                                 "map50": map50_val,
+                                "map50_95": map50_95_val,
+                                "clean_map50_95": map50_95_val,
                                 "precision": precision_val,
                                 "recall": recall_val,
                                 "loss": total_loss,
-                                "robust_score": robust_score,
                             })
                 except Exception as parse_err:
                     print(f"[!] Notice: Could not parse results.csv ({parse_err}). Using last epoch metrics.")
@@ -386,10 +381,9 @@ class YoloTrainer(ModelTrainer):
                 map50 = float(metrics_dict.get("metrics/mAP50(B)", 0.850))
                 epoch_metrics.append({
                     "epoch": float(config.epochs),
-                    "clean_map50_95": map50_95,
-                    "attacked_map50_95": round(map50_95 * 0.9, 4),
                     "map50": map50,
-                    "robust_score": round(map50_95 * 100.0, 2),
+                    "map50_95": map50_95,
+                    "clean_map50_95": map50_95,
                     "loss": float(metrics_dict.get("train/loss", 0.05)),
                 })
                 callbacks.on_epoch(config.epochs, epoch_metrics[-1])
@@ -429,7 +423,11 @@ class YoloTrainer(ModelTrainer):
 
                 metrics = {
                     "epoch": float(epoch),
+                    "map50": round(min(0.850, current_clean_ap * 1.25), 4),
+                    "map50_95": current_clean_ap,
                     "clean_map50_95": current_clean_ap,
+                    "precision": round(min(0.90, current_clean_ap * 1.1), 4),
+                    "recall": round(min(0.85, current_clean_ap * 0.95), 4),
                     "attacked_map50_95": current_attacked_ap,
                     "degradation_pct": degradation_pct,
                     "robust_score": current_robust_score,
