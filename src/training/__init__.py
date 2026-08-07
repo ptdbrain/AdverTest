@@ -21,6 +21,7 @@ from src.training.report import (
     ValidationReport,
 )
 from src.training.worker import ComputeWorker
+from src.training.yolo_trainer import YoloTrainer
 
 __all__ = [
     "PatchArtifact",
@@ -44,4 +45,6 @@ __all__ = [
     "TrainingRunConfig",
     "TrainingStateMachine",
     "ValidationReport",
+    "YoloTrainer",
 ]
+

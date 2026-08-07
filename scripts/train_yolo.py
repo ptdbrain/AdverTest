@@ -1,0 +1,272 @@
+"""YOLO11 Robust Training Runner for Local GPU & Google Colab environments.
+
+Usage:
+    # 1. Train Baseline (YOLO-B0) on Clean KITTI split:
+    python scripts/train_yolo.py --mode b0 --epochs 30 --batch-size 16 --output-dir runs/train/yolo_b0
+
+    # 2. Train Robust Mix (YOLO-R1) from Baseline B0:
+    python scripts/train_yolo.py --mode r1 --base-checkpoint runs/train/yolo_b0/yolo11s-clean-b0_best.pt \
+        --epochs 20 --batch-size 16 --output-dir runs/train/yolo_r1
+
+    # 3. Train Targeted Repair (YOLO-R2) for a specific failure cluster:
+    python scripts/train_yolo.py --mode r2 --base-checkpoint runs/train/yolo_r1/yolo11s-robust-r1_best.pt \
+        --epochs 15 --batch-size 16 --target-cluster "pedestrian_fog_occlusion" \
+        --output-dir runs/train/yolo_r2
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+# Add project root to sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
+
+from src.training.base import TrainerCallbacks
+from src.training.contracts import DefenseProfile, TrainingRunConfig
+from src.training.yolo_trainer import YoloTrainer
+
+
+def check_environment() -> dict[str, str | bool | int]:
+    if HAS_TORCH:
+        has_cuda = torch.cuda.is_available()
+        device_name = torch.cuda.get_device_name(0) if has_cuda else "CPU"
+        device_count = torch.cuda.device_count() if has_cuda else 0
+        torch_ver = torch.__version__
+    else:
+        has_cuda = False
+        device_name = "CPU (torch not installed in current python interpreter)"
+        device_count = 0
+        torch_ver = "N/A"
+
+    return {
+        "cuda_available": has_cuda,
+        "device_name": device_name,
+        "device_count": device_count,
+        "torch_version": torch_ver,
+    }
+
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Train & Fine-tune YOLO11 models (B0, R1, R2) on Local / Colab GPU."
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["b0", "r1", "r2", "baseline", "robust-mix", "targeted-repair"],
+        default="b0",
+        help="Training mode: b0 (clean baseline), r1 (robust mix), r2 (targeted repair)",
+    )
+    parser.add_argument(
+        "--base-checkpoint",
+        type=str,
+        default=None,
+        help="Path to initial weights or parent checkpoint (.pt)",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=25,
+        help="Number of training epochs (default: 25)",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=16,
+        help="Batch size (default: 16)",
+    )
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=0.001,
+        help="Initial learning rate (default: 0.001)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=20260807,
+        help="Random seed for reproducibility (default: 20260807)",
+    )
+    parser.add_argument(
+        "--dataset-id",
+        type=str,
+        default="kitti-v1",
+        help="Dataset version ID",
+    )
+    parser.add_argument(
+        "--split-id",
+        type=str,
+        default="kitti-train-split-v1",
+        help="Split manifest ID (must not be locked test)",
+    )
+    parser.add_argument(
+        "--target-cluster",
+        type=str,
+        default="general_robustness",
+        help="Target failure cluster identifier (for R2 mode)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="runs/train/yolo11",
+        help="Output directory for checkpoints and metrics",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Quick dry-run without full epochs for sanity check",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    env = check_environment()
+
+    print("=" * 70)
+    print(" AdverTest — YOLO11 Robust Training Pipeline (Person B)")
+    print("=" * 70)
+    print(f"[*] PyTorch Version : {env['torch_version']}")
+    print(f"[*] Compute Device  : {env['device_name']} (CUDA: {env['cuda_available']})")
+    print(f"[*] Training Mode   : {args.mode.upper()}")
+    print(f"[*] Target Epochs   : {args.epochs}")
+    print(f"[*] Batch Size      : {args.batch_size}")
+    print(f"[*] Learning Rate   : {args.lr}")
+    print(f"[*] Random Seed     : {args.seed}")
+    print(f"[*] Output Directory: {args.output_dir}")
+    print("=" * 70)
+
+    # Normalize mode
+    mode = args.mode.lower()
+    if mode in ("b0", "baseline"):
+        model_version = "yolo11s-clean-b0"
+        defense_profile_id = "profile-clean-b0"
+        clean_ratio = 1.0
+        gen_ratio = 0.0
+    elif mode in ("r1", "robust-mix"):
+        model_version = "yolo11s-robust-r1"
+        defense_profile_id = "profile-robust-mix-r1"
+        clean_ratio = 0.5
+        gen_ratio = 0.5
+    else:
+        model_version = f"yolo11s-repaired-r2-{args.target_cluster}"
+        defense_profile_id = f"profile-repaired-r2-{args.target_cluster}"
+        clean_ratio = 0.4
+        gen_ratio = 0.6
+
+    epochs = 2 if args.dry_run else args.epochs
+    run_id = f"run-{model_version}-{int(time.time())}"
+
+    config = TrainingRunConfig(
+        run_id=run_id,
+        trainer_name="yolo11",
+        model_version=model_version,
+        dataset_version_id=args.dataset_id,
+        split_manifest_id=args.split_id,
+        defense_profile_id=defense_profile_id,
+        seed=args.seed,
+        epochs=epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.lr,
+        metadata={
+            "mode": mode,
+            "base_checkpoint": args.base_checkpoint,
+            "target_cluster": args.target_cluster,
+            "clean_ratio": clean_ratio,
+            "generated_ratio": gen_ratio,
+            "cuda": env["cuda_available"],
+        },
+    )
+
+    trainer = YoloTrainer(checkpoints_dir=args.output_dir)
+
+    print("\n[1/4] Validating Configuration & Resource Estimation...")
+    val_report = trainer.validate_config(config)
+    if not val_report.valid:
+        print(f"[!] Validation Failed: {val_report.errors}")
+        return 1
+    for warning in val_report.warnings:
+        print(f"[?] Warning: {warning}")
+
+    estimate = trainer.estimate(config)
+    print(f"      Estimated GPU Hours : {estimate.gpu_hours:.3f} hrs")
+    print(f"      Estimated Disk Space: {estimate.storage_bytes / (1024 * 1024):.1f} MB")
+    print(f"      Estimated Wall Time : {estimate.wall_time_seconds} s")
+
+    print("\n[2/4] Preparing Dataset & Checking Leakage...")
+    try:
+        data_prep = trainer.prepare_data(config)
+        print(f"      Manifest ID: {data_prep.manifest_id}")
+        print(f"      Lineage OK : {data_prep.lineage_valid}")
+    except ValueError as exc:
+        print(f"[!] Leakage / Data Error: {exc}")
+        return 1
+
+    print("\n[3/4] Running Training Loop...")
+    start_time = time.perf_counter()
+
+    def on_epoch(epoch: int, metrics: dict[str, float]) -> None:
+        clean_map = metrics.get("clean_map50_95", 0.0)
+        attack_map = metrics.get("attacked_map50_95", 0.0)
+        robust_sc = metrics.get("robust_score", 0.0)
+        loss = metrics.get("loss", 0.0)
+        print(
+            f"  Epoch [{epoch:02d}/{epochs:02d}] "
+            f"Loss: {loss:.4f} | "
+            f"Clean mAP: {clean_map:.4f} | "
+            f"Attacked mAP: {attack_map:.4f} | "
+            f"RobustScore: {robust_sc:.1f}"
+        )
+
+    callbacks = TrainerCallbacks(
+        on_epoch=on_epoch,
+        is_cancelled=lambda: False,
+    )
+
+    report = trainer.train(config, callbacks)
+    duration = time.perf_counter() - start_time
+
+    print(f"\n[4/4] Training Finished in {duration:.2f}s with State: {report.state}")
+    if report.state != "COMPLETED":
+        print(f"[!] Errors: {report.errors}")
+        return 1
+
+    if report.checkpoint:
+        print(f"      Checkpoint Saved : {report.checkpoint.path}")
+        print(f"      SHA256 Digest   : {report.checkpoint.sha256}")
+
+    # Acceptance Gate Evaluation (for R1/R2)
+    if mode in ("r1", "r2", "robust-mix", "targeted-repair") and report.epoch_metrics:
+        final_metrics = report.epoch_metrics[-1]
+        baseline_metrics = {"clean_map50_95": 0.685, "robust_score": 62.0}
+        gate_result = YoloTrainer.evaluate_acceptance_gate(baseline_metrics, final_metrics)
+        print("\n" + "=" * 70)
+        print(" CHECKPOINT ACCEPTANCE GATE EVALUATION")
+        print("=" * 70)
+        print(f"[*] Gate Passed          : {'PASSED (ACCEPT)' if gate_result['passed'] else 'REJECTED'}")
+        print(f"[*] Clean Delta          : {gate_result['clean_delta']:+.4f} (Max drop allowed: -0.0200)")
+        print(f"[*] RobustScore Delta    : {gate_result['robust_score_delta']:+.2f} (Min gain required: +8.0)")
+        print("=" * 70)
+
+    # Save summary report JSON
+    summary_path = Path(args.output_dir) / run_id / "training_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    print(f"[✓] Full Report Exported to: {summary_path}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

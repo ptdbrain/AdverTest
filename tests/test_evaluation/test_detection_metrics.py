@@ -126,3 +126,58 @@ def test_degradation_is_zero_when_baseline_is_zero() -> None:
     report = RunReport("r0", "m", "m:1", "d", 4, ap_clean=0.0)
     cell = CellResult("gaussian_noise", "A", 3, ap=0.0, n_samples=4)
     assert report.degradation(cell) == 0.0
+
+
+def test_per_object_detection_comparison_categorizes_failures() -> None:
+    from src.evaluation.detection_metrics import per_object_detection_comparison
+
+    # Sample with 3 objects:
+    # 1. Car at (0, 0, 10, 10) - correctly detected clean, missed after attack
+    # 2. Pedestrian at (20, 20, 30, 30) - correctly detected clean, misclassified as Car after attack
+    # 3. Cyclist at (40, 40, 50, 50) - correctly detected clean, confidence collapsed (< 0.25) after attack
+    car_gt = Box(0, 0, 10, 10, "Car")
+    ped_gt = Box(20, 20, 30, 30, "Pedestrian")
+    cyc_gt = Box(40, 40, 50, 50, "Cyclist")
+    sample = _sample((car_gt, ped_gt, cyc_gt))
+
+    clean_pred = DetectionPrediction(
+        sample_id="s0",
+        boxes=(
+            Box(0, 0, 10, 10, "Car", 0.95),
+            Box(20, 20, 30, 30, "Pedestrian", 0.88),
+            Box(40, 40, 50, 50, "Cyclist", 0.82),
+        ),
+    )
+
+    attacked_pred = DetectionPrediction(
+        sample_id="s0",
+        boxes=(
+            # car is missed completely
+            Box(20, 20, 30, 30, "Car", 0.75),       # misclassified Pedestrian -> Car
+            Box(40, 40, 50, 50, "Cyclist", 0.15),   # confidence collapsed (0.15 < 0.25)
+        ),
+    )
+
+    details = per_object_detection_comparison([clean_pred], [attacked_pred], [sample])
+
+    assert len(details) == 3
+
+    # Check Car GT
+    car_detail = next(d for d in details if d.gt_box.label == "Car")
+    assert car_detail.status_clean == "correct"
+    assert car_detail.status_attacked == "missed"
+    assert car_detail.failure_reason == "missed"
+    assert car_detail.as_dict()["sample_id"] == "s0"
+
+    # Check Pedestrian GT
+    ped_detail = next(d for d in details if d.gt_box.label == "Pedestrian")
+    assert ped_detail.status_clean == "correct"
+    assert ped_detail.status_attacked == "misclassified"
+    assert ped_detail.failure_reason == "misclassified"
+
+    # Check Cyclist GT
+    cyc_detail = next(d for d in details if d.gt_box.label == "Cyclist")
+    assert cyc_detail.status_clean == "correct"
+    assert cyc_detail.status_attacked == "confidence_collapsed"
+    assert cyc_detail.failure_reason == "confidence_collapsed"
+

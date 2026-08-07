@@ -99,6 +99,8 @@ class PersonDServices:
 
         load_attacks()
         registry = TrainerRegistry()
+        from src.training.yolo_trainer import YoloTrainer
+        registry.register(YoloTrainer())
         return cls(
             datasets=DatasetService(),
             recipes=RecipeService(ATTACK_CATALOG, RecipeBuilder()),
@@ -108,3 +110,4 @@ class PersonDServices:
             comparisons=ComparisonService(),
             training=TrainingComputeService(registry),
         )
+
