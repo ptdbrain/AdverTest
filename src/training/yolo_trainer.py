@@ -242,28 +242,57 @@ class YoloTrainer(ModelTrainer):
             cache_mode = config.metadata.get("cache", "ram")
             use_amp = bool(config.metadata.get("amp", True))
 
+            def _extract_engine_loss(engine: Any) -> float:
+                try:
+                    tloss = getattr(engine, "tloss", None)
+                    if tloss is not None:
+                        if hasattr(tloss, "item"):
+                            return float(tloss.item())
+                        if hasattr(tloss, "__iter__") and not isinstance(tloss, (str, bytes)):
+                            if isinstance(tloss, dict):
+                                return float(sum(float(v) for v in tloss.values()))
+                            items = list(tloss)
+                            if items:
+                                return float(items[0])
+                        return float(tloss)
+                except Exception:
+                    pass
+                try:
+                    loss_items = getattr(engine, "loss_items", None)
+                    if loss_items is not None:
+                        if hasattr(loss_items, "sum"):
+                            return float(loss_items.sum().item())
+                        if hasattr(loss_items, "__iter__") and not isinstance(loss_items, (str, bytes)):
+                            return float(sum(float(x) for x in loss_items))
+                except Exception:
+                    pass
+                return 0.0
+
             def on_fit_epoch_end_callback(trainer_engine: Any) -> None:
-                if callbacks.is_cancelled():
-                    trainer_engine.stop = True
-                    return
-                curr_epoch = int(getattr(trainer_engine, "epoch", 0)) + 1
-                metrics_obj = getattr(trainer_engine, "metrics", {}) or {}
-                clean_map50_95_val = float(metrics_obj.get("metrics/mAP50-95(B)", 0.0) or 0.0)
-                clean_map50_val = float(metrics_obj.get("metrics/mAP50(B)", 0.0) or 0.0)
-                tloss_val = getattr(trainer_engine, "tloss", None)
-                loss_float = float(tloss_val[0]) if tloss_val is not None and len(tloss_val) > 0 else 0.0
-                is_robust_mix_val = "robust" in config.model_version.lower() or "r1" in config.model_version.lower()
-                attacked_map_val = round(clean_map50_95_val * (0.85 if is_robust_mix_val else 0.70), 4)
-                robust_score_val = round(clean_map50_95_val * 100.0, 2)
-                snap_metric = {
-                    "epoch": float(curr_epoch),
-                    "clean_map50_95": clean_map50_95_val,
-                    "attacked_map50_95": attacked_map_val,
-                    "map50": clean_map50_val,
-                    "robust_score": robust_score_val,
-                    "loss": round(loss_float, 4),
-                }
-                callbacks.on_epoch(curr_epoch, snap_metric)
+                try:
+                    if callbacks.is_cancelled():
+                        trainer_engine.stop = True
+                        return
+                    curr_epoch = int(getattr(trainer_engine, "epoch", 0)) + 1
+                    metrics_obj = getattr(trainer_engine, "metrics", {}) or {}
+                    clean_map50_95_val = float(metrics_obj.get("metrics/mAP50-95(B)", 0.0) or 0.0)
+                    clean_map50_val = float(metrics_obj.get("metrics/mAP50(B)", 0.0) or 0.0)
+                    loss_float = _extract_engine_loss(trainer_engine)
+                    is_robust_mix_val = "robust" in config.model_version.lower() or "r1" in config.model_version.lower()
+                    attacked_map_val = round(clean_map50_95_val * (0.85 if is_robust_mix_val else 0.70), 4)
+                    robust_score_val = round(clean_map50_95_val * 100.0, 2)
+                    snap_metric = {
+                        "epoch": float(curr_epoch),
+                        "clean_map50_95": clean_map50_95_val,
+                        "attacked_map50_95": attacked_map_val,
+                        "map50": clean_map50_val,
+                        "robust_score": robust_score_val,
+                        "loss": round(loss_float, 4),
+                    }
+                    callbacks.on_epoch(curr_epoch, snap_metric)
+                except Exception:
+                    # Safe fallback to prevent callback errors from stopping training
+                    pass
 
             try:
                 model.add_callback("on_fit_epoch_end", on_fit_epoch_end_callback)
