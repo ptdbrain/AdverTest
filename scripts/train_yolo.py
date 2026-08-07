@@ -176,12 +176,6 @@ def parse_args() -> argparse.Namespace:
         help="Number of DataLoader worker threads for fast GPU feeding (default: 8)",
     )
     parser.add_argument(
-        "--eval-interval", "-n",
-        type=int,
-        default=1,
-        help="Evaluate on validation dataset every N epochs (default: 1, e.g. 5 means eval at epoch 5, 10, 15...)",
-    )
-    parser.add_argument(
         "--download",
         action="store_true",
         help="Download official KITTI dataset using torchvision.datasets.Kitti",
@@ -215,7 +209,6 @@ def main() -> int:
     print(f"[*] Target Epochs        : {args.epochs}")
     print(f"[*] Batch Size           : {args.batch_size}")
     print(f"[*] Learning Rate        : {args.lr}")
-    print(f"[*] Eval Interval        : Every {args.eval_interval} epoch(s)")
     print(f"[*] Random Seed          : {args.seed}")
     print(f"[*] Output Directory     : {args.output_dir}")
     print("=" * 75)
@@ -281,7 +274,6 @@ def main() -> int:
             "amp": args.amp,
             "cache": args.cache,
             "workers": args.workers,
-            "eval_interval": args.eval_interval,
             "data_yaml": str(data_yaml_path) if data_yaml_path else None,
         },
     )

@@ -126,38 +126,6 @@ def test_full_training_loop_lifecycle(trainer: YoloTrainer, valid_config: Traini
     assert report.registration["status"] == "registered"
 
 
-def test_periodic_eval_interval_lifecycle(trainer: YoloTrainer) -> None:
-    from src.training.base import TrainerCallbacks
-
-    config_eval_every_2 = TrainingRunConfig(
-        run_id="run-yolo-eval-interval-test",
-        trainer_name="yolo11",
-        model_version="yolo11s-kitti-robust-v2",
-        dataset_version_id="kitti-v1",
-        split_manifest_id="kitti-train-split-v1",
-        defense_profile_id="profile-robust-mix-01",
-        seed=20260807,
-        epochs=6,
-        batch_size=8,
-        learning_rate=0.001,
-        metadata={"eval_interval": 2, "sample_count": 200},
-    )
-
-    logged_epochs: list[tuple[int, dict[str, float]]] = []
-    callbacks = TrainerCallbacks(
-        on_epoch=lambda ep, metrics: logged_epochs.append((ep, metrics)),
-        is_cancelled=lambda: False,
-    )
-
-    report = trainer.train(config_eval_every_2, callbacks)
-
-    assert report.state == "COMPLETED"
-    # For 6 epochs with interval=2, evaluated epochs are 2, 4, 6
-    assert len(report.epoch_metrics) == 3
-    assert [int(m["epoch"]) for m in report.epoch_metrics] == [2, 4, 6]
-    assert [ep for ep, _ in logged_epochs] == [2, 4, 6]
-
-
 def test_training_cancellation_handles_state(trainer: YoloTrainer, valid_config: TrainingRunConfig) -> None:
     from src.training.base import TrainerCallbacks
 
