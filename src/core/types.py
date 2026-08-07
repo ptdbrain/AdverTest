@@ -200,6 +200,59 @@ class Prediction:
     latency_ms: float = 0.0
 
 
+PromptType = Literal["box", "point"]
+
+
+@dataclass(frozen=True, slots=True)
+class SegmentationPrompt:
+    """Immutable benchmark prompt for one prompted segmentation target.
+
+    The independent SAM benchmark uses ``box`` prompts derived from reviewed
+    ground truth.  Keeping this object alongside every prediction prevents a
+    benchmark from silently changing the prompt between clean/attacked runs.
+    """
+
+    prompt_type: PromptType
+    coordinates: tuple[float, ...]
+    object_id: int | str | None = None
+
+    def __post_init__(self) -> None:
+        expected = 4 if self.prompt_type == "box" else 2
+        if len(self.coordinates) != expected:
+            raise ValueError(f"{self.prompt_type} prompt needs {expected} coordinates")
+        if self.prompt_type == "box":
+            x1, y1, x2, y2 = self.coordinates
+            if x2 <= x1 or y2 <= y1:
+                raise ValueError("box prompt must satisfy x1 < x2 and y1 < y2")
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class SegmentationPrediction:
+    """Runnable SAM-family output; masks are aligned with ``prompts``.
+
+    ``masks`` are boolean or probability arrays at original sample resolution.
+    ``mask_scores`` are model confidence values, never evaluation metrics.
+    """
+
+    sample_id: str
+    model_version_id: str
+    masks: tuple[np.ndarray, ...]
+    mask_scores: tuple[float, ...]
+    prompts: tuple[SegmentationPrompt, ...]
+    latency_ms: float = 0.0
+    preprocessing_version: str = "default"
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not (len(self.masks) == len(self.mask_scores) == len(self.prompts)):
+            raise ValueError("masks, mask_scores, and prompts must have identical lengths")
+        for mask in self.masks:
+            if not isinstance(mask, np.ndarray) or mask.ndim != 2:
+                raise ValueError("each segmentation mask must be a two-dimensional ndarray")
+            if not np.isfinite(mask).all():
+                raise ValueError("segmentation mask contains NaN or inf")
+
+
 @dataclass(frozen=True, slots=True)
 class ModelInfo:
     """Metadata every adapter must expose (plan §1.2, ``metadata()``)."""
