@@ -136,11 +136,18 @@ def parse_args() -> argparse.Namespace:
         help="Target failure cluster identifier (for R2 mode)",
     )
     parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        help="Device to use for training: auto, cpu, cuda, 0, etc. (default: auto)",
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         default="runs/train/yolo11",
         help="Output directory for checkpoints and metrics",
     )
+
     parser.add_argument(
         "--max-samples",
         type=int,
@@ -232,9 +239,11 @@ def main() -> int:
             "clean_ratio": clean_ratio,
             "generated_ratio": gen_ratio,
             "cuda": env["cuda_available"],
+            "device": args.device,
             "data_yaml": str(data_yaml_path) if data_yaml_path else None,
         },
     )
+
 
     trainer = YoloTrainer(checkpoints_dir=args.output_dir)
 

@@ -190,25 +190,38 @@ class YoloTrainer(ModelTrainer):
         if use_real_ultralytics:
             # REAL ULTRALYTICS PYTORCH TRAINING
             base_weights = config.metadata.get("base_checkpoint") or "yolo11s.pt"
-            device = "0" if config.metadata.get("cuda", False) else "cpu"
+            device = config.metadata.get("device", "auto")
+            if device == "auto":
+                device = "0" if config.metadata.get("cuda", False) else "cpu"
+
             model = YOLO(base_weights)
 
-            # Ultralytics training execution
-            train_results = model.train(
-                data=str(data_yaml),
-                epochs=config.epochs,
-                batch=config.batch_size,
-                lr0=config.learning_rate,
-                imgsz=640,
-                device=device,
-                project=str(target_dir),
-                name="ultralytics_run",
-                exist_ok=True,
-                save=True,
-                val=True,
-                seed=config.seed,
-                verbose=True,
-            )
+            train_args = {
+                "data": str(data_yaml),
+                "epochs": config.epochs,
+                "batch": config.batch_size,
+                "lr0": config.learning_rate,
+                "imgsz": 640,
+                "device": device,
+                "project": str(target_dir),
+                "name": "ultralytics_run",
+                "exist_ok": True,
+                "save": True,
+                "val": True,
+                "seed": config.seed,
+                "verbose": True,
+            }
+
+            try:
+                train_results = model.train(**train_args)
+            except Exception as exc:
+                if device != "cpu" and ("CUDA" in str(exc) or "kernel image" in str(exc) or "AcceleratorError" in str(type(exc))):
+                    print(f"\n[!] GPU training failed on local CUDA device ({exc}). Falling back to CPU training...")
+                    train_args["device"] = "cpu"
+                    train_results = model.train(**train_args)
+                else:
+                    raise exc
+
 
             # Locate best.pt from ultralytics run
             saved_best = target_dir / "ultralytics_run" / "weights" / "best.pt"
