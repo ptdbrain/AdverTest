@@ -136,3 +136,66 @@ names:
     yaml_path.write_text(yaml_content, encoding="utf-8")
 
     return yaml_path
+
+
+def create_starter_kitti_dataset(
+    output_dir: str | Path = "data/yolo_kitti",
+    num_samples: int = 100,
+    seed: int = 20260807,
+) -> Path:
+    """Generates a starter KITTI-format dataset for instant GPU training verification."""
+    out_path = Path(output_dir).expanduser().resolve()
+    for split in ("train", "val"):
+        (out_path / "images" / split).mkdir(parents=True, exist_ok=True)
+        (out_path / "labels" / split).mkdir(parents=True, exist_ok=True)
+
+    yaml_path = out_path / "kitti.yaml"
+    if (out_path / "images" / "train").is_dir() and any((out_path / "images" / "train").iterdir()) and yaml_path.is_file():
+        return yaml_path
+
+    rng = random.Random(seed)
+    from PIL import ImageDraw
+
+    n_val = max(10, int(num_samples * 0.2))
+    for i in range(num_samples):
+        split = "val" if i < n_val else "train"
+        img = Image.new("RGB", (640, 640), color=(
+            rng.randint(30, 80),
+            rng.randint(40, 90),
+            rng.randint(50, 100)
+        ))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([0, 320, 640, 640], fill=(50, 50, 50))
+        draw.rectangle([0, 0, 640, 320], fill=(135, 206, 235))
+
+        boxes: list[str] = []
+        for _ in range(rng.randint(1, 4)):
+            cls_id = rng.choice([0, 1, 2])
+            w = rng.uniform(0.08, 0.25)
+            h = rng.uniform(0.10, 0.30)
+            cx = rng.uniform(0.15, 0.85)
+            cy = rng.uniform(0.50, 0.80)
+
+            x1 = int((cx - w / 2) * 640)
+            y1 = int((cy - h / 2) * 640)
+            x2 = int((cx + w / 2) * 640)
+            y2 = int((cy + h / 2) * 640)
+
+            color = (200, 30, 30) if cls_id == 2 else (30, 200, 30) if cls_id == 0 else (30, 30, 200)
+            draw.rectangle([x1, y1, x2, y2], fill=color)
+            boxes.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+
+        img.save(out_path / "images" / split / f"starter_{i:06d}.jpg")
+        (out_path / "labels" / split / f"starter_{i:06d}.txt").write_text("\n".join(boxes), encoding="utf-8")
+
+    yaml_content = f"""path: {out_path.as_posix()}
+train: images/train
+val: images/val
+names:
+  0: Pedestrian
+  1: Cyclist
+  2: Car
+"""
+    yaml_path.write_text(yaml_content, encoding="utf-8")
+    return yaml_path
+

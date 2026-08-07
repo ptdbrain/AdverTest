@@ -39,8 +39,9 @@ except ImportError:
 
 from src.training.base import TrainerCallbacks
 from src.training.contracts import TrainingRunConfig
-from src.training.yolo_dataset_formatter import convert_kitti_to_yolo
+from src.training.yolo_dataset_formatter import convert_kitti_to_yolo, create_starter_kitti_dataset
 from src.training.yolo_trainer import YoloTrainer
+
 
 
 def check_environment() -> dict[str, Any]:
@@ -206,7 +207,7 @@ def main() -> int:
     print(f"[*] Output Directory     : {args.output_dir}")
     print("=" * 75)
 
-    # Convert KITTI dataset to YOLO format if present
+    # Convert KITTI dataset to YOLO format if present, or initialize starter dataset
     data_yaml_path: Path | None = None
     kitti_raw_path = Path(args.data_root)
     if kitti_raw_path.is_dir() and not args.dry_run:
@@ -221,10 +222,15 @@ def main() -> int:
             )
             print(f"      Dataset YAML generated at: {data_yaml_path}")
         except Exception as exc:
-            print(f"      [Notice] Could not auto-convert KITTI ({exc}). Using mock/standard mode.")
-            data_yaml_path = None
+            print(f"      [Notice] Could not auto-convert KITTI ({exc}). Using starter dataset.")
+            data_yaml_path = create_starter_kitti_dataset(output_dir=args.yolo_data_dir, seed=args.seed)
+    elif not args.dry_run:
+        print("\n[1/5] KITTI raw folder not found. Generating starter KITTI dataset for instant GPU training...")
+        data_yaml_path = create_starter_kitti_dataset(output_dir=args.yolo_data_dir, seed=args.seed)
+        print(f"      Starter dataset YAML generated at: {data_yaml_path}")
     else:
-        print("\n[1/5] Skipping KITTI auto-conversion (dry-run or data-root not found).")
+        print("\n[1/5] Skipping KITTI auto-conversion (dry-run mode).")
+
 
     # Normalize mode
     mode = args.mode.lower()
