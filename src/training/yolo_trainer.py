@@ -188,13 +188,26 @@ class YoloTrainer(ModelTrainer):
         checkpoint_path = target_dir / f"{config.model_version}_best.pt"
 
         if use_real_ultralytics:
-            # REAL ULTRALYTICS PYTORCH TRAINING
+            # REAL ULTRALYTICS PYTORCH TRAINING WITH MAXIMUM GPU ACCELERATION
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.backends.cudnn.benchmark = True
+                    torch.backends.cuda.matmul.allow_tf32 = True
+                    torch.backends.cudnn.allow_tf32 = True
+            except Exception:
+                pass
+
             base_weights = config.metadata.get("base_checkpoint") or "yolo11s.pt"
             device = config.metadata.get("device", "auto")
             if device == "auto":
                 device = "0" if config.metadata.get("cuda", False) else "cpu"
 
             model = YOLO(base_weights)
+
+            num_workers = int(config.metadata.get("workers", min(8, os.cpu_count() or 2)))
+            cache_mode = config.metadata.get("cache", "ram")
+            use_amp = bool(config.metadata.get("amp", True))
 
             train_args = {
                 "data": str(data_yaml),
@@ -210,6 +223,11 @@ class YoloTrainer(ModelTrainer):
                 "val": True,
                 "seed": config.seed,
                 "verbose": True,
+                "workers": num_workers if device != "cpu" else 0,
+                "cache": cache_mode if cache_mode != "none" else False,
+                "amp": use_amp,
+                "close_mosaic": min(10, max(1, config.epochs // 4)),
+                "plots": True,
             }
 
             try:
@@ -218,9 +236,12 @@ class YoloTrainer(ModelTrainer):
                 if device != "cpu" and ("CUDA" in str(exc) or "kernel image" in str(exc) or "AcceleratorError" in str(type(exc))):
                     print(f"\n[!] GPU training failed on local CUDA device ({exc}). Falling back to CPU training...")
                     train_args["device"] = "cpu"
+                    train_args["workers"] = 0
+                    train_args["amp"] = False
                     train_results = model.train(**train_args)
                 else:
                     raise exc
+
 
 
             # Locate best.pt from ultralytics run

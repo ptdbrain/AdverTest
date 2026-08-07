@@ -100,29 +100,39 @@ BRANCH_NAME = "feat/person-d-platform"
 
 ---
 
-### [CELL 4] Huấn luyện YOLO-B0 (Clean Baseline)
+### [CELL 4] Huấn luyện YOLO-B0 (Tối ưu 100% Công suất GPU: AMP FP16 + RAM Cache + Multi-workers)
 ```python
-# Huấn luyện mô hình Baseline sạch (~30 epochs)
+# Huấn luyện mô hình Baseline sạch với toàn bộ sức mạnh GPU T4 / A100
 !python scripts/train_yolo.py \
     --mode b0 \
     --epochs 30 \
-    --batch-size 16 \
+    --batch-size 32 \
+    --amp \
+    --cache ram \
+    --workers 8 \
+    --device 0 \
     --lr 0.001 \
     --output-dir runs/train/yolo_b0
 ```
 
 ---
 
-### [CELL 5] Huấn luyện YOLO-R1 (Robust Mix)
+### [CELL 5] Huấn luyện YOLO-R1 (Robust Mix - Max GPU Performance)
 ```python
-# Huấn luyện mô hình Robust Mix (Fine-tune từ B0 với tỷ lệ 50% clean, 50% biến thể phòng thủ)
+# Huấn luyện mô hình Robust Mix (Fine-tune từ B0 với FP16 Tensor Cores)
 !python scripts/train_yolo.py \
     --mode r1 \
+    --base-checkpoint runs/train/yolo_b0/yolo11s-clean-b0_best.pt \
     --epochs 20 \
-    --batch-size 16 \
+    --batch-size 32 \
+    --amp \
+    --cache ram \
+    --workers 8 \
+    --device 0 \
     --lr 0.0005 \
     --output-dir runs/train/yolo_r1
 ```
+
 
 > **Tự động kiểm tra Acceptance Gate:**  
 > Kết thúc huấn luyện R1, hệ thống sẽ tự động đối chiếu các tiêu chuẩn nghiệm thu:  

@@ -149,6 +149,31 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--amp",
+        action="store_true",
+        default=True,
+        help="Enable Automatic Mixed Precision (FP16 Tensor Cores, default: True)",
+    )
+    parser.add_argument(
+        "--no-amp",
+        action="store_false",
+        dest="amp",
+        help="Disable Automatic Mixed Precision",
+    )
+    parser.add_argument(
+        "--cache",
+        type=str,
+        choices=["ram", "disk", "none"],
+        default="ram",
+        help="Cache dataset images in RAM or disk to eliminate I/O bottleneck (default: ram)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="Number of DataLoader worker threads for fast GPU feeding (default: 8)",
+    )
+    parser.add_argument(
         "--max-samples",
         type=int,
         default=None,
@@ -159,6 +184,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Quick dry-run without full epochs for sanity check",
     )
+
     return parser.parse_args()
 
 
@@ -240,9 +266,13 @@ def main() -> int:
             "generated_ratio": gen_ratio,
             "cuda": env["cuda_available"],
             "device": args.device,
+            "amp": args.amp,
+            "cache": args.cache,
+            "workers": args.workers,
             "data_yaml": str(data_yaml_path) if data_yaml_path else None,
         },
     )
+
 
 
     trainer = YoloTrainer(checkpoints_dir=args.output_dir)
