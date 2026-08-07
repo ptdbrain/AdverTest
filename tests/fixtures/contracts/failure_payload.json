@@ -1,0 +1,54 @@
+{
+  "case": {
+    "case_id": "failure-001",
+    "sample_id": "sample-segmentation-1",
+    "model_id": "sam2",
+    "protocol_id": "protocol-fixture-1",
+    "clean_metrics": [
+      {
+        "name": "mask_iou",
+        "value": 0.9,
+        "unit": "ratio",
+        "percent_value": 90.0,
+        "version": "1.0.0",
+        "higher_is_better": true,
+        "ci95": null,
+        "metadata": {}
+      }
+    ],
+    "attacked_metrics": [
+      {
+        "name": "mask_iou",
+        "value": 0.3,
+        "unit": "ratio",
+        "percent_value": 30.0,
+        "version": "1.0.0",
+        "higher_is_better": true,
+        "ci95": null,
+        "metadata": {}
+      }
+    ],
+    "reason": "mask_fragmentation",
+    "affected_object_id": "car-1",
+    "affected_mask": {
+      "encoding": "rle-row-major-zero-first",
+      "version": "1.0.0",
+      "shape": [2, 3],
+      "runs": [0, 2, 2, 1, 1]
+    },
+    "artifact_links": {
+      "comparison": "artifacts/failure-001/comparison.png"
+    },
+    "metadata": {}
+  },
+  "cluster": {
+    "cluster_id": "cluster-mask-fragmentation",
+    "member_ids": ["failure-001"],
+    "selection_allowed": true,
+    "allowed_uses": ["training", "review"],
+    "selection_reason": "training-safe source split",
+    "method": "deterministic-rules",
+    "version": "1.0.0",
+    "metadata": {}
+  }
+}

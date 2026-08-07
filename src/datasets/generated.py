@@ -19,6 +19,7 @@ from src.datasets.io import (
     load_boxes3d,
     load_image,
     load_mask,
+    migrate_generated_record,
 )
 
 
@@ -44,7 +45,10 @@ class GeneratedDatasetSource(DatasetSource):
         self.descriptor = json.loads(descriptor.read_text(encoding="utf-8"))
         if self.descriptor.get("status") != "complete":
             raise ValueError(f"generated dataset is not complete: {self.root}")
-        self.records = _read_manifest(self.root / "manifest.jsonl")
+        self.records = _read_manifest(
+            self.root / "manifest.jsonl",
+            dataset_format=str(self.descriptor.get("format", "")),
+        )
         if self.descriptor.get("n_variants") != len(self.records):
             raise ValueError("generated dataset manifest count does not match dataset.json")
         manifest_hash = stable_digest(
@@ -122,13 +126,22 @@ class GeneratedDatasetSource(DatasetSource):
         return samples
 
 
-def _read_manifest(path: Path) -> list[dict[str, Any]]:
+def _read_manifest(
+    path: Path,
+    *,
+    dataset_format: str,
+) -> list[dict[str, Any]]:
     if not path.is_file():
         raise FileNotFoundError(f"generated dataset manifest not found: {path}")
     records: list[dict[str, Any]] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.strip():
-            records.append(json.loads(line))
+            records.append(
+                migrate_generated_record(
+                    json.loads(line),
+                    dataset_format=dataset_format,
+                )
+            )
     return records
 
 

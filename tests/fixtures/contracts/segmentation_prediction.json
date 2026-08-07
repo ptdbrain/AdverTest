@@ -1,0 +1,23 @@
+{
+  "prediction_type": "segmentation",
+  "contract_version": "1.0.0",
+  "sample_id": "sample-segmentation-1",
+  "instances": [
+    {
+      "instance_id": "car-1",
+      "mask": {
+        "encoding": "rle-row-major-zero-first",
+        "version": "1.0.0",
+        "shape": [2, 3],
+        "runs": [0, 2, 2, 1, 1]
+      },
+      "label": "Car",
+      "score": 0.88
+    }
+  ],
+  "prompt_id": "box-prompt-1",
+  "latency_ms": 12.5,
+  "metadata": {
+    "adapter": "fixture-segmenter"
+  }
+}

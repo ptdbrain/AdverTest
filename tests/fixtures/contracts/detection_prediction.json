@@ -1,0 +1,20 @@
+{
+  "prediction_type": "detection",
+  "contract_version": "1.0.0",
+  "sample_id": "sample-detection-1",
+  "boxes": [
+    {
+      "x1": 10.0,
+      "y1": 12.0,
+      "x2": 42.0,
+      "y2": 48.0,
+      "label": "Car",
+      "score": 0.91
+    }
+  ],
+  "boxes3d": [],
+  "latency_ms": 7.25,
+  "metadata": {
+    "adapter": "fixture-detector"
+  }
+}

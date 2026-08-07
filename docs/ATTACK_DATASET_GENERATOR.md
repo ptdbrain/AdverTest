@@ -112,6 +112,16 @@ adapter also requires a differentiable
 `forward_image_with_box(image, box)` bridge in the installed official SAM2
 package.
 
+## Person D recipe pipeline
+
+The versioned path is `recipe-validate -> recipe-sample -> generate-recipe ->
+inspect-attack-dataset`. Recipe identity includes ordered steps, implementation
+versions, per-step seeds/objectives, constraints, and metadata. Resume validates
+manifest and artifact hashes; prediction cache keys are a separate namespace.
+All source samples remain immutable, spatial transforms update images and
+annotations through one transform, and generated lineage must pass before a
+training manifest can consume it.
+
 Example real surrogate section:
 
 ```json
