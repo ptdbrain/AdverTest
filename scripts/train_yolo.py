@@ -39,8 +39,9 @@ except ImportError:
 
 from src.training.base import TrainerCallbacks
 from src.training.contracts import TrainingRunConfig
-from src.training.yolo_dataset_formatter import convert_kitti_to_yolo, create_starter_kitti_dataset
+from src.training.yolo_dataset_formatter import ensure_kitti_dataset
 from src.training.yolo_trainer import YoloTrainer
+
 
 
 
@@ -175,6 +176,11 @@ def parse_args() -> argparse.Namespace:
         help="Number of DataLoader worker threads for fast GPU feeding (default: 8)",
     )
     parser.add_argument(
+        "--download",
+        action="store_true",
+        help="Download official KITTI dataset using torchvision.datasets.Kitti",
+    )
+    parser.add_argument(
         "--max-samples",
         type=int,
         default=None,
@@ -207,29 +213,22 @@ def main() -> int:
     print(f"[*] Output Directory     : {args.output_dir}")
     print("=" * 75)
 
-    # Convert KITTI dataset to YOLO format if present, or initialize starter dataset
+    # Prepare KITTI dataset via torchvision or raw folder
     data_yaml_path: Path | None = None
-    kitti_raw_path = Path(args.data_root)
-    if kitti_raw_path.is_dir() and not args.dry_run:
-        print("\n[1/5] Checking / Converting KITTI to YOLO dataset format...")
-        try:
-            data_yaml_path = convert_kitti_to_yolo(
-                kitti_raw_dir=kitti_raw_path,
-                output_dir=args.yolo_data_dir,
-                val_ratio=0.15,
-                seed=args.seed,
-                max_samples=args.max_samples,
-            )
-            print(f"      Dataset YAML generated at: {data_yaml_path}")
-        except Exception as exc:
-            print(f"      [Notice] Could not auto-convert KITTI ({exc}). Using starter dataset.")
-            data_yaml_path = create_starter_kitti_dataset(output_dir=args.yolo_data_dir, seed=args.seed)
-    elif not args.dry_run:
-        print("\n[1/5] KITTI raw folder not found. Generating starter KITTI dataset for instant GPU training...")
-        data_yaml_path = create_starter_kitti_dataset(output_dir=args.yolo_data_dir, seed=args.seed)
-        print(f"      Starter dataset YAML generated at: {data_yaml_path}")
+    if not args.dry_run:
+        print("\n[1/5] Preparing KITTI dataset (torchvision / local conversion)...")
+        data_yaml_path = ensure_kitti_dataset(
+            kitti_raw_dir=args.data_root,
+            output_dir=args.yolo_data_dir,
+            download=args.download,
+            val_ratio=0.15,
+            seed=args.seed,
+            max_samples=args.max_samples,
+        )
+        print(f"      Dataset ready at: {data_yaml_path}")
     else:
         print("\n[1/5] Skipping KITTI auto-conversion (dry-run mode).")
+
 
 
     # Normalize mode

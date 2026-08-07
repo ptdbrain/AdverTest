@@ -199,3 +199,64 @@ names:
     yaml_path.write_text(yaml_content, encoding="utf-8")
     return yaml_path
 
+
+def download_kitti_torchvision(root_dir: str | Path = "data/Kitti") -> Path:
+    """Downloads official KITTI dataset using torchvision.datasets.Kitti."""
+    import torchvision.datasets as tv_datasets
+
+    root_path = Path(root_dir).expanduser().resolve()
+    root_path.mkdir(parents=True, exist_ok=True)
+
+    print(f"[*] Downloading KITTI dataset via torchvision into: {root_path} ...")
+    tv_datasets.Kitti(root=str(root_path), split="train", download=True)
+
+    candidates = [
+        root_path / "Kitti" / "raw",
+        root_path / "raw",
+        root_path / "Kitti",
+        root_path,
+    ]
+    for cand in candidates:
+        if (cand / "image_2").is_dir() or (cand / "training" / "image_2").is_dir():
+            return cand
+
+    return root_path
+
+
+def ensure_kitti_dataset(
+    kitti_raw_dir: str | Path = "data/Kitti/raw",
+    output_dir: str | Path = "data/yolo_kitti",
+    download: bool = False,
+    val_ratio: float = 0.15,
+    seed: int = 20260807,
+    max_samples: int | None = None,
+) -> Path:
+    """Ensures YOLO-formatted KITTI dataset exists, downloading via torchvision if requested or missing."""
+    raw_path = Path(kitti_raw_dir).expanduser().resolve()
+
+    has_raw = (raw_path / "image_2").is_dir() or (raw_path / "training" / "image_2").is_dir()
+    if not has_raw and not download:
+        for alt in [Path("data/Kitti"), Path("data/Kitti/raw"), Path("data/anonymized/kitti")]:
+            if (alt / "image_2").is_dir() or (alt / "training" / "image_2").is_dir():
+                raw_path = alt.resolve()
+                has_raw = True
+                break
+
+    if download or not has_raw:
+        try:
+            print("[*] Using torchvision.datasets.Kitti to fetch official dataset...")
+            raw_path = download_kitti_torchvision(root_dir="data/Kitti")
+            has_raw = True
+        except Exception as exc:
+            print(f"[!] torchvision download notice: {exc}. Using starter dataset.")
+            return create_starter_kitti_dataset(output_dir=output_dir, seed=seed)
+
+    return convert_kitti_to_yolo(
+        kitti_raw_dir=raw_path,
+        output_dir=output_dir,
+        val_ratio=val_ratio,
+        seed=seed,
+        max_samples=max_samples,
+    )
+
+
