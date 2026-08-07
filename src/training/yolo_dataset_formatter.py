@@ -77,8 +77,12 @@ def convert_kitti_to_yolo(
         dst_img = out_path / "images" / split / img_path.name
         dst_lbl = out_path / "labels" / split / f"{stem}.txt"
 
-        if not dst_img.is_file():
-            shutil.copy2(img_path, dst_img)
+        if not dst_img.exists() and not dst_img.is_symlink():
+            try:
+                dst_img.symlink_to(img_path.resolve())
+            except OSError:
+                shutil.copy2(img_path, dst_img)
+
 
         # Convert label
         src_lbl = label_dir / f"{stem}.txt"
