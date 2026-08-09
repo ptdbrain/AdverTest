@@ -17,13 +17,17 @@ from src.api.schemas import (
     DatasetCatalogItem,
     ModelCatalogItem,
     ModelVersionOut,
+    PerceptionModeOut,
     PreflightOut,
+    RecipeValidationIn,
+    RecipeValidationOut,
     ResolveReviewIn,
     ReviewOut,
     RunJobOut,
     RunReportOut,
 )
-from src.attacks import load_attacks
+from src.attacks import ATTACK_CATALOG, load_attacks
+from src.attacks.recipes import RecipeBuilder
 from src.config import get_settings
 from src.datasets import load_datasets
 from src.models import scan_yolo_training_runs
@@ -60,6 +64,61 @@ async def list_model_versions() -> list[ModelVersionOut]:
     """Expose discovered local checkpoints with lineage and safety status."""
     versions = scan_yolo_training_runs(Path(get_settings().runs_root))
     return [ModelVersionOut.from_domain(version) for version in versions]
+
+
+@router.get("/perception-modes", response_model=list[PerceptionModeOut])
+async def list_perception_modes() -> list[PerceptionModeOut]:
+    """Product-facing mode availability, including the honest SAM handoff gate."""
+    return [
+        PerceptionModeOut(
+            id="detection2d",
+            title="2D Object Detection, YOLO11",
+            metric_labels=(
+                "Clean Detection Score",
+                "Score After Attack",
+                "Performance Lost",
+                "Objects Broken by Attack",
+                "Overall Robustness",
+            ),
+            runnable=True,
+        ),
+        PerceptionModeOut(
+            id="segmentation",
+            title="Object Segmentation, SAM2",
+            metric_labels=(
+                "Clean Mask Accuracy",
+                "Mask Accuracy After Attack",
+                "Mask Performance Lost",
+                "Boundary Accuracy",
+                "Masks Broken by Attack",
+            ),
+            runnable=False,
+            blocked_reason="WAITING_FOR_ARTIFACTS",
+        ),
+    ]
+
+
+@router.post("/attack-recipes/validate", response_model=RecipeValidationOut)
+async def validate_recipe(body: RecipeValidationIn) -> RecipeValidationOut:
+    """Validate compatibility and resource caps before enqueueing a run."""
+    load_attacks()
+    result = RecipeBuilder().validate(
+        body.recipe,
+        ATTACK_CATALOG,
+        task=body.task,
+        model_capabilities=body.model_capabilities,
+        annotation_types=body.annotation_types,
+        modality=body.modality,
+        online=body.online,
+        requested_variants=body.requested_variants,
+        bytes_per_variant=body.bytes_per_variant,
+    )
+    return RecipeValidationOut(
+        valid=result.valid,
+        errors=result.errors,
+        warnings=result.warnings,
+        estimate=result.estimate.model_dump(mode="json"),
+    )
 
 
 @router.get("/catalog/datasets", response_model=list[DatasetCatalogItem])

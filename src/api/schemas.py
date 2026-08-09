@@ -10,6 +10,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.attacks.recipes import AttackRecipe
+from src.core.objectives import RequiredAnnotation, SurrogateCapability
+from src.core.types import Modality, Task
 from src.models.versions import ModelVersion
 
 
@@ -95,6 +98,40 @@ class ModelVersionOut(BaseModel):
             runnable=version.runnable,
             blocked_reason=version.blocked_reason,
         )
+
+
+class PerceptionModeOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: Task
+    title: str
+    metric_labels: tuple[str, ...]
+    runnable: bool
+    blocked_reason: str | None = None
+
+
+class RecipeValidationIn(BaseModel):
+    """Context required to validate a recipe before a long-running job."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    recipe: AttackRecipe
+    task: Task
+    model_capabilities: frozenset[SurrogateCapability] = frozenset()
+    annotation_types: frozenset[RequiredAnnotation] = frozenset()
+    modality: Modality = "image"
+    online: bool = False
+    requested_variants: int = Field(default=1, ge=1)
+    bytes_per_variant: int = Field(default=0, ge=0)
+
+
+class RecipeValidationOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    valid: bool
+    errors: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    estimate: dict[str, float | int]
 
 
 class DatasetCatalogItem(BaseModel):
