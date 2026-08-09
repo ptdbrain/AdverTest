@@ -19,6 +19,7 @@ from src.api.schemas import (
     DatasetImportIn,
     DatasetCatalogItem,
     ModelCatalogItem,
+    ModelComparisonIn,
     ModelVersionOut,
     PerceptionModeOut,
     PreflightOut,
@@ -95,6 +96,36 @@ async def get_defense_profile(profile_id: str) -> dict[str, Any]:
     if profile is None:
         raise HTTPException(status_code=404, detail=f"unknown defense profile {profile_id!r}")
     return profile
+
+
+@router.post("/model-comparisons", status_code=201)
+async def create_model_comparison(body: ModelComparisonIn) -> dict[str, Any]:
+    baseline, candidate = _require_run(body.baseline_run_id), _require_run(body.candidate_run_id)
+    if baseline["report"] is None or candidate["report"] is None:
+        raise HTTPException(status_code=409, detail="both runs must complete before comparison")
+    left, right = baseline["report"], candidate["report"]
+    paired = left["dataset"] == right["dataset"] and left["n_samples"] == right["n_samples"]
+    comparison_id = f"comparison-{stable_digest(body.model_dump(mode='json'), length=20)}"
+    payload = {
+        "comparison_id": comparison_id, **body.model_dump(mode="json"), "paired": paired,
+        "incompatibilities": [] if paired else ["dataset_or_sample_count"],
+        "metric_deltas": {"clean_detection_score": {"value": right["ap_clean"] - left["ap_clean"], "unit": "ratio"}},
+        "recovery_report": {"baseline_clean": left["ap_clean"], "candidate_clean": right["ap_clean"]},
+    }
+    return _store.put_record("model_comparison", comparison_id, payload)
+
+
+@router.get("/model-comparisons/{comparison_id}")
+async def get_model_comparison(comparison_id: str) -> dict[str, Any]:
+    record = _store.get_record("model_comparison", comparison_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"unknown comparison {comparison_id!r}")
+    return record
+
+
+@router.get("/model-comparisons/{comparison_id}/export")
+async def export_model_comparison(comparison_id: str) -> dict[str, Any]:
+    return await get_model_comparison(comparison_id)
 
 
 @router.post("/attack-recipes", status_code=201)

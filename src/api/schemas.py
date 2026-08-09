@@ -156,6 +156,13 @@ class DatasetImportIn(BaseModel):
     max_samples: int | None = Field(default=None, ge=1)
 
 
+class ModelComparisonIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    baseline_run_id: str = Field(min_length=1)
+    candidate_run_id: str = Field(min_length=1)
+
+
 class DatasetCatalogItem(BaseModel):
     """One entry of the dataset catalog; ``anonymized`` gates test runs."""
 

@@ -66,3 +66,11 @@ async def test_defense_profile_is_persisted_for_retraining(client):
     assert created.status_code == 201
     fetched = await client.get("/api/v1/defense-profiles/defense-fog")
     assert fetched.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_unknown_model_comparison_is_not_silently_created(client):
+    response = await client.post("/api/v1/model-comparisons", json={"baseline_run_id": "missing-a", "candidate_run_id": "missing-b"})
+
+    assert response.status_code == 404
+    assert "unknown run" in response.json()["detail"]
