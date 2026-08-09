@@ -39,6 +39,7 @@ from src.datasets.folder import FolderDataset
 from src.datasets.versioning import DatasetIngestor, IngestConfig
 from src.models import scan_model_artifacts
 from src.pipeline import RunConfig, TestRunner
+from src.training.contracts import DefenseProfile
 
 router = APIRouter()
 _runner = TestRunner()
@@ -81,6 +82,19 @@ async def import_dataset(body: DatasetImportIn) -> dict[str, Any]:
                              metadata={"input_format": body.input_format}),
     )
     return _store.put_record("dataset_version", version.version_id, version.model_dump(mode="json"))
+
+
+@router.post("/defense-profiles", status_code=201)
+async def create_defense_profile(body: DefenseProfile) -> dict[str, Any]:
+    return _store.put_record("defense_profile", body.profile_id, body.model_dump(mode="json"))
+
+
+@router.get("/defense-profiles/{profile_id}")
+async def get_defense_profile(profile_id: str) -> dict[str, Any]:
+    profile = _store.get_record("defense_profile", profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail=f"unknown defense profile {profile_id!r}")
+    return profile
 
 
 @router.post("/attack-recipes", status_code=201)

@@ -55,3 +55,14 @@ async def test_annotated_folder_import_creates_a_persisted_dataset_version(clien
 
     assert response.status_code == 201
     assert response.json()["version_id"].startswith("dataset-")
+
+
+@pytest.mark.asyncio
+async def test_defense_profile_is_persisted_for_retraining(client):
+    body = {"profile_id": "defense-fog", "recipe_ids": ["recipe-fog"], "clean_replay_ratio": 0.5, "generated_ratio": 0.5}
+
+    created = await client.post("/api/v1/defense-profiles", json=body)
+
+    assert created.status_code == 201
+    fetched = await client.get("/api/v1/defense-profiles/defense-fog")
+    assert fetched.status_code == 200
