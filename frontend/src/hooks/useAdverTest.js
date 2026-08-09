@@ -3,6 +3,8 @@ import {
   getCatalogAttacks,
   getCatalogModels,
   getCatalogDatasets,
+  getModelVersions,
+  getPerceptionModes,
   createRun,
   getRunReport,
   getRunSamples,
@@ -20,12 +22,16 @@ export function useAdverTest() {
   const [attacks, setAttacks] = useState([]);
   const [models, setModels] = useState([]);
   const [datasets, setDatasets] = useState([]);
+  const [modelVersions, setModelVersions] = useState([]);
+  const [modes, setModes] = useState([]);
   const [loading, setLoading] = useState(true);
 
   /* ---- Config state ---- */
   const [selectedDataset, setSelectedDataset] = useState("");
   const [selectedAttacks, setSelectedAttacks] = useState([]);
   const [severity, setSeverity] = useState(3);
+  const [mode, setMode] = useState("detection2d");
+  const [selectedModelVersion, setSelectedModelVersion] = useState("");
 
   /* ---- Run state ---- */
   const [runId, setRunId] = useState(null);
@@ -43,11 +49,15 @@ export function useAdverTest() {
 
   /* ---- Load catalog on mount ---- */
   useEffect(() => {
-    Promise.all([getCatalogAttacks(), getCatalogModels(), getCatalogDatasets()])
-      .then(([a, m, d]) => {
+    Promise.all([getCatalogAttacks(), getCatalogModels(), getCatalogDatasets(), getModelVersions(), getPerceptionModes()])
+      .then(([a, m, d, versions, availableModes]) => {
         setAttacks(a);
         setModels(m);
         setDatasets(d);
+        setModelVersions(versions);
+        setModes(availableModes);
+        const initial = versions.find((item) => item.task === "detection2d" && item.runnable);
+        if (initial) setSelectedModelVersion(initial.id);
         if (d.length > 0) {
           const defaultDs = d.find((ds) => ds.name === "synthetic_shapes") || d.find((ds) => ds.anonymized);
           setSelectedDataset(defaultDs ? defaultDs.name : d[0].name);
@@ -68,7 +78,8 @@ export function useAdverTest() {
 
   /* ---- Run attack ---- */
   const handleRun = useCallback(async () => {
-    if (!selectedDataset || selectedAttacks.length === 0) return;
+    const version = modelVersions.find((item) => item.id === selectedModelVersion);
+    if (!selectedDataset || selectedAttacks.length === 0 || mode !== "detection2d" || !version?.runnable) return;
     setIsRunning(true);
     setRunStatus("QUEUED");
     setProgress(0);
@@ -79,7 +90,8 @@ export function useAdverTest() {
 
     try {
       const config = {
-        model: "blob_detector",
+        model: "yolo11",
+        adapter_params: { weights: version.checkpoint_path },
         dataset: selectedDataset,
         dataset_params:
           selectedDataset === "synthetic_shapes"
@@ -136,7 +148,7 @@ export function useAdverTest() {
       setProgressDetail(err.message || "Run failed due to an API error.");
       setIsRunning(false);
     }
-  }, [selectedDataset, selectedAttacks, severity]);
+  }, [selectedDataset, selectedAttacks, severity, mode, modelVersions, selectedModelVersion]);
 
   /* ---- Cleanup WS ---- */
   useEffect(() => {
@@ -150,10 +162,14 @@ export function useAdverTest() {
       attacks,
       models,
       datasets,
+      modelVersions,
+      modes,
       loading,
       selectedDataset,
       selectedAttacks,
       severity,
+      mode,
+      selectedModelVersion,
       runId,
       runStatus,
       progress,
@@ -166,6 +182,8 @@ export function useAdverTest() {
     actions: {
       setSelectedDataset,
       setSeverity,
+      setMode,
+      setSelectedModelVersion,
       toggleAttack,
       handleRun,
       setActiveTab,

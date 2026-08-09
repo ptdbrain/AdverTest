@@ -90,6 +90,26 @@ def scan_yolo_training_runs(root: Path) -> list[ModelVersion]:
     return sorted(discovered, key=lambda version: version.id)
 
 
+def scan_model_artifacts(root: Path) -> list[ModelVersion]:
+    """Discover runnable YOLO checkpoints and SAM checkpoints awaiting a handoff.
+
+    SAM2 needs more than a weight file: masks, a prompt protocol and an adapter
+    are required before scientific metrics can be reported.  A checkpoint is
+    still registered, so the UI can tell its owner exactly what is missing.
+    """
+    versions = scan_yolo_training_runs(root)
+    for checkpoint in root.rglob("sam2*.pt"):
+        if not checkpoint.is_file():
+            continue
+        versions.append(ModelVersion(
+            id=f"sam2-{checkpoint.stem}", model_name="sam2", task="segmentation",
+            checkpoint_path=str(checkpoint.resolve()), checkpoint_hash=_file_sha256(checkpoint),
+            parent_id=None, training_metadata={"source_checkpoint": str(checkpoint)},
+            runnable=False, blocked_reason="WAITING_FOR_ARTIFACTS",
+        ))
+    return sorted(versions, key=lambda version: version.id)
+
+
 def _role_for(args_path: Path, root: Path) -> str | None:
     try:
         relative = args_path.relative_to(root)

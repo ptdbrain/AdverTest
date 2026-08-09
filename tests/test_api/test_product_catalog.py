@@ -40,3 +40,15 @@ async def test_recipe_validation_returns_explicit_compatibility_errors(client):
 
     assert response.status_code == 200
     assert response.json()["valid"] is True
+
+
+@pytest.mark.asyncio
+async def test_upload_endpoint_accepts_a_declared_image_payload(client):
+    response = await client.post(
+        "/api/v1/uploads/images",
+        content=b"not-a-real-image-but-owned-by-the-upload-service",
+        headers={"x-filename": "frame.jpg", "content-type": "image/jpeg"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["filename"] == "frame.jpg"

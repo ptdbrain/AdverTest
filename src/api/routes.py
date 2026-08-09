@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import re
+import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 
 from src.adapters import load_adapters
 from src.api.jobs import LocalRunWorker, SqliteRunStore
@@ -29,16 +31,82 @@ from src.api.schemas import (
 from src.attacks import ATTACK_CATALOG, load_attacks
 from src.attacks.recipes import RecipeBuilder
 from src.config import get_settings
+from src.core.hashing import stable_digest
 from src.datasets import load_datasets
-from src.models import scan_yolo_training_runs
+from src.models import scan_model_artifacts
 from src.pipeline import RunConfig, TestRunner
 
 router = APIRouter()
 _runner = TestRunner()
 _store = SqliteRunStore(get_settings().database_url)
 _worker = LocalRunWorker(_store, max_workers=get_settings().worker_max_concurrency)
+_protocols: dict[str, dict[str, Any]] = {}
 for _run_id, _config in _store.recoverable():
     _worker.enqueue(_run_id, _config)
+
+
+@router.post("/uploads/images", status_code=201)
+async def upload_image(request: Request) -> dict[str, str | int]:
+    """Store one user-supplied image; clients may send raw bytes, no multipart needed."""
+    filename = request.headers.get("x-filename", "upload.bin")
+    filename = Path(filename).name
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", filename):
+        raise HTTPException(status_code=422, detail="invalid x-filename")
+    payload = await request.body()
+    if not payload or len(payload) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=422, detail="image payload must be between 1 byte and 25 MiB")
+    target_dir = _store.path.parent / "uploads"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    stored = target_dir / f"{uuid.uuid4().hex}-{filename}"
+    stored.write_bytes(payload)
+    return {"upload_id": stored.stem, "filename": filename, "path": str(stored), "bytes": len(payload)}
+
+
+@router.post("/benchmark/protocols", status_code=201)
+async def create_benchmark_protocol(body: dict[str, Any]) -> dict[str, Any]:
+    """Lock benchmark inputs before a run, retaining an auditable protocol ID."""
+    required = {"dataset_version_id", "model_version_id", "recipe"}
+    missing = sorted(required - set(body))
+    if missing:
+        raise HTTPException(status_code=422, detail={"missing": missing})
+    protocol_id = f"protocol-{stable_digest(body, length=20)}"
+    protocol = {"protocol_id": protocol_id, "locked": True, **body}
+    _protocols[protocol_id] = protocol
+    return protocol
+
+
+@router.get("/benchmark/protocols/{protocol_id}")
+async def get_benchmark_protocol(protocol_id: str) -> dict[str, Any]:
+    protocol = _protocols.get(protocol_id)
+    if protocol is None:
+        raise HTTPException(status_code=404, detail=f"unknown protocol {protocol_id!r}")
+    return protocol
+
+
+@router.post("/benchmark/runs", status_code=202, response_model=RunJobOut)
+async def create_benchmark_run(config: RunConfig, protocol_id: str = Query(...)) -> RunJobOut:
+    """Execute a locked protocol through the same durable async run worker."""
+    if protocol_id not in _protocols:
+        raise HTTPException(status_code=404, detail=f"unknown protocol {protocol_id!r}")
+    preflight = _runner.preflight(config)
+    if preflight.fatal_errors:
+        raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
+    run_id = _store.create(config)
+    _worker.enqueue(run_id, config)
+    return _job_out(_store.get(run_id))
+
+
+@router.post("/comparisons")
+async def compare_runs(baseline_run_id: str = Query(...), candidate_run_id: str = Query(...)) -> dict[str, Any]:
+    """Compare completed reports without inventing paired scientific evidence."""
+    baseline, candidate = _require_run(baseline_run_id), _require_run(candidate_run_id)
+    if baseline["report"] is None or candidate["report"] is None:
+        raise HTTPException(status_code=409, detail="both runs must complete before comparison")
+    left, right = baseline["report"], candidate["report"]
+    paired = left["dataset"] == right["dataset"] and left["n_samples"] == right["n_samples"]
+    return {"baseline_run_id": baseline_run_id, "candidate_run_id": candidate_run_id,
+            "paired": paired, "clean_score_delta": right["ap_clean"] - left["ap_clean"],
+            "cell_count": {"baseline": len(left.get("cells", [])), "candidate": len(right.get("cells", []))}}
 
 
 @router.get("/catalog/attacks", response_model=list[AttackCatalogItem])
@@ -62,13 +130,15 @@ async def list_models() -> list[ModelCatalogItem]:
 @router.get("/model-versions", response_model=list[ModelVersionOut])
 async def list_model_versions() -> list[ModelVersionOut]:
     """Expose discovered local checkpoints with lineage and safety status."""
-    versions = scan_yolo_training_runs(Path(get_settings().runs_root))
+    versions = scan_model_artifacts(Path(get_settings().runs_root))
     return [ModelVersionOut.from_domain(version) for version in versions]
 
 
 @router.get("/perception-modes", response_model=list[PerceptionModeOut])
 async def list_perception_modes() -> list[PerceptionModeOut]:
     """Product-facing mode availability, including the honest SAM handoff gate."""
+    versions = scan_model_artifacts(Path(get_settings().runs_root))
+    sam = next((version for version in versions if version.task == "segmentation"), None)
     return [
         PerceptionModeOut(
             id="detection2d",
@@ -92,8 +162,8 @@ async def list_perception_modes() -> list[PerceptionModeOut]:
                 "Boundary Accuracy",
                 "Masks Broken by Attack",
             ),
-            runnable=False,
-            blocked_reason="WAITING_FOR_ARTIFACTS",
+            runnable=bool(sam and sam.runnable),
+            blocked_reason=None if sam and sam.runnable else "WAITING_FOR_ARTIFACTS",
         ),
     ]
 

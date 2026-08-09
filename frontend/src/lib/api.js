@@ -26,6 +26,9 @@ export function getCatalogDatasets() {
   return apiFetch("/api/v1/catalog/datasets");
 }
 
+export function getModelVersions() { return apiFetch("/api/v1/model-versions"); }
+export function getPerceptionModes() { return apiFetch("/api/v1/perception-modes"); }
+
 export function estimateRun(config) {
   return apiFetch("/api/v1/runs/estimate", {
     method: "POST",
@@ -100,4 +103,3 @@ export function triggerAutoFlag(runId, threshold = 30) {
     method: "POST"
   });
 }
-
