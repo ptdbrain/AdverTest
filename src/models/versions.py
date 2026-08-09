@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,12 +47,15 @@ def scan_yolo_training_runs(root: Path) -> list[ModelVersion]:
     directory names are intentionally ignored: they have no stable lineage.
     """
 
-    discovered: list[ModelVersion] = []
+    discovered: list[ModelVersion] = _scan_person_b_summaries(root)
+    known_ids = {version.id for version in discovered}
     for args_path in root.rglob("args.yaml"):
         role = _role_for(args_path, root)
         if role is None:
             continue
         version_id, parent_id = _ROLE_METADATA[role]
+        if version_id in known_ids:
+            continue
         run_root = args_path.parent
         checkpoint = run_root / "weights" / "best.pt"
         metadata = {
@@ -88,6 +92,48 @@ def scan_yolo_training_runs(root: Path) -> list[ModelVersion]:
                 )
             )
     return sorted(discovered, key=lambda version: version.id)
+
+
+def _scan_person_b_summaries(root: Path) -> list[ModelVersion]:
+    """Read B's exported training summaries before legacy Ultralytics folders.
+
+    Those summaries carry the canonical version ID, parent lineage and exported
+    checkpoint path.  They prevent punctuation differences in folder roles from
+    creating a second model identity for the same trained weight.
+    """
+    versions: list[ModelVersion] = []
+    for summary_path in root.rglob("training_summary.json"):
+        try:
+            payload = json.loads(summary_path.read_text(encoding="utf-8"))
+            registration = payload["registration"]
+            checkpoint_data = payload["checkpoint"]
+            version_id = str(registration["version_id"])
+            relative_checkpoint = Path(str(checkpoint_data["path"]))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        checkpoint = relative_checkpoint if relative_checkpoint.is_absolute() else root / relative_checkpoint
+        # B's portable exports live beside their summary; use that canonical copy
+        # when an original Colab-relative path is no longer present.
+        if not checkpoint.is_file():
+            named = summary_path.parent / relative_checkpoint.name
+            checkpoint = named if named.is_file() else checkpoint
+        metadata = {
+            "role": summary_path.parent.parent.name,
+            "training_summary": payload,
+            "source_run": str(summary_path.parent),
+        }
+        versions.append(ModelVersion(
+            id=version_id,
+            model_name=str(registration.get("model_id", "yolo11s")),
+            task="detection2d",
+            checkpoint_path=str(checkpoint.resolve()) if checkpoint.is_file() else None,
+            checkpoint_hash=_file_sha256(checkpoint) if checkpoint.is_file() else None,
+            parent_id=checkpoint_data.get("parent_model_version"),
+            training_metadata=metadata,
+            runnable=checkpoint.is_file(),
+            blocked_reason=None if checkpoint.is_file() else "CHECKPOINT_MISSING",
+        ))
+    return versions
 
 
 def scan_model_artifacts(root: Path) -> list[ModelVersion]:

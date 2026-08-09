@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from src.models.versions import scan_yolo_training_runs
@@ -52,3 +53,29 @@ def test_scan_registers_missing_checkpoint_as_visible_but_blocked(tmp_path: Path
     assert version.runnable is False
     assert version.checkpoint_hash is None
     assert version.blocked_reason == "CHECKPOINT_MISSING"
+
+
+def test_scan_prefers_person_b_export_summary_identity_and_checkpoint(tmp_path: Path) -> None:
+    run = tmp_path / "train" / "yolo_r2_sensor" / "run-1"
+    run.mkdir(parents=True)
+    checkpoint = run / "yolo11s-repaired-r2-sensor_fault_best.pt"
+    checkpoint.write_bytes(b"real-b-checkpoint")
+    (run / "training_summary.json").write_text(json.dumps({
+        "state": "COMPLETED",
+        "checkpoint": {
+            "path": str(checkpoint.relative_to(tmp_path)),
+            "sha256": "ignored",
+            "parent_model_version": "yolo11s-robust-r1",
+            "metadata": {"real_ultralytics": True},
+        },
+        "registration": {
+            "version_id": "yolo11s-repaired-r2-sensor_fault",
+            "model_id": "yolo11s", "task": "detection2d",
+        },
+    }), encoding="utf-8")
+
+    version = scan_yolo_training_runs(tmp_path)[0]
+
+    assert version.id == "yolo11s-repaired-r2-sensor_fault"
+    assert version.parent_id == "yolo11s-robust-r1"
+    assert version.checkpoint_path == str(checkpoint.resolve())
