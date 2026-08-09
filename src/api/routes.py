@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -15,6 +16,7 @@ from src.api.schemas import (
     CreateReviewIn,
     DatasetCatalogItem,
     ModelCatalogItem,
+    ModelVersionOut,
     PreflightOut,
     ResolveReviewIn,
     ReviewOut,
@@ -24,6 +26,7 @@ from src.api.schemas import (
 from src.attacks import load_attacks
 from src.config import get_settings
 from src.datasets import load_datasets
+from src.models import scan_yolo_training_runs
 from src.pipeline import RunConfig, TestRunner
 
 router = APIRouter()
@@ -50,6 +53,13 @@ async def list_attacks(
 @router.get("/catalog/models", response_model=list[ModelCatalogItem])
 async def list_models() -> list[ModelCatalogItem]:
     return [ModelCatalogItem(**adapter.describe()) for adapter in load_adapters().values()]
+
+
+@router.get("/model-versions", response_model=list[ModelVersionOut])
+async def list_model_versions() -> list[ModelVersionOut]:
+    """Expose discovered local checkpoints with lineage and safety status."""
+    versions = scan_yolo_training_runs(Path(get_settings().runs_root))
+    return [ModelVersionOut.from_domain(version) for version in versions]
 
 
 @router.get("/catalog/datasets", response_model=list[DatasetCatalogItem])

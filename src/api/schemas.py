@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from src.models.versions import ModelVersion
 
 
 class AttackCatalogItem(BaseModel):
@@ -63,6 +65,36 @@ class ModelCatalogItem(BaseModel):
     runnable: bool = True
     owner: str
     docstring: str = ""
+
+
+class ModelVersionOut(BaseModel):
+    """A locally registered checkpoint without exposing its bytes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    model_name: str
+    task: str
+    checkpoint_path: str | None = None
+    checkpoint_hash: str | None = None
+    parent_id: str | None = None
+    training_metadata: dict[str, Any] = Field(default_factory=dict)
+    runnable: bool
+    blocked_reason: str | None = None
+
+    @classmethod
+    def from_domain(cls, version: ModelVersion) -> ModelVersionOut:
+        return cls(
+            id=version.id,
+            model_name=version.model_name,
+            task=version.task,
+            checkpoint_path=version.checkpoint_path,
+            checkpoint_hash=version.checkpoint_hash,
+            parent_id=version.parent_id,
+            training_metadata=dict(version.training_metadata),
+            runnable=version.runnable,
+            blocked_reason=version.blocked_reason,
+        )
 
 
 class DatasetCatalogItem(BaseModel):
