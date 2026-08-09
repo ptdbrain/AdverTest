@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -161,18 +162,34 @@ class GenerationReport:
         }
 
 
+class GenerationCancelledError(RuntimeError):
+    """Raised when a caller cancels generation between durable cells."""
+
+
+def _raise_if_cancelled(should_cancel: Callable[[], bool] | None) -> None:
+    if should_cancel is not None and should_cancel():
+        raise GenerationCancelledError("generation cancelled before generation cell")
+
+
 class AttackDatasetGenerator:
     """Create a reloadable attack dataset and provenance manifest."""
 
     def generate(
         self,
         config: AttackGenerationConfig | RecipeGenerationConfig,
+        *,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> GenerationReport:
         if isinstance(config, RecipeGenerationConfig):
-            return self._generate_recipe(config)
-        return self._generate_legacy(config)
+            return self._generate_recipe(config, should_cancel=should_cancel)
+        return self._generate_legacy(config, should_cancel=should_cancel)
 
-    def _generate_recipe(self, config: RecipeGenerationConfig) -> GenerationReport:
+    def _generate_recipe(
+        self,
+        config: RecipeGenerationConfig,
+        *,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> GenerationReport:
         source = self._recipe_source(config)
         source.require_anonymized()
         output_root = Path(config.output_dir).expanduser().resolve()
@@ -232,6 +249,7 @@ class AttackDatasetGenerator:
         engine = CompositionEngine()
         try:
             for sample in samples:
+                _raise_if_cancelled(should_cancel)
                 variant_id = stable_digest(
                     {
                         "source_dataset_version_id": source_version.version_id,
@@ -508,7 +526,12 @@ class AttackDatasetGenerator:
             ),
         )
 
-    def _generate_legacy(self, config: AttackGenerationConfig) -> GenerationReport:
+    def _generate_legacy(
+        self,
+        config: AttackGenerationConfig,
+        *,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> GenerationReport:
         source = self._source(config)
         source.require_anonymized()
         attack = get_attack(config.attack_name, **config.attack_params)
@@ -572,6 +595,7 @@ class AttackDatasetGenerator:
         try:
             for sample in samples:
                 for severity in config.severities:
+                    _raise_if_cancelled(should_cancel)
                     variant_id = _variant_id(
                         config,
                         sample,

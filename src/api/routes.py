@@ -61,6 +61,7 @@ _generated_datasets = GeneratedDatasetService(
     get_settings().artifact_root,
     max_workers=get_settings().worker_max_concurrency,
 )
+_generated_datasets.recover()
 for _run_id, _config in _store.recoverable():
     _worker.enqueue(_run_id, _config)
 
@@ -171,6 +172,13 @@ async def create_generated_dataset(body: GeneratedDatasetCreateIn) -> GeneratedD
 
 @router.get("/generated-datasets/{job_id}", response_model=GeneratedDatasetJobOut)
 async def get_generated_dataset(job_id: str) -> GeneratedDatasetJobOut:
+    return _generated_job_out(_generated_datasets.get(job_id))
+
+
+@router.post("/generated-datasets/{job_id}/cancel", response_model=GeneratedDatasetJobOut)
+async def cancel_generated_dataset(job_id: str) -> GeneratedDatasetJobOut:
+    if not _workflow_store.request_cancel(job_id):
+        raise HTTPException(status_code=404, detail=f"unknown generated dataset job {job_id!r}")
     return _generated_job_out(_generated_datasets.get(job_id))
 
 

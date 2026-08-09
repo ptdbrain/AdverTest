@@ -6,10 +6,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from src.attacks.recipes import AttackRecipe, AttackRecipeStep
 from src.datasets import get_dataset
 from src.pipeline.generator import (
     AttackDatasetGenerator,
     AttackGenerationConfig,
+    GenerationCancelledError,
+    RecipeGenerationConfig,
     SurrogateConfig,
     inspect_generated_dataset,
 )
@@ -59,6 +62,47 @@ def test_generate_pgd_dataset_round_trips_and_resumes(tmp_path: Path) -> None:
     assert all(record["attack_version"] == "1.0.0" for record in manifest)
     assert all(record["source_sample_hash"] for record in manifest)
     assert all(record["label_hash"] for record in manifest)
+
+
+def test_recipe_generation_checks_cancellation_before_each_variant(tmp_path: Path) -> None:
+    recipe = AttackRecipe(
+        name="noise",
+        steps=(
+            AttackRecipeStep(
+                position=0,
+                attack_name="gaussian_noise",
+                implementation_version="1.0.0",
+                severity=1,
+                seed=17,
+                expected_cost=1.0,
+            ),
+        ),
+    )
+    checks = 0
+
+    def should_cancel() -> bool:
+        nonlocal checks
+        checks += 1
+        return checks == 2
+
+    with pytest.raises(GenerationCancelledError, match="before generation cell"):
+        AttackDatasetGenerator().generate(
+            RecipeGenerationConfig(
+                dataset_name="synthetic_shapes",
+                dataset_params={"n_samples": 2, "seed": 42},
+                logical_source_id="generated-cancellation-test",
+                recipe=recipe,
+                seed=17,
+                output_dir=str(tmp_path),
+                preview=False,
+            ),
+            should_cancel=should_cancel,
+        )
+
+    assert checks == 2
+    manifest_paths = list((tmp_path / "recipes").glob("*/manifest.jsonl"))
+    assert len(manifest_paths) == 1
+    assert len(manifest_paths[0].read_text(encoding="utf-8").splitlines()) == 1
 
 
 def test_generator_keeps_source_and_labels_unchanged(tmp_path: Path) -> None:

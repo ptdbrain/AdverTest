@@ -155,6 +155,22 @@ class WorkflowJobStore:
             ).fetchone()
         return bool(row and row["cancel_requested"])
 
+    def recoverable(self, job_type: str) -> list[dict[str, Any]]:
+        """Return and requeue interrupted jobs of one workflow type."""
+        with self._lock, self._connection() as connection:
+            rows = connection.execute(
+                """SELECT * FROM workflow_jobs
+                   WHERE job_type=? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')""",
+                (job_type,),
+            ).fetchall()
+            for row in rows:
+                connection.execute(
+                    "UPDATE workflow_jobs SET status='QUEUED', updated_at=? WHERE job_id=?",
+                    (_now(), row["job_id"]),
+                )
+                self._append_event(connection, row["job_id"], "QUEUED", {"recovered": True})
+        return [_job(row) for row in rows]
+
     def _connection(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
         connection.row_factory = sqlite3.Row

@@ -17,6 +17,7 @@ from src.core.objectives import RequiredAnnotation, SurrogateCapability
 from src.datasets.contracts import DatasetVersion
 from src.pipeline.generator import (
     AttackDatasetGenerator,
+    GenerationCancelledError,
     RecipeGenerationConfig,
     inspect_generated_dataset,
 )
@@ -45,6 +46,19 @@ class GeneratedDatasetService:
         job_id = self.workflow_store.create_job("generated_dataset", request.model_dump(mode="json"))
         self.pool.submit(self._execute, job_id, request)
         return job_id
+
+    def recover(self) -> list[str]:
+        """Re-enqueue durable non-terminal jobs when the application starts."""
+        recovered: list[str] = []
+        for job in self.workflow_store.recoverable("generated_dataset"):
+            try:
+                request = GeneratedDatasetCreateIn.model_validate(job["request"])
+            except ValueError as exc:
+                self.workflow_store.fail_job(job["id"], f"invalid recovered request: {exc}")
+                continue
+            self.pool.submit(self._execute, job["id"], request)
+            recovered.append(job["id"])
+        return recovered
 
     def get(self, job_id: str) -> dict[str, Any] | None:
         return self.workflow_store.get_job(job_id)
@@ -86,10 +100,13 @@ class GeneratedDatasetService:
                 limit=request.limit,
                 **source,
             )
-            # AttackDatasetGenerator owns per-variant composition. The worker boundary
-            # keeps every potentially expensive generation call off the request thread.
+            # The generator invokes this predicate before every generation cell.
+            # The worker boundary keeps all attack computation off the request thread.
             self._raise_if_cancelled(job_id)
-            report = self.generator.generate(config)
+            report = self.generator.generate(
+                config,
+                should_cancel=lambda: self.workflow_store.cancel_requested(job_id),
+            )
             self._raise_if_cancelled(job_id)
             descriptor = _read_json(report.root / "dataset.json")
             manifest = _read_manifest(report.root / "manifest.jsonl")
@@ -105,7 +122,7 @@ class GeneratedDatasetService:
                 "artifact_root": self._relative(report.root),
             }
             self.workflow_store.complete_job(job_id, result)
-        except _CancelledError as exc:
+        except (_CancelledError, GenerationCancelledError) as exc:
             self.workflow_store.fail_job(job_id, str(exc), cancelled=True)
         except Exception as exc:
             self.workflow_store.fail_job(job_id, f"{type(exc).__name__}: {exc}")

@@ -7,6 +7,11 @@ import pytest
 import pytest_asyncio
 from PIL import Image
 
+from src.api.generated_dataset_service import GeneratedDatasetService
+from src.api.jobs import SqliteRunStore
+from src.api.schemas import GeneratedDatasetCreateIn
+from src.api.workflow_store import WorkflowJobStore
+
 
 @pytest_asyncio.fixture
 async def generated_job_fixture(client, tmp_path):
@@ -92,3 +97,42 @@ async def test_generated_dataset_request_rejects_unknown_public_fields(client) -
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_generated_dataset_cancel_endpoint_marks_a_queued_job(client) -> None:
+    from src.api import routes
+
+    job_id = routes._workflow_store.create_job("generated_dataset", {"seed": 17})
+
+    response = await client.post(f"/api/v1/generated-datasets/{job_id}/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == job_id
+    assert response.json()["cancel_requested"] is True
+    events = await client.get(f"/api/v1/generated-datasets/{job_id}/events")
+    assert events.json()["events"][-1]["state"] == "CANCEL_REQUESTED"
+
+
+def test_generated_dataset_service_recovers_persisted_jobs_after_restart(tmp_path) -> None:
+    workflow_store = WorkflowJobStore(f"sqlite:///{tmp_path / 'jobs.db'}")
+    record_store = SqliteRunStore(f"sqlite:///{tmp_path / 'records.db'}")
+    request = GeneratedDatasetCreateIn(dataset_version_id="dataset-a", recipe_id="recipe-a")
+    job_id = workflow_store.create_job("generated_dataset", request.model_dump(mode="json"))
+    workflow_store.append_event(job_id, "GENERATING", {"progress_ratio": 0.5})
+    restarted = GeneratedDatasetService(
+        workflow_store,
+        record_store,
+        tmp_path / "artifacts",
+    )
+    submitted: list[tuple[object, tuple[object, ...]]] = []
+
+    class RecordingPool:
+        def submit(self, fn, *args):
+            submitted.append((fn, args))
+
+    restarted.pool = RecordingPool()
+
+    assert restarted.recover() == [job_id]
+    assert submitted == [(restarted._execute, (job_id, request))]
+    assert workflow_store.events(job_id)[-1]["payload"] == {"recovered": True}
