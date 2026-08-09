@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 
 from src.adapters import load_adapters
+from src.api.generated_dataset_service import GeneratedDatasetService
 from src.api.jobs import LocalRunWorker, SqliteRunStore
 from src.api.schemas import (
     AttackCatalogItem,
@@ -18,6 +19,12 @@ from src.api.schemas import (
     CreateReviewIn,
     DatasetCatalogItem,
     DatasetImportIn,
+    GeneratedDatasetCreateIn,
+    GeneratedDatasetEventsOut,
+    GeneratedDatasetJobOut,
+    GeneratedDatasetManifestOut,
+    GeneratedDatasetValidationOut,
+    GeneratedDatasetVariantsOut,
     ModelCatalogItem,
     ModelComparisonIn,
     ModelVersionOut,
@@ -31,6 +38,7 @@ from src.api.schemas import (
     RunJobOut,
     RunReportOut,
 )
+from src.api.workflow_store import WorkflowJobStore
 from src.attacks import ATTACK_CATALOG, load_attacks
 from src.attacks.recipes import RecipeBuilder
 from src.config import get_settings
@@ -46,6 +54,13 @@ router = APIRouter()
 _runner = TestRunner()
 _store = SqliteRunStore(get_settings().database_url)
 _worker = LocalRunWorker(_store, max_workers=get_settings().worker_max_concurrency)
+_workflow_store = WorkflowJobStore(get_settings().database_url)
+_generated_datasets = GeneratedDatasetService(
+    _workflow_store,
+    _store,
+    get_settings().artifact_root,
+    max_workers=get_settings().worker_max_concurrency,
+)
 for _run_id, _config in _store.recoverable():
     _worker.enqueue(_run_id, _config)
 
@@ -82,7 +97,13 @@ async def import_dataset(body: DatasetImportIn) -> dict[str, Any]:
         source, IngestConfig(name=body.name, logical_source_id=body.logical_source_id,
                              metadata={"input_format": body.input_format}),
     )
-    return _store.put_record("dataset_version", version.version_id, version.model_dump(mode="json"))
+    payload = version.model_dump(mode="json")
+    payload["generation_source"] = {
+        "input_dir": str(root),
+        "input_format": body.input_format,
+        "anonymization_manifest": body.anonymization_manifest,
+    }
+    return _store.put_record("dataset_version", version.version_id, payload)
 
 
 @router.post("/defense-profiles", status_code=201)
@@ -139,6 +160,52 @@ async def get_recipe(recipe_id: str) -> dict[str, Any]:
     if recipe is None:
         raise HTTPException(status_code=404, detail=f"unknown recipe {recipe_id!r}")
     return recipe
+
+
+@router.post("/generated-datasets", status_code=202, response_model=GeneratedDatasetJobOut)
+async def create_generated_dataset(body: GeneratedDatasetCreateIn) -> GeneratedDatasetJobOut:
+    """Queue dataset generation; no attack computation runs in this request."""
+    job_id = _generated_datasets.enqueue(body)
+    return _generated_job_out(_generated_datasets.get(job_id))
+
+
+@router.get("/generated-datasets/{job_id}", response_model=GeneratedDatasetJobOut)
+async def get_generated_dataset(job_id: str) -> GeneratedDatasetJobOut:
+    return _generated_job_out(_generated_datasets.get(job_id))
+
+
+@router.get("/generated-datasets/{job_id}/manifest", response_model=GeneratedDatasetManifestOut)
+async def get_generated_dataset_manifest(job_id: str) -> GeneratedDatasetManifestOut:
+    payload = _generated_datasets.manifest(job_id)
+    if payload is None:
+        _require_generated_job(job_id)
+        raise HTTPException(status_code=409, detail="manifest is not available until generation completes")
+    return GeneratedDatasetManifestOut(**payload)
+
+
+@router.get("/generated-datasets/{job_id}/variants", response_model=GeneratedDatasetVariantsOut)
+async def get_generated_dataset_variants(job_id: str) -> GeneratedDatasetVariantsOut:
+    payload = _generated_datasets.variants(job_id)
+    if payload is None:
+        _require_generated_job(job_id)
+        raise HTTPException(status_code=409, detail="variants are not available until generation completes")
+    return GeneratedDatasetVariantsOut(**payload)
+
+
+@router.get("/generated-datasets/{job_id}/events", response_model=GeneratedDatasetEventsOut)
+async def get_generated_dataset_events(job_id: str) -> GeneratedDatasetEventsOut:
+    _require_generated_job(job_id)
+    return GeneratedDatasetEventsOut(id=job_id, events=_workflow_store.events(job_id))
+
+
+@router.post("/generated-datasets/{job_id}/validate", response_model=GeneratedDatasetValidationOut)
+async def get_generated_dataset_validation(job_id: str) -> GeneratedDatasetValidationOut:
+    """Return the worker's persisted validation; routes never recompute artifacts."""
+    payload = _generated_datasets.validation(job_id)
+    if payload is None:
+        _require_generated_job(job_id)
+        raise HTTPException(status_code=409, detail="validation is not available until generation completes")
+    return GeneratedDatasetValidationOut(**payload)
 
 
 @router.post("/benchmark/protocols", status_code=201)
@@ -431,6 +498,28 @@ def _require_run(run_id: str) -> dict[str, Any]:
     if item is None:
         raise HTTPException(status_code=404, detail=f"unknown run {run_id!r}")
     return item
+
+
+def _require_generated_job(job_id: str) -> dict[str, Any]:
+    item = _generated_datasets.get(job_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"unknown generated dataset job {job_id!r}")
+    return item
+
+
+def _generated_job_out(item: dict[str, Any] | None) -> GeneratedDatasetJobOut:
+    if item is None:
+        raise HTTPException(status_code=404, detail="unknown generated dataset job")
+    result = item["result"] or {}
+    return GeneratedDatasetJobOut(
+        id=item["id"],
+        status=item["status"],
+        job_type=item["job_type"],
+        error=item["error"],
+        cancel_requested=item["cancel_requested"],
+        descriptor=result.get("descriptor"),
+        artifact_root=result.get("artifact_root"),
+    )
 
 
 def _require_completed_report(run_id: str) -> dict[str, Any]:

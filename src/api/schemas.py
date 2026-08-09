@@ -14,6 +14,7 @@ from src.attacks.recipes import AttackRecipe
 from src.core.objectives import RequiredAnnotation, SurrogateCapability
 from src.core.types import Modality, Task
 from src.models.versions import ModelVersion
+from src.pipeline.generator import SurrogateConfig
 
 
 class AttackCatalogItem(BaseModel):
@@ -143,6 +144,69 @@ class RecipeRecordIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     seed: int = Field(ge=0)
     steps: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class GeneratedDatasetCreateIn(BaseModel):
+    """An immutable request referencing durable source and recipe records."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_version_id: str = Field(min_length=1, max_length=128)
+    recipe_id: str = Field(min_length=1, max_length=128)
+    seed: int = Field(default=20260730, ge=0)
+    surrogate: SurrogateConfig | None = None
+    intended_use: str = Field(default="training", pattern="^(training|benchmark|review)$")
+    preview: bool = True
+    limit: int | None = Field(default=None, ge=1)
+
+
+class GeneratedDatasetJobOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    status: str
+    job_type: str
+    error: str | None = None
+    cancel_requested: bool = False
+    descriptor: dict[str, Any] | None = None
+    artifact_root: str | None = None
+
+
+class GeneratedDatasetEventOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sequence: int
+    state: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class GeneratedDatasetEventsOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    events: list[GeneratedDatasetEventOut] = Field(default_factory=list)
+
+
+class GeneratedDatasetManifestOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    manifest: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class GeneratedDatasetVariantsOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    variants: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class GeneratedDatasetValidationOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    validation: dict[str, Any] = Field(default_factory=dict)
 
 
 class DatasetImportIn(BaseModel):

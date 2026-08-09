@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/app.db"
     worker_max_concurrency: int = Field(default=1, ge=1, le=8)
     runs_root: str = "runs"
+    artifact_root: str = "data/artifacts"
 
     @property
     def severity_list(self) -> list[int]:
