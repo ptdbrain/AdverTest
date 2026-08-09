@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     # Storage (in-memory today; PostgreSQL + MinIO per plan §4)
     database_url: str = "sqlite:///./data/app.db"
     worker_max_concurrency: int = Field(default=1, ge=1, le=8)
+    runs_root: str = "runs"
 
     @property
     def severity_list(self) -> list[int]:
