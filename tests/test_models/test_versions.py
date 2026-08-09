@@ -79,3 +79,20 @@ def test_scan_prefers_person_b_export_summary_identity_and_checkpoint(tmp_path: 
     assert version.id == "yolo11s-repaired-r2-sensor_fault"
     assert version.parent_id == "yolo11s-robust-r1"
     assert version.checkpoint_path == str(checkpoint.resolve())
+
+
+def test_summary_suppresses_legacy_folder_duplicate_for_same_role(tmp_path: Path) -> None:
+    run = tmp_path / "train" / "yolo_b0" / "run-1"
+    run.mkdir(parents=True)
+    checkpoint = run / "yolo11s-clean-b0_best.pt"
+    checkpoint.write_bytes(b"b0")
+    (run / "training_summary.json").write_text(json.dumps({
+        "checkpoint": {"path": str(checkpoint.relative_to(tmp_path)), "parent_model_version": "yolo11s-clean-b0"},
+        "registration": {"version_id": "yolo11s-clean-b0", "model_id": "yolo11s"},
+    }), encoding="utf-8")
+    _write_run(tmp_path, "yolo_b0", best_weights=b"legacy")
+
+    versions = scan_yolo_training_runs(tmp_path)
+
+    assert [version.id for version in versions] == ["yolo11s-clean-b0"]
+    assert versions[0].parent_id is None

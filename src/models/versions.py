@@ -49,9 +49,12 @@ def scan_yolo_training_runs(root: Path) -> list[ModelVersion]:
 
     discovered: list[ModelVersion] = _scan_person_b_summaries(root)
     known_ids = {version.id for version in discovered}
+    known_roles = {str(version.training_metadata.get("role", "")) for version in discovered}
     for args_path in root.rglob("args.yaml"):
         role = _role_for(args_path, root)
         if role is None:
+            continue
+        if role in known_roles:
             continue
         version_id, parent_id = _ROLE_METADATA[role]
         if version_id in known_ids:
@@ -128,7 +131,11 @@ def _scan_person_b_summaries(root: Path) -> list[ModelVersion]:
             task="detection2d",
             checkpoint_path=str(checkpoint.resolve()) if checkpoint.is_file() else None,
             checkpoint_hash=_file_sha256(checkpoint) if checkpoint.is_file() else None,
-            parent_id=checkpoint_data.get("parent_model_version"),
+            parent_id=(
+                None
+                if checkpoint_data.get("parent_model_version") == version_id
+                else checkpoint_data.get("parent_model_version")
+            ),
             training_metadata=metadata,
             runnable=checkpoint.is_file(),
             blocked_reason=None if checkpoint.is_file() else "CHECKPOINT_MISSING",
