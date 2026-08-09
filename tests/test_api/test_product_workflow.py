@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from PIL import Image
 
 
 @pytest.mark.asyncio
@@ -36,3 +37,21 @@ async def test_benchmark_run_alias_exposes_job_metrics_and_failures(client):
     assert job.status_code == 200
     assert (await client.get(f"/api/v1/benchmark-runs/{run_id}/metrics")).status_code in {200, 409}
     assert (await client.get(f"/api/v1/benchmark-runs/{run_id}/failures")).status_code in {200, 409}
+
+
+@pytest.mark.asyncio
+async def test_annotated_folder_import_creates_a_persisted_dataset_version(client, tmp_path):
+    root = tmp_path / "dataset"
+    (root / "images").mkdir(parents=True)
+    (root / "labels").mkdir()
+    Image.new("RGB", (8, 8)).save(root / "images" / "frame.png")
+    (root / "labels" / "frame.json").write_text("[]", encoding="utf-8")
+    (root / "dataset.json").write_text('{"anonymized": true, "split": "test"}', encoding="utf-8")
+
+    response = await client.post("/api/v1/datasets/import", json={
+        "root": str(root), "name": "uploaded-detection", "logical_source_id": "upload-1",
+        "input_format": "advertest",
+    })
+
+    assert response.status_code == 201
+    assert response.json()["version_id"].startswith("dataset-")

@@ -145,6 +145,17 @@ class RecipeRecordIn(BaseModel):
     steps: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class DatasetImportIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    root: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=200)
+    logical_source_id: str = Field(min_length=1, max_length=200)
+    input_format: str = Field(default="advertest", pattern="^(advertest|kitti)$")
+    anonymization_manifest: str | None = None
+    max_samples: int | None = Field(default=None, ge=1)
+
+
 class DatasetCatalogItem(BaseModel):
     """One entry of the dataset catalog; ``anonymized`` gates test runs."""
 

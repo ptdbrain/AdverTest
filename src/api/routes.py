@@ -16,6 +16,7 @@ from src.api.schemas import (
     AttackCatalogItem,
     CostEstimateOut,
     CreateReviewIn,
+    DatasetImportIn,
     DatasetCatalogItem,
     ModelCatalogItem,
     ModelVersionOut,
@@ -34,6 +35,8 @@ from src.attacks.recipes import RecipeBuilder
 from src.config import get_settings
 from src.core.hashing import stable_digest
 from src.datasets import load_datasets
+from src.datasets.folder import FolderDataset
+from src.datasets.versioning import DatasetIngestor, IngestConfig
 from src.models import scan_model_artifacts
 from src.pipeline import RunConfig, TestRunner
 
@@ -60,6 +63,24 @@ async def upload_image(request: Request) -> dict[str, str | int]:
     stored = target_dir / f"{uuid.uuid4().hex}-{filename}"
     stored.write_bytes(payload)
     return {"upload_id": stored.stem, "filename": filename, "path": str(stored), "bytes": len(payload)}
+
+
+@router.post("/datasets/import", status_code=201)
+async def import_dataset(body: DatasetImportIn) -> dict[str, Any]:
+    """Version an explicitly supplied, annotated local folder without copying it."""
+    root = Path(body.root).expanduser().resolve()
+    if not root.is_dir():
+        raise HTTPException(status_code=422, detail={"code": "DATASET_ROOT_MISSING", "message": "dataset root does not exist"})
+    source = FolderDataset(
+        root=str(root), input_format=body.input_format,
+        anonymization_manifest=body.anonymization_manifest, max_samples=body.max_samples,
+    )
+    source.require_anonymized()
+    version = DatasetIngestor(_store.path.parent / "dataset-versions").ingest(
+        source, IngestConfig(name=body.name, logical_source_id=body.logical_source_id,
+                             metadata={"input_format": body.input_format}),
+    )
+    return _store.put_record("dataset_version", version.version_id, version.model_dump(mode="json"))
 
 
 @router.post("/attack-recipes", status_code=201)
