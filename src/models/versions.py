@@ -38,6 +38,13 @@ _ROLE_METADATA: dict[str, tuple[str, str | None]] = {
     ),
 }
 
+_PERSON_B_CANONICAL_LINEAGE = {
+    "yolo_b0": None,
+    "yolo_r1": "yolo11s-clean-b0",
+    "yolo_r2_fog": "yolo11s-robust-r1",
+    "yolo_r2_sensor": "yolo11s-robust-r1",
+}
+
 
 def scan_yolo_training_runs(root: Path) -> list[ModelVersion]:
     """Discover known Person-B YOLO roles without loading checkpoints.
@@ -120,8 +127,9 @@ def _scan_person_b_summaries(root: Path) -> list[ModelVersion]:
         if not checkpoint.is_file():
             named = summary_path.parent / relative_checkpoint.name
             checkpoint = named if named.is_file() else checkpoint
+        role = summary_path.parent.parent.name
         metadata = {
-            "role": summary_path.parent.parent.name,
+            "role": role,
             "training_summary": payload,
             "source_run": str(summary_path.parent),
         }
@@ -131,11 +139,7 @@ def _scan_person_b_summaries(root: Path) -> list[ModelVersion]:
             task="detection2d",
             checkpoint_path=str(checkpoint.resolve()) if checkpoint.is_file() else None,
             checkpoint_hash=_file_sha256(checkpoint) if checkpoint.is_file() else None,
-            parent_id=(
-                None
-                if checkpoint_data.get("parent_model_version") == version_id
-                else checkpoint_data.get("parent_model_version")
-            ),
+            parent_id=_PERSON_B_CANONICAL_LINEAGE.get(role, checkpoint_data.get("parent_model_version")),
             training_metadata=metadata,
             runnable=checkpoint.is_file(),
             blocked_reason=None if checkpoint.is_file() else "CHECKPOINT_MISSING",

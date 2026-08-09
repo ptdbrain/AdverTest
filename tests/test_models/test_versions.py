@@ -96,3 +96,16 @@ def test_summary_suppresses_legacy_folder_duplicate_for_same_role(tmp_path: Path
 
     assert [version.id for version in versions] == ["yolo11s-clean-b0"]
     assert versions[0].parent_id is None
+
+
+def test_summary_derives_r1_lineage_from_role_when_export_parent_is_self(tmp_path: Path) -> None:
+    run = tmp_path / "train" / "yolo_r1" / "run-1"
+    run.mkdir(parents=True)
+    checkpoint = run / "yolo11s-robust-r1_best.pt"
+    checkpoint.write_bytes(b"r1")
+    (run / "training_summary.json").write_text(json.dumps({
+        "checkpoint": {"path": str(checkpoint.relative_to(tmp_path)), "parent_model_version": "yolo11s-robust-r1"},
+        "registration": {"version_id": "yolo11s-robust-r1", "model_id": "yolo11s"},
+    }), encoding="utf-8")
+
+    assert scan_yolo_training_runs(tmp_path)[0].parent_id == "yolo11s-clean-b0"
