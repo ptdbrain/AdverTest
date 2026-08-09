@@ -23,6 +23,7 @@ from src.api.schemas import (
     PreflightOut,
     RecipeValidationIn,
     RecipeValidationOut,
+    RecipeRecordIn,
     ResolveReviewIn,
     ReviewOut,
     RunJobOut,
@@ -40,7 +41,6 @@ router = APIRouter()
 _runner = TestRunner()
 _store = SqliteRunStore(get_settings().database_url)
 _worker = LocalRunWorker(_store, max_workers=get_settings().worker_max_concurrency)
-_protocols: dict[str, dict[str, Any]] = {}
 for _run_id, _config in _store.recoverable():
     _worker.enqueue(_run_id, _config)
 
@@ -62,6 +62,19 @@ async def upload_image(request: Request) -> dict[str, str | int]:
     return {"upload_id": stored.stem, "filename": filename, "path": str(stored), "bytes": len(payload)}
 
 
+@router.post("/attack-recipes", status_code=201)
+async def create_recipe(body: RecipeRecordIn) -> dict[str, Any]:
+    return _store.put_record("attack_recipe", body.id, body.model_dump(mode="json"))
+
+
+@router.get("/attack-recipes/{recipe_id}")
+async def get_recipe(recipe_id: str) -> dict[str, Any]:
+    recipe = _store.get_record("attack_recipe", recipe_id)
+    if recipe is None:
+        raise HTTPException(status_code=404, detail=f"unknown recipe {recipe_id!r}")
+    return recipe
+
+
 @router.post("/benchmark/protocols", status_code=201)
 async def create_benchmark_protocol(body: dict[str, Any]) -> dict[str, Any]:
     """Lock benchmark inputs before a run, retaining an auditable protocol ID."""
@@ -71,13 +84,12 @@ async def create_benchmark_protocol(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail={"missing": missing})
     protocol_id = f"protocol-{stable_digest(body, length=20)}"
     protocol = {"protocol_id": protocol_id, "locked": True, **body}
-    _protocols[protocol_id] = protocol
-    return protocol
+    return _store.put_record("benchmark_protocol", protocol_id, protocol)
 
 
 @router.get("/benchmark/protocols/{protocol_id}")
 async def get_benchmark_protocol(protocol_id: str) -> dict[str, Any]:
-    protocol = _protocols.get(protocol_id)
+    protocol = _store.get_record("benchmark_protocol", protocol_id)
     if protocol is None:
         raise HTTPException(status_code=404, detail=f"unknown protocol {protocol_id!r}")
     return protocol
@@ -86,7 +98,7 @@ async def get_benchmark_protocol(protocol_id: str) -> dict[str, Any]:
 @router.post("/benchmark/runs", status_code=202, response_model=RunJobOut)
 async def create_benchmark_run(config: RunConfig, protocol_id: str = Query(...)) -> RunJobOut:
     """Execute a locked protocol through the same durable async run worker."""
-    if protocol_id not in _protocols:
+    if _store.get_record("benchmark_protocol", protocol_id) is None:
         raise HTTPException(status_code=404, detail=f"unknown protocol {protocol_id!r}")
     preflight = _runner.preflight(config)
     if preflight.fatal_errors:
@@ -94,6 +106,23 @@ async def create_benchmark_run(config: RunConfig, protocol_id: str = Query(...))
     run_id = _store.create(config)
     _worker.enqueue(run_id, config)
     return _job_out(_store.get(run_id))
+
+
+@router.get("/benchmark-runs/{run_id}", response_model=RunJobOut)
+async def get_benchmark_run(run_id: str) -> RunJobOut:
+    return _job_out(_require_run(run_id))
+
+
+@router.get("/benchmark-runs/{run_id}/metrics")
+async def get_benchmark_metrics(run_id: str) -> dict[str, Any]:
+    report = _require_completed_report(run_id)
+    return {"run_id": run_id, "metrics": report.get("metrics", {}), "cells": report.get("cells", [])}
+
+
+@router.get("/benchmark-runs/{run_id}/failures")
+async def get_benchmark_failures(run_id: str) -> dict[str, Any]:
+    report = _require_completed_report(run_id)
+    return {"run_id": run_id, "failures": report.get("worst_cases", []), "skipped": report.get("skipped", [])}
 
 
 @router.post("/comparisons")
@@ -336,6 +365,13 @@ def _require_run(run_id: str) -> dict[str, Any]:
     if item is None:
         raise HTTPException(status_code=404, detail=f"unknown run {run_id!r}")
     return item
+
+
+def _require_completed_report(run_id: str) -> dict[str, Any]:
+    item = _require_run(run_id)
+    if item["report"] is None:
+        raise HTTPException(status_code=409, detail=f"run {run_id!r} has no completed report")
+    return item["report"]
 
 
 def _job_out(item: dict[str, Any] | None) -> RunJobOut:

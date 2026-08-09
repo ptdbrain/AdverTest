@@ -72,8 +72,48 @@ class SqliteRunStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS product_records (
+                    record_type TEXT NOT NULL, record_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL, created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (record_type, record_id)
+                );
                 """
             )
+
+    def put_record(self, record_type: str, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist immutable product configuration records alongside run jobs."""
+        now = _now()
+        with self._lock, self._connection() as connection:
+            existing = connection.execute(
+                "SELECT payload_json, created_at FROM product_records WHERE record_type=? AND record_id=?",
+                (record_type, record_id),
+            ).fetchone()
+            serialized = json.dumps(payload, sort_keys=True)
+            if existing is not None and existing["payload_json"] != serialized:
+                raise ValueError(f"{record_type} {record_id!r} is immutable")
+            connection.execute(
+                "INSERT OR IGNORE INTO product_records(record_type, record_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (record_type, record_id, serialized, now, now),
+            )
+            row = connection.execute(
+                "SELECT * FROM product_records WHERE record_type=? AND record_id=?", (record_type, record_id)
+            ).fetchone()
+        return _product_row(row)
+
+    def get_record(self, record_type: str, record_id: str) -> dict[str, Any] | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM product_records WHERE record_type=? AND record_id=?", (record_type, record_id)
+            ).fetchone()
+        return _product_row(row) if row else None
+
+    def list_records(self, record_type: str) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM product_records WHERE record_type=? ORDER BY created_at DESC", (record_type,)
+            ).fetchall()
+        return [_product_row(row) for row in rows]
 
     def _connection(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
@@ -360,3 +400,8 @@ def _row_payload(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
+
+def _product_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {"id": row["record_id"], "record_type": row["record_type"],
+            **json.loads(row["payload_json"]), "created_at": row["created_at"], "updated_at": row["updated_at"]}

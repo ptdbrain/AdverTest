@@ -134,6 +134,17 @@ class RecipeValidationOut(BaseModel):
     estimate: dict[str, float | int]
 
 
+class RecipeRecordIn(BaseModel):
+    """Persisted, user-owned recipe metadata; steps remain explicit JSON."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    name: str = Field(min_length=1, max_length=200)
+    seed: int = Field(ge=0)
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class DatasetCatalogItem(BaseModel):
     """One entry of the dataset catalog; ``anonymized`` gates test runs."""
 
