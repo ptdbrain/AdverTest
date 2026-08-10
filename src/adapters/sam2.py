@@ -107,9 +107,7 @@ class Sam2Adapter(ModelAdapter):
                     metadata={
                         "model_version_id": self.metadata().version,
                         "preprocessing_version": self.metadata().preprocessing_version,
-                        "prompt_coordinates": {
-                            prompt.prompt_id: prompt.coordinates for prompt in sample_prompts
-                        },
+                        "prompt_coordinates": {prompt.prompt_id: prompt.coordinates for prompt in sample_prompts},
                     },
                 )
             )
@@ -164,7 +162,7 @@ class Sam2Adapter(ModelAdapter):
                 from sam2.build_sam import build_sam2
             except ImportError as exc:  # pragma: no cover - optional dependency
                 raise RuntimeError("adapter 'sam2' requires the official SAM2 package") from exc
-            self._model = build_sam2(str(config), str(checkpoint), device=self.device)
+            self._model = build_sam2(_official_config_name(config), str(checkpoint), device=self.device)
             self._model.eval()
         return self._model
 
@@ -180,3 +178,19 @@ class Sam2Adapter(ModelAdapter):
 
 def _prompt_set_id(prompts: Sequence[GroundTruthBoxPrompt]) -> str:
     return "|".join(prompt.prompt_id for prompt in prompts)
+
+
+def _official_config_name(config: Path) -> str:
+    """Map a hashable local SAM2.1 config file to the official package resource."""
+    names = {
+        "sam2.1_hiera_t.yaml": "configs/sam2.1/sam2.1_hiera_t.yaml",
+        "sam2.1_hiera_s.yaml": "configs/sam2.1/sam2.1_hiera_s.yaml",
+        "sam2.1_hiera_b+.yaml": "configs/sam2.1/sam2.1_hiera_b+.yaml",
+        "sam2.1_hiera_l.yaml": "configs/sam2.1/sam2.1_hiera_l.yaml",
+    }
+    try:
+        return names[config.name]
+    except KeyError as exc:
+        raise ValueError(
+            f"official SAM2 runtime only supports a matching SAM2.1 Hiera config filename, got {config.name}"
+        ) from exc

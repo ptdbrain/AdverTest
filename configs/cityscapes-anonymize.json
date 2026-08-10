@@ -1,0 +1,13 @@
+{
+  "input_dir": "data/cityscapes",
+  "output_dir": "data/anonymized/cityscapes",
+  "input_format": "cityscapes",
+  "splits": ["train", "val"],
+  "face_detector": {
+    "checkpoint": "checkpoints/anonymization/yolo11n-face.onnx"
+  },
+  "plate_detector": {
+    "checkpoint": "checkpoints/anonymization/yolov8n-license-plate.onnx"
+  },
+  "device": "cuda"
+}

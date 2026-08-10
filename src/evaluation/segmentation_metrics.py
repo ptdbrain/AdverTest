@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Sequence
+from typing import Any, Literal
 
 import numpy as np
 
-from src.core.types import ModelPrediction, SegmentationPrediction, Sample
+from src.core.types import ModelPrediction, Sample, SegmentationPrediction
 from src.evaluation.base import EvaluationResult
 from src.evaluation.contracts import FailureCase, MetricEnvelope
 from src.pipeline.protocol import BenchmarkProtocol
-from src.segmentation.protocol import object_size_bucket, validate_segmentation_sample
+from src.segmentation.protocol import validate_segmentation_sample
 
 METRIC_IMPLEMENTATION = "advertest-segmentation-v1"
 FailureReason = Literal[
@@ -166,11 +167,24 @@ def segmentation_metric_suite(
     policy: MaskFailurePolicy = MaskFailurePolicy(),
 ) -> dict[str, Any]:
     by_id = {prediction.sample_id: prediction for prediction in predictions}
-    evaluations = [item for sample in samples if sample.sample_id in by_id for item in evaluate_prediction(sample, by_id[sample.sample_id], policy=policy)]
+    evaluations = [
+        item
+        for sample in samples
+        if sample.sample_id in by_id
+        for item in evaluate_prediction(sample, by_id[sample.sample_id], policy=policy)
+    ]
     if not evaluations:
-        return {"metric_implementation": METRIC_IMPLEMENTATION, "mask_count": 0, "miou": 0.0, "failure_rate_ratio": 0.0, "failure_rate_pct": 0.0}
+        return {
+            "metric_implementation": METRIC_IMPLEMENTATION,
+            "mask_count": 0,
+            "miou": 0.0,
+            "failure_rate_ratio": 0.0,
+            "failure_rate_pct": 0.0,
+        }
+
     def mean(field: str) -> float:
         return float(np.mean([getattr(item, field) for item in evaluations]))
+
     grouped: dict[str, list[MaskEvaluation]] = defaultdict(list)
     by_class: dict[str, list[MaskEvaluation]] = defaultdict(list)
     for item in evaluations:
@@ -221,7 +235,15 @@ class SegmentationEvaluator:
         if len(segmentation) != len(predictions):
             raise TypeError("SegmentationEvaluator accepts SegmentationPrediction values only")
         suite = segmentation_metric_suite(segmentation, samples, policy=self.policy)
-        evaluations = [item for sample in samples for item in evaluate_prediction(sample, next(prediction for prediction in segmentation if prediction.sample_id == sample.sample_id), policy=self.policy)]
+        evaluations = [
+            item
+            for sample in samples
+            for item in evaluate_prediction(
+                sample,
+                next(prediction for prediction in segmentation if prediction.sample_id == sample.sample_id),
+                policy=self.policy,
+            )
+        ]
         headline = _metric("miou", suite["miou"], higher_is_better=True)
         supplemental = (
             _metric("boundary_iou", suite["boundary_iou"], higher_is_better=True),
@@ -275,7 +297,14 @@ def _metric(name: str, value: float, *, higher_is_better: bool) -> MetricEnvelop
     )
 
 
-def _failure_reason(predicted: np.ndarray, instance_mask: np.ndarray, target_id: int, iou: float, boundary: float, policy: MaskFailurePolicy) -> FailureReason:
+def _failure_reason(
+    predicted: np.ndarray,
+    instance_mask: np.ndarray,
+    target_id: int,
+    iou: float,
+    boundary: float,
+    policy: MaskFailurePolicy,
+) -> FailureReason:
     if not predicted.any():
         return "empty_prediction"
     overlaps = instance_mask[predicted]

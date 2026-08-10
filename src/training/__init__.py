@@ -8,7 +8,6 @@ from src.training.dataset_builder import (
     TrainingDatasetManifest,
 )
 from src.training.patch_trainer import PatchArtifact, PatchTrainer, PatchTrainingConfig
-from src.training.sam2_trainer import Sam2Trainer, Sam2TrainingConfig, sam_b0_config, sam_r1_config, sam_r2_config
 from src.training.registry import TrainerRegistry
 from src.training.report import (
     CheckpointMetadata,
@@ -21,6 +20,7 @@ from src.training.report import (
     TrainingStateMachine,
     ValidationReport,
 )
+from src.training.sam2_trainer import Sam2Trainer, Sam2TrainingConfig, sam_b0_config, sam_r1_config, sam_r2_config
 from src.training.worker import ComputeWorker
 
 __all__ = [

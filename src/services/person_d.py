@@ -96,9 +96,11 @@ class PersonDServices:
     @classmethod
     def default(cls) -> PersonDServices:
         from src.pipeline.generic_benchmark import BenchmarkRunner
+        from src.training.sam2_trainer import Sam2Trainer
 
         load_attacks()
         registry = TrainerRegistry()
+        registry.register(Sam2Trainer())
         return cls(
             datasets=DatasetService(),
             recipes=RecipeService(ATTACK_CATALOG, RecipeBuilder()),
