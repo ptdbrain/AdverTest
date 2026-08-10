@@ -178,3 +178,35 @@ def test_anonymizer_can_select_explicit_sample_ids(tmp_path: Path) -> None:
         "000002",
     ]
     assert inspect_anonymized_dataset(output)["valid"] is True
+
+
+@pytest.mark.parametrize("dataset", ["cityscapes", "bdd100k"])
+def test_anonymizer_preserves_segmentation_annotations(
+    tmp_path: Path,
+    dataset: str,
+) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "output"
+    pixels = np.full((24, 32, 3), 150, dtype=np.uint8)
+    if dataset == "cityscapes":
+        image = source / "leftImg8bit" / "train" / "aachen" / "aachen_000000_000001_leftImg8bit.png"
+        annotation = source / "gtFine" / "train" / "aachen" / "aachen_000000_000001_gtFine_instanceIds.png"
+    else:
+        image = source / "10k" / "train" / "abc.jpg"
+        annotation = source / "labels" / "train" / "abc_train_id.png"
+    image.parent.mkdir(parents=True)
+    annotation.parent.mkdir(parents=True)
+    Image.fromarray(pixels).save(image)
+    Image.fromarray(np.full((24, 32), 26, dtype=np.uint8)).save(annotation)
+    config = AnonymizationConfig(
+        input_dir=str(source), output_dir=str(output), input_format=dataset,
+        splits=["train"], face_detector=DetectorConfig(checkpoint="face.onnx", expansion=0),
+        plate_detector=DetectorConfig(checkpoint="plate.onnx", expansion=0),
+    )
+
+    report = DatasetAnonymizer(_detectors()).anonymize(config)  # type: ignore[arg-type]
+
+    assert report.processed_samples == 1
+    copied_annotation = output / annotation.relative_to(source)
+    assert copied_annotation.read_bytes() == annotation.read_bytes()
+    assert inspect_anonymized_dataset(output)["valid"] is True

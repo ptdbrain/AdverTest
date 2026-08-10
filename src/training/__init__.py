@@ -20,6 +20,7 @@ from src.training.report import (
     TrainingStateMachine,
     ValidationReport,
 )
+from src.training.sam2_trainer import Sam2Trainer, Sam2TrainingConfig, sam_b0_config, sam_r1_config, sam_r2_config
 from src.training.worker import ComputeWorker
 from src.training.yolo_trainer import YoloTrainer
 
@@ -46,5 +47,9 @@ __all__ = [
     "TrainingStateMachine",
     "ValidationReport",
     "YoloTrainer",
+    "Sam2Trainer",
+    "Sam2TrainingConfig",
+    "sam_b0_config",
+    "sam_r1_config",
+    "sam_r2_config",
 ]
-

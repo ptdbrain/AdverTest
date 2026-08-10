@@ -39,7 +39,8 @@ class AnonymizationConfig(BaseModel):
 
     input_dir: str
     output_dir: str
-    input_format: Literal["kitti"] = "kitti"
+    input_format: Literal["kitti", "cityscapes", "bdd100k"] = "kitti"
+    splits: list[Literal["train", "val", "test"]] | None = None
     face_detector: DetectorConfig
     plate_detector: DetectorConfig
     method: Literal["gaussian", "mosaic", "gaussian_mosaic"] = "gaussian_mosaic"
@@ -58,6 +59,12 @@ class AnonymizationConfig(BaseModel):
                 raise ValueError("sample_ids must not be empty")
             if len(self.sample_ids) != len(set(self.sample_ids)):
                 raise ValueError("sample_ids must not contain duplicates")
+        if self.input_format == "kitti" and self.splits is not None:
+            raise ValueError("splits is only supported for cityscapes and bdd100k")
+        if self.input_format != "kitti" and not self.splits:
+            raise ValueError("cityscapes and bdd100k require at least one split")
+        if self.input_format != "kitti" and "test" in (self.splits or []):
+            raise ValueError("test has no reviewed segmentation ground truth")
         return self
 
 
@@ -81,6 +88,13 @@ class AnonymizationReport:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class _SegmentationSelection:
+    sample_id: str
+    image: Path
+    annotations: tuple[Path, ...]
+
+
 class DatasetAnonymizer:
     """Anonymize a KITTI folder without changing source files or labels."""
 
@@ -91,6 +105,8 @@ class DatasetAnonymizer:
         self._detectors = dict(detectors) if detectors is not None else None
 
     def anonymize(self, config: AnonymizationConfig) -> AnonymizationReport:
+        if config.input_format != "kitti":
+            return self._anonymize_segmentation(config)
         source_root = Path(config.input_dir).expanduser().resolve()
         output_root = Path(config.output_dir).expanduser().resolve()
         if source_root == output_root:
@@ -251,6 +267,88 @@ class DatasetAnonymizer:
             plate_detections=plate_count,
         )
 
+    def _anonymize_segmentation(self, config: AnonymizationConfig) -> AnonymizationReport:
+        """Anonymize segmentation images while copying their reviewed labels intact."""
+        source_root = Path(config.input_dir).expanduser().resolve()
+        output_root = Path(config.output_dir).expanduser().resolve()
+        if source_root == output_root:
+            raise ValueError("anonymization output_dir must differ from input_dir")
+        selections = _segmentation_selections(source_root, config)
+        if not selections:
+            raise ValueError(f"{config.input_format} input contains no eligible images")
+        if config.sample_ids is not None:
+            available = {item.sample_id for item in selections}
+            missing = sorted(set(config.sample_ids) - available)
+            if missing:
+                raise ValueError(f"sample_ids do not exist: {missing}")
+            wanted = set(config.sample_ids)
+            selections = [item for item in selections if item.sample_id in wanted]
+        elif config.limit is not None:
+            selections = selections[: config.limit]
+
+        detectors = self._resolve_detectors(config)
+        output_root.mkdir(parents=True, exist_ok=True)
+        _write_or_validate_config(output_root / "config.json", config.model_dump(mode="json"))
+        manifest_path = output_root / "manifest.jsonl"
+        by_sample = {str(item["sample_id"]): item for item in _read_manifest(manifest_path)}
+        detector_hashes = {kind: detector.checkpoint_hash for kind, detector in detectors.items()}
+        descriptor: dict[str, Any] = {
+            "format": config.input_format,
+            "status": "in_progress",
+            "anonymized": False,
+            "source_root": str(source_root),
+            "selected_samples": len(selections),
+            "method": config.method,
+            "detectors": {kind: {"name": detector.name, "checkpoint_hash": detector.checkpoint_hash} for kind, detector in detectors.items()},
+            "annotation_policy": "copied_byte_for_byte",
+        }
+        _write_json(output_root / "dataset.json", descriptor)
+        resumed = face_count = plate_count = 0
+        try:
+            for item in selections:
+                source_hash = file_digest(item.image, length=64)
+                existing = by_sample.get(item.sample_id)
+                if existing is not None and _record_is_valid(source_root, output_root, existing, source_hash, detector_hashes):
+                    resumed += 1
+                    face_count += int(existing.get("face_count", 0))
+                    plate_count += int(existing.get("plate_count", 0))
+                    continue
+                image = load_image(item.image)
+                detections = tuple(detection for detector in detectors.values() for detection in detector.detect(image))
+                expanded = tuple(_expand_detection(detection, image.shape, config.face_detector.expansion if detection.kind == "face" else config.plate_detector.expansion) for detection in detections)
+                output_image = output_root / item.image.relative_to(source_root)
+                _write_png(output_image, _anonymize_regions(image, expanded, config))
+                annotation_records = _copy_annotations(source_root, output_root, item.annotations)
+                record = {
+                    "sample_id": item.sample_id,
+                    "source_path": str(item.image.relative_to(source_root)),
+                    "output_path": str(output_image.relative_to(output_root)),
+                    "source_hash": source_hash,
+                    "output_hash": file_digest(output_image, length=64),
+                    "annotations": annotation_records,
+                    "face_count": sum(d.kind == "face" for d in expanded),
+                    "plate_count": sum(d.kind == "license_plate" for d in expanded),
+                    "detections": [_detection_payload(d) for d in expanded],
+                    "detector_hashes": detector_hashes,
+                }
+                by_sample[item.sample_id] = record
+                face_count += int(record["face_count"])
+                plate_count += int(record["plate_count"])
+                _write_manifest(manifest_path, list(by_sample.values()))
+        except Exception as exc:
+            descriptor.update({"status": "incomplete", "error": f"{type(exc).__name__}: {exc}", "processed_samples": len(by_sample)})
+            _write_json(output_root / "dataset.json", descriptor)
+            raise
+        selected_records = sorted((by_sample[item.sample_id] for item in selections), key=lambda record: str(record["sample_id"]))
+        descriptor.update({
+            "status": "complete", "anonymized": True, "processed_samples": len(selected_records),
+            "face_detections": face_count, "plate_detections": plate_count,
+            "source_fingerprint": stable_digest([(record["sample_id"], record["source_hash"]) for record in selected_records], length=32),
+            "manifest_hash": stable_digest(selected_records, length=32), "review_status": "pending_spot_check",
+        })
+        _write_json(output_root / "dataset.json", descriptor)
+        return AnonymizationReport(output_root, len(selected_records), resumed, face_count, plate_count)
+
     def _resolve_detectors(
         self,
         config: AnonymizationConfig,
@@ -408,6 +506,14 @@ def _record_is_valid(
     source_path = source_root / str(record.get("source_path", ""))
     if not source_path.is_file():
         return False
+    annotations = record.get("annotations")
+    if annotations is not None and not all(
+        isinstance(annotation, dict)
+        and (path := source_root / str(annotation.get("source_path", ""))).is_file()
+        and file_digest(path, length=64) == annotation.get("source_hash")
+        for annotation in annotations
+    ):
+        return False
     return _output_record_is_valid(output_root, record)
 
 
@@ -417,6 +523,16 @@ def _output_record_is_valid(root: Path, record: dict[str, Any]) -> bool:
         return False
     if file_digest(output_path, length=64) != record.get("output_hash"):
         return False
+    annotations = record.get("annotations")
+    if annotations is not None:
+        if not isinstance(annotations, list) or not annotations:
+            return False
+        return all(
+            isinstance(annotation, dict)
+            and (path := root / str(annotation.get("output_path", ""))).is_file()
+            and file_digest(path, length=64) == annotation.get("output_hash")
+            for annotation in annotations
+        )
     label_path = record.get("label_path")
     if label_path is not None:
         resolved_label = root / str(label_path)
@@ -425,6 +541,61 @@ def _output_record_is_valid(root: Path, record: dict[str, Any]) -> bool:
         if file_digest(resolved_label, length=64) != record.get("label_hash"):
             return False
     return True
+
+
+def _segmentation_selections(
+    root: Path,
+    config: AnonymizationConfig,
+) -> list[_SegmentationSelection]:
+    selections: list[_SegmentationSelection] = []
+    for split in config.splits or []:
+        if config.input_format == "cityscapes":
+            image_root = root / "leftImg8bit" / split
+            annotation_root = root / "gtFine" / split
+            for image in sorted(image_root.rglob("*_leftImg8bit.png")):
+                stem = image.name.removesuffix("_leftImg8bit.png")
+                annotation_dir = annotation_root / image.parent.name
+                annotations = tuple(sorted(annotation_dir.glob(f"{stem}_gtFine_*")))
+                instance = annotation_dir / f"{stem}_gtFine_instanceIds.png"
+                if instance.is_file():
+                    selections.append(_SegmentationSelection(
+                        sample_id=f"{split}/{image.parent.name}/{stem}",
+                        image=image,
+                        annotations=annotations,
+                    ))
+        elif config.input_format == "bdd100k":
+            image_root = root / "10k" / split
+            for image in sorted(image_root.glob("*.jpg")):
+                key = image.stem
+                annotations = tuple(
+                    path for path in (
+                        root / "labels" / split / f"{key}_{split}_id.png",
+                        root / "color_labels" / split / f"{key}_{split}_color.png",
+                    ) if path.is_file()
+                )
+                if annotations:
+                    selections.append(_SegmentationSelection(
+                        sample_id=f"{split}/{key}", image=image, annotations=annotations,
+                    ))
+    return selections
+
+
+def _copy_annotations(
+    source_root: Path,
+    output_root: Path,
+    annotations: tuple[Path, ...],
+) -> list[dict[str, str]]:
+    records: list[dict[str, str]] = []
+    for source in annotations:
+        destination = output_root / source.relative_to(source_root)
+        _copy_atomic(source, destination)
+        records.append({
+            "source_path": str(source.relative_to(source_root)),
+            "output_path": str(destination.relative_to(output_root)),
+            "source_hash": file_digest(source, length=64),
+            "output_hash": file_digest(destination, length=64),
+        })
+    return records
 
 
 def _read_manifest(path: Path) -> list[dict[str, Any]]:
@@ -469,6 +640,7 @@ def _write_text_atomic(path: Path, content: str) -> None:
 
 
 def _write_png(path: Path, image: np.ndarray) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(f".{path.name}.tmp")
     Image.fromarray(np.rint(image * 255.0).astype(np.uint8), mode="RGB").save(
         temp,
@@ -478,6 +650,7 @@ def _write_png(path: Path, image: np.ndarray) -> None:
 
 
 def _copy_atomic(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
     temp = destination.with_name(f".{destination.name}.tmp")
     temp.write_bytes(source.read_bytes())
     os.replace(temp, destination)

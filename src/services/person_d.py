@@ -96,11 +96,13 @@ class PersonDServices:
     @classmethod
     def default(cls) -> PersonDServices:
         from src.pipeline.generic_benchmark import BenchmarkRunner
+        from src.training.sam2_trainer import Sam2Trainer
+        from src.training.yolo_trainer import YoloTrainer
 
         load_attacks()
         registry = TrainerRegistry()
-        from src.training.yolo_trainer import YoloTrainer
         registry.register(YoloTrainer())
+        registry.register(Sam2Trainer())
         return cls(
             datasets=DatasetService(),
             recipes=RecipeService(ATTACK_CATALOG, RecipeBuilder()),
@@ -110,4 +112,3 @@ class PersonDServices:
             comparisons=ComparisonService(),
             training=TrainingComputeService(registry),
         )
-

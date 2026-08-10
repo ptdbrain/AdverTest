@@ -28,6 +28,7 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+*:Zone.Identifier
 
 # Data (never commit large data)
 data/
@@ -77,3 +78,11 @@ advertest-plan.md
 
 # Results
 results/
+
+# Kaggle downloads and generated notebook artifacts.
+kaggle/
+notebooks/
+notebooks/*.zip
+notebooks/.ipynb_checkpoints/
+notebooks/kaggle-round2-fleet.ipynb
+notebooks/ziyfWn3x
