@@ -179,6 +179,10 @@ Hook đã cấu hình sẵn cho Claude Code, Cursor, Codex, Gemini CLI, Copilot,
 Antigravity. Mọi prompt/tool call ghi vào `.ai-log/session.jsonl` và tự submit lên
 grading server mỗi lần `git push`.
 
+Lưu ý: `AI_LOG.md` là nhật ký triển khai do đội quản lý, không phải file mà hook tự append.
+Codex Desktop hiện không phát các event hook như Codex CLI; các lượt dùng Desktop cần ghi
+thủ công vào `.ai-log/session.jsonl` bằng `scripts/log_manual.py`.
+
 ```bash
 bash scripts/setup_hooks.sh   # chạy một lần sau khi clone
 ```
