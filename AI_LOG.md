@@ -15,3 +15,4 @@
 - Completed: detection UI turns measured degradation cells into a durable, approved retraining backlog with disabled/loading/error feedback and a verified-artefact training gate.
 - Completed: training/backlog reads, cancellation, checkpoints, and ordered events are available for orchestration; HTTP E2E covers benchmark, comparison export, backlog approval, and the intentional training block.
 - Completed: frontend image handling uses configured Next image support; Python Ruff and frontend lint are clean before final repository gates.
+- Completed: model catalogue defaults are anchored to this checkout's `runs/` directory, so the four verified YOLO B0/R1/R2 checkpoints remain discoverable when the API starts from another working directory.

@@ -1,8 +1,11 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
@@ -35,7 +38,7 @@ class Settings(BaseSettings):
     # Storage (in-memory today; PostgreSQL + MinIO per plan §4)
     database_url: str = "sqlite:///./data/app.db"
     worker_max_concurrency: int = Field(default=1, ge=1, le=8)
-    runs_root: str = "runs"
+    runs_root: str = str(PROJECT_ROOT / "runs")
     artifact_root: str = "data/artifacts"
 
     @property
