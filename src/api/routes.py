@@ -37,7 +37,9 @@ from src.api.schemas import (
     ReviewOut,
     RunJobOut,
     RunReportOut,
+    TrainingRunIn,
 )
+from src.api.training_service import TrainingJobService
 from src.api.workflow_store import WorkflowJobStore
 from src.attacks import ATTACK_CATALOG, load_attacks
 from src.attacks.recipes import RecipeBuilder
@@ -49,13 +51,19 @@ from src.datasets.versioning import DatasetIngestor, IngestConfig
 from src.evaluation.export import export_comparison
 from src.models import scan_model_artifacts
 from src.pipeline import RunConfig, TestRunner
-from src.training.contracts import DefenseProfile
+from src.services.person_d import PersonDServices
+from src.training.contracts import DefenseProfile, TrainingRunConfig
 
 router = APIRouter()
 _runner = TestRunner()
 _store = SqliteRunStore(get_settings().database_url)
 _worker = LocalRunWorker(_store, max_workers=get_settings().worker_max_concurrency)
 _workflow_store = WorkflowJobStore(get_settings().database_url)
+_training_jobs = TrainingJobService(
+    _workflow_store,
+    PersonDServices.default().training.registry,
+    max_workers=get_settings().worker_max_concurrency,
+)
 _generated_datasets = GeneratedDatasetService(
     _workflow_store,
     _store,
@@ -65,6 +73,7 @@ _generated_datasets = GeneratedDatasetService(
 _generated_datasets.recover()
 for _run_id, _config in _store.recoverable():
     _worker.enqueue(_run_id, _config)
+_training_jobs.recover()
 
 
 @router.post("/uploads/images", status_code=201)
@@ -119,6 +128,33 @@ async def get_defense_profile(profile_id: str) -> dict[str, Any]:
     if profile is None:
         raise HTTPException(status_code=404, detail=f"unknown defense profile {profile_id!r}")
     return profile
+
+
+@router.post("/training-runs/estimate")
+async def estimate_training_run(body: TrainingRunIn) -> dict[str, Any]:
+    """Estimate a registered trainer without scheduling external training."""
+    config = TrainingRunConfig(run_id=f"estimate-{uuid.uuid4().hex}", **body.model_dump(mode="json"))
+    try:
+        return _training_jobs.estimate(config)
+    except KeyError as exc:
+        raise HTTPException(status_code=422, detail=f"TRAINER_NOT_AVAILABLE: {exc}") from exc
+
+
+@router.post("/training-runs", status_code=202)
+async def start_training_run(body: TrainingRunIn) -> dict[str, Any]:
+    """Queue training only after the requested parent checkpoint is runnable."""
+    version = next(
+        (item for item in scan_model_artifacts(Path(get_settings().runs_root)) if item.id == body.model_version),
+        None,
+    )
+    if version is None or not version.runnable:
+        raise HTTPException(status_code=409, detail="WAITING_FOR_ARTIFACTS")
+    config = TrainingRunConfig(run_id=f"queued-{uuid.uuid4().hex}", **body.model_dump(mode="json"))
+    try:
+        job_id = _training_jobs.enqueue(config)
+    except KeyError as exc:
+        raise HTTPException(status_code=422, detail=f"TRAINER_NOT_AVAILABLE: {exc}") from exc
+    return _training_jobs.get(job_id) or {"id": job_id, "status": "QUEUED"}
 
 
 @router.post("/model-comparisons", status_code=201)

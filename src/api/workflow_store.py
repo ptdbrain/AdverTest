@@ -69,14 +69,17 @@ class WorkflowJobStore:
             self._append_event(connection, job_id, "QUEUED", {"progress_ratio": 0.0})
         return job_id
 
-    def append_event(self, job_id: str, state: str, payload: dict[str, Any]) -> bool:
+    def append_event(
+        self, job_id: str, state: str, payload: dict[str, Any], *, update_status: bool = True
+    ) -> bool:
         with self._lock, self._connection() as connection:
             if not self._exists(connection, job_id):
                 return False
-            connection.execute(
-                "UPDATE workflow_jobs SET status=?, updated_at=? WHERE job_id=?",
-                (state, _now(), job_id),
-            )
+            if update_status:
+                connection.execute(
+                    "UPDATE workflow_jobs SET status=?, updated_at=? WHERE job_id=?",
+                    (state, _now(), job_id),
+                )
             self._append_event(connection, job_id, state, payload)
         return True
 

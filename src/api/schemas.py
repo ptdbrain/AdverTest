@@ -209,6 +209,26 @@ class GeneratedDatasetValidationOut(BaseModel):
     validation: dict[str, Any] = Field(default_factory=dict)
 
 
+class TrainingRunIn(BaseModel):
+    """Public training request; the server owns the immutable run identifier."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    trainer_name: str = Field(min_length=1, max_length=128)
+    model_version: str = Field(min_length=1, max_length=256)
+    dataset_version_id: str = Field(min_length=1, max_length=256)
+    split_manifest_id: str = Field(min_length=1, max_length=256)
+    defense_profile_id: str = Field(min_length=1, max_length=256)
+    seed: int = Field(ge=0)
+    epochs: int = Field(ge=1)
+    batch_size: int = Field(ge=1)
+    learning_rate: float = Field(gt=0.0)
+    max_gpu_hours: float | None = Field(default=None, gt=0.0)
+    max_storage_bytes: int | None = Field(default=None, gt=0)
+    max_wall_time_seconds: int | None = Field(default=None, gt=0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class DatasetImportIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -8,3 +8,5 @@
 - Work ledger: audit remaining closed-loop API and frontend gaps; implement with focused regression tests; finish with backend, frontend, CI, and E2E verification.
 - Completed: paired comparison resources now expose metric deltas, recovery rate with ratio/percent units, and JSON/CSV/HTML exports. Verified by API regression test and focused Ruff.
 - In progress: durable retraining backlog and queued training API.
+- Completed: durable CPU-testable training worker bridge and `POST /api/v1/training-runs/estimate`; terminal events now commit result/checkpoint before exposing a completed status.
+- Completed: `POST /api/v1/training-runs` rejects a missing/non-runnable parent checkpoint with `WAITING_FOR_ARTIFACTS` rather than scheduling simulated training.
