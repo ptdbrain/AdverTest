@@ -12,3 +12,6 @@
 - Completed: `POST /api/v1/training-runs` rejects a missing/non-runnable parent checkpoint with `WAITING_FOR_ARTIFACTS` rather than scheduling simulated training.
 - In progress: frontend quality gate and closed-loop UI. CI now includes frontend test, lint, and production build jobs alongside Python validation.
 - Completed: retraining backlog persistence with `DRAFT -> APPROVED` transition, duplicate-safe items, empty-backlog rejection, and post-approval locking.
+- Completed: detection UI turns measured degradation cells into a durable, approved retraining backlog with disabled/loading/error feedback and a verified-artefact training gate.
+- Completed: training/backlog reads, cancellation, checkpoints, and ordered events are available for orchestration; HTTP E2E covers benchmark, comparison export, backlog approval, and the intentional training block.
+- Completed: frontend image handling uses configured Next image support; Python Ruff and frontend lint are clean before final repository gates.

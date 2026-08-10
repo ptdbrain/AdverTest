@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -141,7 +140,7 @@ def test_training_cancellation_handles_state(trainer: YoloTrainer, valid_config:
 
 def test_acceptance_gate_evaluation() -> None:
     baseline = {"clean_map50_95": 0.685, "robust_score": 62.0}
-    
+
     # Candidate meets gate: clean drop = -0.007 (<= 0.02), robust score gain = +14 (>= 8.0)
     candidate_pass = {"clean_map50_95": 0.678, "robust_score": 76.0}
     gate_res = YoloTrainer.evaluate_acceptance_gate(baseline, candidate_pass)
@@ -186,4 +185,3 @@ def test_build_robust_yolo_dataset(tmp_path: Path) -> None:
     # Check that augmented images exist
     aug_images = [img for img in train_images if "aug_" in img.name]
     assert len(aug_images) > 0
-

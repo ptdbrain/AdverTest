@@ -13,13 +13,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.adapters.yolo11 import COCO_LABEL_MAP, LARGE_VEHICLE_ALIASES, Yolo11Adapter
+from src.adapters.yolo11 import Yolo11Adapter
 from src.core.types import Box, DetectionPrediction, Sample
 from src.evaluation.detection_metrics import (
     average_precision,
     average_precision_per_class,
-    detection_summary,
-    iou,
 )
 from src.training.yolo_trainer import YoloTrainer
 

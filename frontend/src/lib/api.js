@@ -103,3 +103,23 @@ export function triggerAutoFlag(runId, threshold = 30) {
     method: "POST"
   });
 }
+
+export function createRetrainingBacklog(name) {
+  return apiFetch("/api/v1/retraining-backlogs", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function addRetrainingBacklogItem(backlogId, failureId) {
+  return apiFetch(`/api/v1/retraining-backlogs/${backlogId}/items`, {
+    method: "POST",
+    body: JSON.stringify({ failure_id: failureId }),
+  });
+}
+
+export function approveRetrainingBacklog(backlogId) {
+  return apiFetch(`/api/v1/retraining-backlogs/${backlogId}/approve`, {
+    method: "POST",
+  });
+}

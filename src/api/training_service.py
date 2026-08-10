@@ -28,6 +28,9 @@ class TrainingJobService:
     def get(self, job_id: str) -> dict | None:
         return self.store.get_job(job_id)
 
+    def list(self) -> list[dict]:
+        return self.store.jobs("training")
+
     def cancel(self, job_id: str) -> bool:
         return self.store.request_cancel(job_id)
 

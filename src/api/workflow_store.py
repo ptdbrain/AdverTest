@@ -202,6 +202,14 @@ class WorkflowJobStore:
             ).fetchone()
         return _job(row) if row else None
 
+    def jobs(self, job_type: str) -> list[dict[str, Any]]:
+        """List one workflow type newest first without exposing other job families."""
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM workflow_jobs WHERE job_type=? ORDER BY created_at DESC", (job_type,)
+            ).fetchall()
+        return [_job(row) for row in rows]
+
     def events(self, job_id: str) -> list[dict[str, Any]]:
         with self._connection() as connection:
             rows = connection.execute(

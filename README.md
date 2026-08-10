@@ -6,6 +6,8 @@
 
 Bản kế hoạch kỹ thuật đầy đủ: [`docs/advertest-plan.md`](docs/advertest-plan.md).
 
+Closed-loop operations and verification status: [`docs/YOLO_PIPELINE_OPERATIONS.md`](docs/YOLO_PIPELINE_OPERATIONS.md) and [`docs/INTEGRATION_COMPLETION_MATRIX.md`](docs/INTEGRATION_COMPLETION_MATRIX.md).
+
 ## Bản starter này là gì
 
 Khung code tổng quát để **cả nhóm làm song song**: mỗi người thêm một phép tấn

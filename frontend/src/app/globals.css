@@ -593,6 +593,10 @@ body {
 .five-metrics__item strong { display: block; margin-top: 18px; color: var(--text-primary); font-family: var(--font-mono); font-size: 1.05rem; }
 .five-metrics__item p { margin: 8px 0 2px; font-size: .72rem; color: var(--text-secondary); }
 .sam-waiting { max-width: 720px; margin: 52px auto; border: 1px solid var(--border-subtle); }
+.closed-loop-panel { padding: 20px 24px; border-top: 1px solid var(--border-subtle); color: var(--text-secondary); }
+.closed-loop-panel h2 { margin: 4px 0 8px; color: var(--text-primary); font-size: 1rem; }
+.closed-loop-panel p { margin: 8px 0; line-height: 1.5; }
+.closed-loop-panel .action-button { width: auto; padding-inline: 14px; }
 @media (max-width: 900px) { .main-content { grid-template-columns: 1fr; } .config-panel { max-height: none; } .workspace, .five-metrics { grid-template-columns: 1fr; } }
 
 /* ---- Tab Bar ---- */

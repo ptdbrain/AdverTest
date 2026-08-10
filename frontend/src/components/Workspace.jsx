@@ -1,9 +1,11 @@
+import Image from "next/image";
+
 import EvidenceStage from "@/components/EvidenceStage";
 import FiveMetrics from "@/components/FiveMetrics";
 import SamWaitingState from "@/components/SamWaitingState";
 
 function sourceLabel(sample, key, fallback) {
-  return sample?.[key] ? <img src={sample[key]} alt={fallback} /> : <p>{fallback}</p>;
+  return sample?.[key] ? <Image src={sample[key]} alt={fallback} width={1280} height={720} unoptimized /> : <p>{fallback}</p>;
 }
 
 export default function Workspace({ report, samples, mode }) {

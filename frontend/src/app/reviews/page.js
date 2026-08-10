@@ -5,16 +5,16 @@ import { getReviews, resolveReview } from "@/lib/api";
 
 export default function ReviewPage() {
   const [activeTab, setActiveTab] = useState("PENDING");
-  const [reviews, setReviews] = useState([]);
+  const [reviews, setReviews] = useState(null);
   const [selectedReview, setSelectedReview] = useState(null);
   const [decision, setDecision] = useState("");
   const [decisionNote, setDecisionNote] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const loading = reviews === null;
 
   // Fetch reviews based on active tab
   useEffect(() => {
     let mounted = true;
-    setLoading(true);
     getReviews({ status: activeTab })
       .then((data) => {
         if (mounted) {
@@ -27,14 +27,23 @@ export default function ReviewPage() {
           }
         }
       })
-      .catch((err) => console.error("Failed to load reviews:", err))
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
+      .catch((err) => {
+        console.error("Failed to load reviews:", err);
+        if (mounted) {
+          setReviews([]);
+          setError("Could not load this review queue.");
+        }
+      })
     return () => {
       mounted = false;
     };
   }, [activeTab]);
+
+  const selectTab = (status) => {
+    setReviews(null);
+    setError("");
+    setActiveTab(status);
+  };
 
   const handleSubmitDecision = async () => {
     if (!decision || !decisionNote || !selectedReview) return;
@@ -69,14 +78,14 @@ export default function ReviewPage() {
         <div className="tab-bar" style={{ padding: "0 var(--space-md)" }}>
           <button 
             className={`tab-bar__item ${activeTab === "PENDING" ? "tab-bar__item--active" : ""}`}
-            onClick={() => setActiveTab("PENDING")}
+            onClick={() => selectTab("PENDING")}
             style={{ padding: "10px 14px" }}
           >
             Pending
           </button>
           <button 
             className={`tab-bar__item ${activeTab === "RESOLVED" ? "tab-bar__item--active" : ""}`}
-            onClick={() => setActiveTab("RESOLVED")}
+            onClick={() => selectTab("RESOLVED")}
             style={{ padding: "10px 14px" }}
           >
             Resolved
@@ -88,6 +97,10 @@ export default function ReviewPage() {
             <div className="empty-state">
               <div className="empty-state__icon">⏳</div>
               <div className="empty-state__message">Loading queue...</div>
+            </div>
+          ) : error ? (
+            <div className="empty-state" role="alert">
+              <div className="empty-state__message">{error}</div>
             </div>
           ) : reviews.length === 0 ? (
             <div className="empty-state">

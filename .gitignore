@@ -54,6 +54,9 @@ htmlcov/
 coverage.xml
 .pytest-tmp-final/
 .pytest-tmp-*/
+.pytest-*/
+.pytest-*.log
+.pytest-*.err
 
 # Docker
 docker-compose.override.yml

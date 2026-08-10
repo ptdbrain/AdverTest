@@ -159,9 +159,52 @@ async def start_training_run(body: TrainingRunIn) -> dict[str, Any]:
     return _training_jobs.get(job_id) or {"id": job_id, "status": "QUEUED"}
 
 
+@router.get("/training-runs")
+async def list_training_runs() -> list[dict[str, Any]]:
+    return _training_jobs.list()
+
+
+@router.get("/training-runs/{job_id}")
+async def get_training_run(job_id: str) -> dict[str, Any]:
+    job = _training_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
+    return job
+
+
+@router.post("/training-runs/{job_id}/cancel")
+async def cancel_training_run(job_id: str) -> dict[str, Any]:
+    if _training_jobs.get(job_id) is None:
+        raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
+    _training_jobs.cancel(job_id)
+    return _training_jobs.get(job_id) or {"id": job_id, "status": "CANCEL_REQUESTED"}
+
+
+@router.get("/training-runs/{job_id}/checkpoints")
+async def get_training_checkpoints(job_id: str) -> list[dict[str, Any]]:
+    if _training_jobs.get(job_id) is None:
+        raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
+    return _workflow_store.checkpoints(job_id)
+
+
+@router.get("/training-runs/{job_id}/events")
+async def get_training_events(job_id: str) -> list[dict[str, Any]]:
+    if _training_jobs.get(job_id) is None:
+        raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
+    return _workflow_store.events(job_id)
+
+
 @router.post("/retraining-backlogs", status_code=201)
 async def create_retraining_backlog(body: RetrainingBacklogIn) -> dict[str, Any]:
     return _workflow_store.create_backlog(body.name)
+
+
+@router.get("/retraining-backlogs/{backlog_id}")
+async def get_retraining_backlog(backlog_id: str) -> dict[str, Any]:
+    backlog = _workflow_store.get_backlog(backlog_id)
+    if backlog is None:
+        raise HTTPException(status_code=404, detail="BACKLOG_UNKNOWN")
+    return backlog
 
 
 @router.post("/retraining-backlogs/{backlog_id}/items", status_code=201)

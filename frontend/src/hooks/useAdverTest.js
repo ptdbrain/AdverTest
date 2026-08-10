@@ -10,6 +10,9 @@ import {
   getRunSamples,
   connectRunWebSocket,
   triggerAutoFlag,
+  createRetrainingBacklog,
+  addRetrainingBacklogItem,
+  approveRetrainingBacklog,
 } from "@/lib/api";
 
 /**
@@ -41,6 +44,9 @@ export function useAdverTest() {
   const [report, setReport] = useState(null);
   const [samples, setSamples] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [backlog, setBacklog] = useState(null);
+  const [backlogError, setBacklogError] = useState("");
+  const [isCreatingBacklog, setIsCreatingBacklog] = useState(false);
 
   /* ---- View state ---- */
   const [activeTab, setActiveTab] = useState("compare"); // "compare" | "report"
@@ -85,6 +91,8 @@ export function useAdverTest() {
     setProgress(0);
     setReport(null);
     setSamples([]);
+    setBacklog(null);
+    setBacklogError("");
     setActiveTab("compare");
     setProgressDetail("Queueing...");
 
@@ -150,6 +158,31 @@ export function useAdverTest() {
     }
   }, [selectedDataset, selectedAttacks, severity, mode, modelVersions, selectedModelVersion]);
 
+  const createBacklog = useCallback(async () => {
+    const failures = (report?.cells ?? []).filter((cell) => cell.degradation > 0);
+    if (!runId || failures.length === 0 || isCreatingBacklog || backlog) return;
+
+    setIsCreatingBacklog(true);
+    setBacklogError("");
+    try {
+      const created = await createRetrainingBacklog(`Measured failures from ${runId}`);
+      let updated = created;
+      for (const cell of failures) {
+        const failureId = `${runId}:${cell.attack}:severity-${cell.severity}`;
+        updated = await addRetrainingBacklogItem(created.id, failureId);
+      }
+      setBacklog(await approveRetrainingBacklog(updated.id));
+    } catch (err) {
+      console.error("Failed to create retraining backlog:", err);
+      setBacklogError(err.message || "Could not create the retraining backlog.");
+    } finally {
+      setIsCreatingBacklog(false);
+    }
+  }, [backlog, isCreatingBacklog, report, runId]);
+
+  const version = modelVersions.find((item) => item.id === selectedModelVersion);
+  const trainingBlockedReason = version?.runnable ? "" : "WAITING_FOR_ARTIFACTS";
+
   /* ---- Cleanup WS ---- */
   useEffect(() => {
     return () => {
@@ -177,6 +210,10 @@ export function useAdverTest() {
       report,
       samples,
       isRunning,
+      backlog,
+      backlogError,
+      isCreatingBacklog,
+      trainingBlockedReason,
       activeTab,
     },
     actions: {
@@ -186,6 +223,7 @@ export function useAdverTest() {
       setSelectedModelVersion,
       toggleAttack,
       handleRun,
+      createBacklog,
       setActiveTab,
     }
   };
