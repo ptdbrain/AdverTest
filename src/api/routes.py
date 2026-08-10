@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 
 from src.adapters import load_adapters
 from src.api.generated_dataset_service import GeneratedDatasetService
@@ -46,6 +46,7 @@ from src.core.hashing import stable_digest
 from src.datasets import load_datasets
 from src.datasets.folder import FolderDataset
 from src.datasets.versioning import DatasetIngestor, IngestConfig
+from src.evaluation.export import export_comparison
 from src.models import scan_model_artifacts
 from src.pipeline import RunConfig, TestRunner
 from src.training.contracts import DefenseProfile
@@ -128,11 +129,29 @@ async def create_model_comparison(body: ModelComparisonIn) -> dict[str, Any]:
     left, right = baseline["report"], candidate["report"]
     paired = left["dataset"] == right["dataset"] and left["n_samples"] == right["n_samples"]
     comparison_id = f"comparison-{stable_digest(body.model_dump(mode='json'), length=20)}"
+    metric_deltas = (
+        {"clean_detection_score": {"value": right["ap_clean"] - left["ap_clean"], "unit": "ratio"}}
+        if paired
+        else {}
+    )
+    baseline_attack_score = _mean_attack_score(left)
+    candidate_attack_score = _mean_attack_score(right)
+    lost_score = left["ap_clean"] - baseline_attack_score
+    recovered_score = candidate_attack_score - baseline_attack_score
+    recovery_ratio = None if lost_score <= 0 else recovered_score / lost_score
     payload = {
         "comparison_id": comparison_id, **body.model_dump(mode="json"), "paired": paired,
         "incompatibilities": [] if paired else ["dataset_or_sample_count"],
-        "metric_deltas": {"clean_detection_score": {"value": right["ap_clean"] - left["ap_clean"], "unit": "ratio"}},
-        "recovery_report": {"baseline_clean": left["ap_clean"], "candidate_clean": right["ap_clean"]},
+        "metric_deltas": metric_deltas,
+        "recovery_report": {
+            "baseline_clean": left["ap_clean"],
+            "candidate_clean": right["ap_clean"],
+            "recovery_rate": {
+                "ratio_value": recovery_ratio,
+                "percent_value": None if recovery_ratio is None else recovery_ratio * 100,
+                "unit": "percent",
+            },
+        },
     }
     return _store.put_record("model_comparison", comparison_id, payload)
 
@@ -146,8 +165,27 @@ async def get_model_comparison(comparison_id: str) -> dict[str, Any]:
 
 
 @router.get("/model-comparisons/{comparison_id}/export")
-async def export_model_comparison(comparison_id: str) -> dict[str, Any]:
-    return await get_model_comparison(comparison_id)
+async def export_model_comparison(comparison_id: str, format: str = Query(default="json")) -> Response:
+    comparison = await get_model_comparison(comparison_id)
+    try:
+        artifact = export_comparison(comparison, format)  # type: ignore[arg-type]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return Response(
+        artifact.content,
+        media_type=artifact.media_type,
+        headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"', "X-Content-SHA256": artifact.sha256},
+    )
+
+
+@router.get("/model-comparisons/{comparison_id}/metric-deltas")
+async def get_model_comparison_metric_deltas(comparison_id: str) -> dict[str, Any]:
+    return (await get_model_comparison(comparison_id)).get("metric_deltas", {})
+
+
+@router.get("/model-comparisons/{comparison_id}/recovery-report")
+async def get_model_comparison_recovery_report(comparison_id: str) -> dict[str, Any]:
+    return (await get_model_comparison(comparison_id)).get("recovery_report", {})
 
 
 @router.post("/attack-recipes", status_code=201)
@@ -500,6 +538,13 @@ async def resolve_review(review_id: str, body: ResolveReviewIn) -> ReviewOut:
 
 
 # ---- Helpers ----
+
+def _mean_attack_score(report: dict[str, Any]) -> float:
+    cells = report.get("cells", [])
+    if not cells:
+        return float(report["ap_clean"])
+    return sum(float(cell["ap"]) for cell in cells) / len(cells)
+
 
 def _require_run(run_id: str) -> dict[str, Any]:
     item = _store.get(run_id)
