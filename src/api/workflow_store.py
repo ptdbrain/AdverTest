@@ -53,8 +53,73 @@ class WorkflowJobStore:
                     created_at TEXT NOT NULL,
                     PRIMARY KEY (job_id, sequence)
                 );
+                CREATE TABLE IF NOT EXISTS retraining_backlogs (
+                    backlog_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS retraining_backlog_items (
+                    backlog_id TEXT NOT NULL,
+                    failure_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (backlog_id, failure_id)
+                );
                 """
             )
+
+    def create_backlog(self, name: str) -> dict[str, Any]:
+        backlog_id = f"backlog-{uuid.uuid4().hex}"
+        now = _now()
+        with self._lock, self._connection() as connection:
+            connection.execute(
+                "INSERT INTO retraining_backlogs(backlog_id, name, status, created_at, updated_at) VALUES (?, ?, 'DRAFT', ?, ?)",
+                (backlog_id, name, now, now),
+            )
+        return self.get_backlog(backlog_id)  # type: ignore[return-value]
+
+    def get_backlog(self, backlog_id: str) -> dict[str, Any] | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM retraining_backlogs WHERE backlog_id=?", (backlog_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            items = connection.execute(
+                "SELECT failure_id FROM retraining_backlog_items WHERE backlog_id=? ORDER BY failure_id", (backlog_id,)
+            ).fetchall()
+        return {"id": row["backlog_id"], "name": row["name"], "status": row["status"], "failure_ids": [item["failure_id"] for item in items]}
+
+    def add_backlog_item(self, backlog_id: str, failure_id: str) -> dict[str, Any]:
+        with self._lock, self._connection() as connection:
+            row = connection.execute("SELECT status FROM retraining_backlogs WHERE backlog_id=?", (backlog_id,)).fetchone()
+            if row is None:
+                raise KeyError("BACKLOG_UNKNOWN")
+            if row["status"] != "DRAFT":
+                raise ValueError("BACKLOG_NOT_DRAFT")
+            try:
+                connection.execute(
+                    "INSERT INTO retraining_backlog_items(backlog_id, failure_id, created_at) VALUES (?, ?, ?)",
+                    (backlog_id, failure_id, _now()),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("BACKLOG_ITEM_DUPLICATE") from exc
+            connection.execute("UPDATE retraining_backlogs SET updated_at=? WHERE backlog_id=?", (_now(), backlog_id))
+        return self.get_backlog(backlog_id)  # type: ignore[return-value]
+
+    def approve_backlog(self, backlog_id: str) -> dict[str, Any]:
+        with self._lock, self._connection() as connection:
+            row = connection.execute("SELECT status FROM retraining_backlogs WHERE backlog_id=?", (backlog_id,)).fetchone()
+            if row is None:
+                raise KeyError("BACKLOG_UNKNOWN")
+            if row["status"] != "DRAFT":
+                raise ValueError("BACKLOG_NOT_DRAFT")
+            count = connection.execute("SELECT COUNT(*) AS count FROM retraining_backlog_items WHERE backlog_id=?", (backlog_id,)).fetchone()["count"]
+            if count == 0:
+                raise ValueError("BACKLOG_EMPTY")
+            connection.execute("UPDATE retraining_backlogs SET status='APPROVED', updated_at=? WHERE backlog_id=?", (_now(), backlog_id))
+        return self.get_backlog(backlog_id)  # type: ignore[return-value]
 
     def create_job(self, job_type: str, request: dict[str, Any]) -> str:
         job_id = uuid.uuid4().hex

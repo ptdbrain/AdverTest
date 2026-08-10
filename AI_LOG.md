@@ -10,3 +10,5 @@
 - In progress: durable retraining backlog and queued training API.
 - Completed: durable CPU-testable training worker bridge and `POST /api/v1/training-runs/estimate`; terminal events now commit result/checkpoint before exposing a completed status.
 - Completed: `POST /api/v1/training-runs` rejects a missing/non-runnable parent checkpoint with `WAITING_FOR_ARTIFACTS` rather than scheduling simulated training.
+- In progress: frontend quality gate and closed-loop UI. CI now includes frontend test, lint, and production build jobs alongside Python validation.
+- Completed: retraining backlog persistence with `DRAFT -> APPROVED` transition, duplicate-safe items, empty-backlog rejection, and post-approval locking.

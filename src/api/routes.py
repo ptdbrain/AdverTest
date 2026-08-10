@@ -34,6 +34,8 @@ from src.api.schemas import (
     RecipeValidationIn,
     RecipeValidationOut,
     ResolveReviewIn,
+    RetrainingBacklogIn,
+    RetrainingBacklogItemIn,
     ReviewOut,
     RunJobOut,
     RunReportOut,
@@ -155,6 +157,31 @@ async def start_training_run(body: TrainingRunIn) -> dict[str, Any]:
     except KeyError as exc:
         raise HTTPException(status_code=422, detail=f"TRAINER_NOT_AVAILABLE: {exc}") from exc
     return _training_jobs.get(job_id) or {"id": job_id, "status": "QUEUED"}
+
+
+@router.post("/retraining-backlogs", status_code=201)
+async def create_retraining_backlog(body: RetrainingBacklogIn) -> dict[str, Any]:
+    return _workflow_store.create_backlog(body.name)
+
+
+@router.post("/retraining-backlogs/{backlog_id}/items", status_code=201)
+async def add_retraining_backlog_item(backlog_id: str, body: RetrainingBacklogItemIn) -> dict[str, Any]:
+    try:
+        return _workflow_store.add_backlog_item(backlog_id, body.failure_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
+
+
+@router.post("/retraining-backlogs/{backlog_id}/approve")
+async def approve_retraining_backlog(backlog_id: str) -> dict[str, Any]:
+    try:
+        return _workflow_store.approve_backlog(backlog_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
 
 
 @router.post("/model-comparisons", status_code=201)

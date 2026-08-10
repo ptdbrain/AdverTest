@@ -229,6 +229,16 @@ class TrainingRunIn(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class RetrainingBacklogIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=200)
+
+
+class RetrainingBacklogItemIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    failure_id: str = Field(min_length=1, max_length=256)
+
+
 class DatasetImportIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
