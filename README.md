@@ -180,8 +180,14 @@ Antigravity. Mọi prompt/tool call ghi vào `.ai-log/session.jsonl` và tự su
 grading server mỗi lần `git push`.
 
 Lưu ý: `AI_LOG.md` là nhật ký triển khai do đội quản lý, không phải file mà hook tự append.
-Codex Desktop hiện không phát các event hook như Codex CLI; các lượt dùng Desktop cần ghi
-thủ công vào `.ai-log/session.jsonl` bằng `scripts/log_manual.py`.
+Codex Desktop chưa phát event hook trực tiếp như Codex CLI, nên pre-push hook tự quét transcript
+JSONL cục bộ trong `~/.codex/sessions` bằng `scripts/log_codex_desktop.py`, lọc theo repo và
+chống ghi trùng trước khi submit. Cơ chế này tự động gom các prompt đã dùng kể từ lần push gần
+nhất (mặc định 24 giờ); không cần ghi thủ công. Muốn xem trước có thể chạy:
+
+```bash
+bash scripts/_pyrun.sh scripts/log_codex_desktop.py --auto --dry-run
+```
 
 ```bash
 bash scripts/setup_hooks.sh   # chạy một lần sau khi clone
