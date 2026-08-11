@@ -129,7 +129,16 @@ class RunReport:
             "dataset": self.dataset,
             "n_samples": self.n_samples,
             "ap_clean": round(self.ap_clean, 4),
-            "cells": [{**cell.as_dict(), "degradation": round(self.degradation(cell), 4)} for cell in self.cells],
+            "cells": [
+                {
+                    **cell.as_dict(),
+                    "degradation": round(self.degradation(cell), 4),  # DEPRECATED
+                    "degradation_ratio": round(self.degradation(cell), 6),
+                    "degradation_percent": round(self.degradation(cell) * 100.0, 4),
+                    "unit": "ratio",
+                }
+                for cell in self.cells
+            ],
             "heatmap": self.heatmap(),
             "worst_cases": self.worst_cases(),
             "skipped": [{"attack": item.attack, "reason": item.reason} for item in self.skipped],

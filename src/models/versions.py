@@ -26,6 +26,13 @@ class ModelVersion:
     training_metadata: Mapping[str, Any]
     runnable: bool
     blocked_reason: str | None = None
+    # --- Extended lineage fields (Wave 0) ---
+    parent_lineage: tuple[str, ...] = ()
+    source_training_run: str | None = None
+    training_dataset_manifest: str | None = None
+    checkpoint_validated: bool = False
+    gate_outcome: str | None = None  # "PASSED" | "FAILED" | None
+    evidence_tier: str | None = None  # "CPU_CONTRACT_VERIFIED" | "REAL_MODEL_VERIFIED" | ...
 
 
 _ROLE_METADATA: dict[str, tuple[str, str | None]] = {

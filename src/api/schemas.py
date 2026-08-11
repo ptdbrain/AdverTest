@@ -85,6 +85,12 @@ class ModelVersionOut(BaseModel):
     training_metadata: dict[str, Any] = Field(default_factory=dict)
     runnable: bool
     blocked_reason: str | None = None
+    parent_lineage: list[str] = Field(default_factory=list)
+    source_training_run: str | None = None
+    training_dataset_manifest: str | None = None
+    checkpoint_validated: bool = False
+    gate_outcome: str | None = None
+    evidence_tier: str | None = None
 
     @classmethod
     def from_domain(cls, version: ModelVersion) -> ModelVersionOut:
@@ -98,6 +104,12 @@ class ModelVersionOut(BaseModel):
             training_metadata=dict(version.training_metadata),
             runnable=version.runnable,
             blocked_reason=version.blocked_reason,
+            parent_lineage=list(version.parent_lineage),
+            source_training_run=version.source_training_run,
+            training_dataset_manifest=version.training_dataset_manifest,
+            checkpoint_validated=version.checkpoint_validated,
+            gate_outcome=version.gate_outcome,
+            evidence_tier=version.evidence_tier,
         )
 
 
@@ -153,6 +165,8 @@ class GeneratedDatasetCreateIn(BaseModel):
 
     dataset_version_id: str = Field(min_length=1, max_length=128)
     recipe_id: str = Field(min_length=1, max_length=128)
+    task: Task = Field(default="detection2d", description="Perception task this dataset serves")
+    modality: Modality = Field(default="image", description="Sensor modality of generated samples")
     seed: int = Field(default=20260730, ge=0)
     surrogate: SurrogateConfig | None = None
     intended_use: str = Field(default="training", pattern="^(training|benchmark|review)$")
@@ -287,7 +301,19 @@ class CellOut(BaseModel):
     group: str
     severity: int
     ap: float
-    degradation: float
+    degradation: float  # DEPRECATED: raw ratio, kept for one compatibility cycle
+    degradation_ratio: float = Field(
+        default=0.0,
+        description="Performance loss as ratio in [0, 1]. Use this instead of degradation.",
+    )
+    degradation_percent: float = Field(
+        default=0.0,
+        description="Performance loss as percent = degradation_ratio × 100.",
+    )
+    unit: str = Field(
+        default="ratio",
+        description="Unit of degradation_ratio: always 'ratio'. degradation_percent is always 'percent'.",
+    )
     n_samples: int
     seconds: float
     cache_hits: int
@@ -358,7 +384,10 @@ class ReviewOut(BaseModel):
     severity: int
     dataset: str = ""
     model: str = ""
-    degradation: float = 0.0
+    degradation: float = 0.0  # DEPRECATED: raw ratio
+    degradation_ratio: float = 0.0
+    degradation_percent: float = 0.0
+    unit: str = "ratio"
     status: str = "PENDING"
     decision: str | None = None
     decision_note: str | None = None
