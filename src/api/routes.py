@@ -362,14 +362,67 @@ async def get_generated_dataset_validation(job_id: str) -> GeneratedDatasetValid
 
 @router.post("/benchmark/protocols", status_code=201)
 async def create_benchmark_protocol(body: dict[str, Any]) -> dict[str, Any]:
-    """Lock benchmark inputs before a run, retaining an auditable protocol ID."""
-    required = {"dataset_version_id", "model_version_id", "recipe"}
+    """Create a typed benchmark protocol from request body.
+
+    Generates a content-addressable protocol ID from metric-affecting inputs.
+    Protocol starts in DRAFT state; call /validate then /lock to advance.
+    """
+    from src.evaluation.benchmark_protocol import BenchmarkProtocol
+
+    required = {"dataset_version_id", "model_version_id", "recipe", "task"}
     missing = sorted(required - set(body))
     if missing:
-        raise HTTPException(status_code=422, detail={"missing": missing})
-    protocol_id = f"protocol-{stable_digest(body, length=20)}"
-    protocol = {"protocol_id": protocol_id, "locked": True, **body}
-    return _store.put_record("benchmark_protocol", protocol_id, protocol)
+        raise HTTPException(status_code=422, detail={"code": "MISSING_FIELDS", "missing": missing})
+    recipe_hash = stable_digest(body.get("recipe", {}), length=40)
+    protocol_id = body.get("protocol_id") or f"protocol-{stable_digest(body, length=20)}"
+    try:
+        protocol = BenchmarkProtocol(
+            protocol_id=protocol_id,
+            state=body.get("state", "DRAFT"),
+            dataset_version_id=body["dataset_version_id"],
+            model_version_id=body["model_version_id"],
+            task=body.get("task", "detection2d"),
+            recipe=body.get("recipe", {}),
+            recipe_hash=recipe_hash,
+            sample_ids=tuple(body.get("sample_ids", ())),
+            sample_hashes=tuple(body.get("sample_hashes", ())),
+            dataset_hash=body.get("dataset_hash", ""),
+            preprocessing_version=body.get("preprocessing_version", "default"),
+            thresholds=body.get("thresholds", {}),
+            metric_versions=body.get("metric_versions", {}),
+            seed=body.get("seed", 20260730),
+            prompt_protocol=body.get("prompt_protocol"),
+            class_mapping_version=body.get("class_mapping_version", "1.0.0"),
+            bootstrap_config=body.get("bootstrap_config", {}),
+            metadata=body.get("metadata", {}),
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail={"code": "INVALID_PROTOCOL", "message": str(exc)}) from exc
+    payload = protocol.model_dump(mode="json")
+    payload["identity_hash"] = protocol.identity_hash()
+    return _store.put_record("benchmark_protocol", protocol_id, payload)
+
+
+@router.post("/benchmark/protocols/{protocol_id}/lock")
+async def lock_benchmark_protocol(protocol_id: str) -> dict[str, Any]:
+    """Advance a VALIDATED protocol to LOCKED state."""
+    from src.evaluation.benchmark_protocol import validate_protocol_transition
+
+    record = _store.get_record("benchmark_protocol", protocol_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"unknown protocol {protocol_id!r}")
+    current_state = record.get("state", "DRAFT")
+    if not validate_protocol_transition(current_state, "LOCKED"):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "INVALID_TRANSITION", "current": current_state, "target": "LOCKED"},
+        )
+    record["state"] = "LOCKED"
+    record["identity_hash"] = stable_digest(
+        {k: v for k, v in record.items() if k not in {"protocol_id", "state", "identity_hash", "id", "record_type", "created_at", "updated_at", "metadata"}},
+        length=40,
+    )
+    return _store.put_record("benchmark_protocol", protocol_id, record)
 
 
 @router.get("/benchmark/protocols/{protocol_id}")
