@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -15,10 +16,13 @@ from src.api.generated_dataset_service import GeneratedDatasetService
 from src.api.jobs import LocalRunWorker, SqliteRunStore
 from src.api.schemas import (
     AttackCatalogItem,
+    ClosedLoopSnapshotOut,
+    ClosedLoopStartIn,
     CostEstimateOut,
     CreateReviewIn,
     DatasetCatalogItem,
     DatasetImportIn,
+    EvidenceStatusOut,
     GeneratedDatasetCreateIn,
     GeneratedDatasetEventsOut,
     GeneratedDatasetJobOut,
@@ -51,7 +55,7 @@ from src.datasets import load_datasets
 from src.datasets.folder import FolderDataset
 from src.datasets.versioning import DatasetIngestor, IngestConfig
 from src.evaluation.export import export_comparison
-from src.models import scan_model_artifacts
+from src.models import list_known_versions, scan_model_artifacts
 from src.pipeline import RunConfig, TestRunner
 from src.services.person_d import PersonDServices
 from src.training.contracts import DefenseProfile, TrainingRunConfig
@@ -696,7 +700,196 @@ async def resolve_review(review_id: str, body: ResolveReviewIn) -> ReviewOut:
     return ReviewOut(**row)
 
 
+# ---- Closed-Loop Training ----
+
+@router.post("/closed-loop/start", status_code=201, response_model=ClosedLoopSnapshotOut)
+async def start_closed_loop(body: ClosedLoopStartIn) -> dict[str, Any]:
+    """Start a closed-loop retraining pipeline from a completed benchmark run."""
+    from src.training.closed_loop import ClosedLoopTracker
+
+    item = _store.get(body.run_id)
+    if item is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "RUN_UNKNOWN", "run_id": body.run_id},
+        )
+    if item["report"] is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "RUN_NOT_COMPLETED", "run_id": body.run_id},
+        )
+
+    reported_cases = item["report"].get("worst_cases", [])
+    failures = [
+        failure
+        for failure in reported_cases
+        if isinstance(failure, dict) and _is_failure_case(failure)
+    ]
+    if not failures:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "NO_FAILURE_CASES", "run_id": body.run_id},
+        )
+
+    audit: list[dict[str, Any]] = []
+    failure_ids: list[str] = []
+    for index, failure in enumerate(failures):
+        failure_payload = failure if isinstance(failure, dict) else {"value": failure}
+        failure_id = str(
+            failure_payload.get("case_id")
+            or failure_payload.get("failure_id")
+            or f"failure-{stable_digest(failure_payload, length=20)}"
+        )
+        failure_ids.append(failure_id)
+        audit.append(
+            {
+                "step": index,
+                "state": "FAILURE_IDENTIFIED",
+                "artifact_id": failure_id,
+                "artifact_type": "failure_case",
+                "artifact_hash": stable_digest(failure_payload, length=64),
+                "parent_step": None,
+                "metadata": {"source_run_id": body.run_id},
+            }
+        )
+
+    loop_id = _workflow_store.create_job(
+        "closed_loop", {"source_run_id": body.run_id}
+    )
+    tracker = ClosedLoopTracker(loop_id=loop_id)
+    _workflow_store.append_event(
+        loop_id,
+        tracker.state,
+        {"source_run_id": body.run_id, "progress_ratio": 0.0},
+    )
+    job = _workflow_store.get_job(loop_id)
+    payload = {
+        "loop_id": loop_id,
+        "source_run_id": body.run_id,
+        "state": tracker.state,
+        "audit": audit,
+        "artifacts": {
+            "source_benchmark_run": body.run_id,
+            "failure_cases": failure_ids,
+        },
+        "events": _workflow_store.events(loop_id),
+        "created_at": job["created_at"],
+        "updated_at": job["updated_at"],
+    }
+    _workflow_store.checkpoint(loop_id, payload)
+    return payload
+
+
+@router.get("/closed-loop/{loop_id}", response_model=ClosedLoopSnapshotOut)
+async def get_closed_loop(loop_id: str) -> dict[str, Any]:
+    """Get current state of a closed-loop pipeline."""
+    job = _workflow_store.get_job(loop_id)
+    if job is None or job["job_type"] != "closed_loop":
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CLOSED_LOOP_UNKNOWN", "loop_id": loop_id},
+        )
+    checkpoints = _workflow_store.checkpoints(loop_id)
+    if not checkpoints:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "CLOSED_LOOP_SNAPSHOT_MISSING", "loop_id": loop_id},
+        )
+    return checkpoints[-1]["payload"]
+
+
+# ---- Evidence Status ----
+
+@router.get("/status/evidence", response_model=EvidenceStatusOut)
+async def get_evidence_status() -> dict[str, Any]:
+    """Aggregate evidence status across all components.
+
+    Single source of truth for which components have passed which evidence tiers.
+    """
+    placeholders = list_known_versions()
+    discovered = await asyncio.to_thread(
+        scan_model_artifacts, Path(get_settings().runs_root)
+    )
+    model_versions_by_id = {version.id: version for version in placeholders}
+    placeholders_by_role = {
+        str(version.training_metadata.get("role")): version
+        for version in placeholders
+        if version.training_metadata.get("role")
+    }
+    for version in discovered:
+        role = str(version.training_metadata.get("role", ""))
+        placeholder = placeholders_by_role.get(role)
+        if placeholder:
+            model_versions_by_id.pop(version.id, None)
+            version = replace(
+                version,
+                id=placeholder.id,
+                parent_id=placeholder.parent_id,
+                parent_lineage=placeholder.parent_lineage,
+            )
+        model_versions_by_id[version.id] = version
+
+    model_versions = sorted(model_versions_by_id.values(), key=lambda item: item.id)
+    components: dict[str, dict[str, Any]] = {}
+
+    for v in model_versions:
+        placeholder = placeholders_by_role.get(str(v.training_metadata.get("role", "")))
+        components[v.id] = {
+            "model_name": v.model_name,
+            "task": v.task,
+            "runnable": v.runnable,
+            "blocked_reason": v.blocked_reason,
+            "checkpoint_validated": v.checkpoint_validated,
+            "gate_outcome": v.gate_outcome,
+            "evidence_tier": v.evidence_tier,
+            "parent_id": v.parent_id or (placeholder.parent_id if placeholder else None),
+            "parent_lineage": list(
+                v.parent_lineage
+                or (placeholder.parent_lineage if placeholder else ())
+            ),
+        }
+
+    # Aggregate summary
+    total = len(components)
+    verified = sum(1 for c in components.values() if c.get("evidence_tier"))
+    waiting = sum(1 for c in components.values() if c.get("blocked_reason") == "WAITING_FOR_ARTIFACTS")
+    runnable = sum(1 for c in components.values() if c.get("runnable"))
+
+    return {
+        "summary": {
+            "total_components": total,
+            "verified": verified,
+            "waiting_for_artifacts": waiting,
+            "runnable": runnable,
+            "completion_ratio": round(verified / max(1, total), 4),
+        },
+        "components": components,
+        "evidence_tiers": [
+            "CPU_CONTRACT_VERIFIED",
+            "REAL_MODEL_VERIFIED",
+            "EXTERNAL_VERIFIED",
+            "E2E_VERIFIED",
+            "SCIENTIFIC_VERIFIED",
+            "WAITING_FOR_ARTIFACTS",
+        ],
+    }
+
+
 # ---- Helpers ----
+
+def _is_failure_case(payload: dict[str, Any]) -> bool:
+    """Accept only benchmark samples carrying an explicit failure signal."""
+    degradation = payload.get("degradation_hint")
+    has_positive_degradation = (
+        isinstance(degradation, (int, float))
+        and not isinstance(degradation, bool)
+        and degradation > 0.0
+    )
+    has_reason = any(
+        isinstance(payload.get(field), str) and bool(payload[field].strip())
+        for field in ("reason", "failure_reason")
+    )
+    return has_positive_degradation or has_reason or payload.get("failed") is True
 
 def _mean_attack_score(report: dict[str, Any]) -> float:
     cells = report.get("cells", [])

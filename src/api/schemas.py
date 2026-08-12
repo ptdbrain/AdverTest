@@ -416,3 +416,58 @@ class ResolveReviewIn(BaseModel):
     decision: str  # ACCEPT_RISK | REQUEST_RETRAIN
     decision_note: str
     resolved_by: str = "reviewer"
+
+
+class ClosedLoopStartIn(BaseModel):
+    """Start a durable recovery loop from one completed benchmark run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str = Field(min_length=1, max_length=128)
+
+
+class ClosedLoopSnapshotOut(BaseModel):
+    """Durable, evidence-linked state of one recovery loop."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    loop_id: str
+    source_run_id: str
+    state: str
+    audit: list[dict[str, Any]] = Field(default_factory=list)
+    artifacts: dict[str, Any] = Field(default_factory=dict)
+    events: list[dict[str, Any]] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+
+class EvidenceComponentOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_name: str
+    task: str
+    runnable: bool
+    blocked_reason: str | None
+    checkpoint_validated: bool
+    gate_outcome: str | None
+    evidence_tier: str | None
+    parent_id: str | None
+    parent_lineage: list[str] = Field(default_factory=list)
+
+
+class EvidenceSummaryOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_components: int
+    verified: int
+    waiting_for_artifacts: int
+    runnable: int
+    completion_ratio: float
+
+
+class EvidenceStatusOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: EvidenceSummaryOut
+    components: dict[str, EvidenceComponentOut]
+    evidence_tiers: list[str]

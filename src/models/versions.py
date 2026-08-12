@@ -227,3 +227,51 @@ def _file_sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def list_known_versions() -> list[ModelVersion]:
+    """Return all statically-registered model roles as ModelVersion stubs.
+
+    Used by the evidence status endpoint. Does not require filesystem access.
+    SAM2 roles are included as WAITING_FOR_ARTIFACTS.
+    """
+    versions: list[ModelVersion] = []
+    parents_by_id = {
+        version_id: parent_id
+        for version_id, parent_id in _ROLE_METADATA.values()
+    }
+    for role, (version_id, parent_id) in _ROLE_METADATA.items():
+        lineage: list[str] = []
+        ancestor_id = parent_id
+        while ancestor_id is not None:
+            lineage.append(ancestor_id)
+            ancestor_id = parents_by_id.get(ancestor_id)
+        versions.append(
+            ModelVersion(
+                id=version_id,
+                model_name="yolo11s",
+                task="detection2d",
+                checkpoint_path=None,
+                checkpoint_hash=None,
+                parent_id=parent_id,
+                training_metadata={"role": role},
+                runnable=False,
+                blocked_reason="CHECKPOINT_NOT_SCANNED",
+                parent_lineage=tuple(lineage),
+            )
+        )
+    # SAM2 placeholder — WAITING_FOR_ARTIFACTS
+    versions.append(
+        ModelVersion(
+            id="sam2-base",
+            model_name="sam2",
+            task="segmentation",
+            checkpoint_path=None,
+            checkpoint_hash=None,
+            parent_id=None,
+            training_metadata={"role": "sam2_base"},
+            runnable=False,
+            blocked_reason="WAITING_FOR_ARTIFACTS",
+        )
+    )
+    return sorted(versions, key=lambda v: v.id)
