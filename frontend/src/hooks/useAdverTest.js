@@ -123,6 +123,16 @@ export function useAdverTest() {
       return;
     }
 
+    const dsObj = datasets.find((item) => (item.id || item.name) === selectedDataset) || { name: selectedDataset };
+    if (dsObj.anonymized === false || dsObj.benchmark_ready === false) {
+      setProgressDetail(
+        "Uploaded raw image dataset has not passed anonymization & ground-truth labeling (Privacy Gate). Benchmark AP execution is disabled for raw uploads."
+      );
+      setRunStatus("BLOCKED");
+      setIsRunning(false);
+      return;
+    }
+
     setIsRunning(true);
     setRunStatus("QUEUED");
     setProgress(0);
@@ -134,7 +144,6 @@ export function useAdverTest() {
     setProgressDetail("Queueing...");
 
     try {
-      const dsObj = datasets.find((item) => (item.id || item.name) === selectedDataset) || { name: selectedDataset };
       const targetDataset = dsObj.dataset || dsObj.name || selectedDataset;
       const targetDatasetParams = dsObj.dataset_params || (
         targetDataset === "synthetic_shapes"
@@ -173,10 +182,10 @@ export function useAdverTest() {
               setReport(r);
               setIsRunning(false);
               // Auto-flag severe degradations (> 30%)
-              triggerAutoFlag(job.run_id, 30).catch(console.error);
+              triggerAutoFlag(job.run_id, 30).catch(console.warn);
             })
             .catch((err) => {
-              console.error("Failed to fetch run report:", err);
+              console.warn("Failed to fetch run report:", err.message);
               setIsRunning(false);
             });
           getRunSamples(job.run_id)
@@ -193,7 +202,7 @@ export function useAdverTest() {
               setSamples(mapped);
             })
             .catch((err) => {
-              console.error("Failed to fetch run samples:", err);
+              console.warn("Failed to fetch run samples:", err.message);
             });
         }
         if (event.state === "FAILED") {
@@ -203,7 +212,7 @@ export function useAdverTest() {
       });
       wsRef.current = ws;
     } catch (err) {
-      console.error("Failed to run attack:", err);
+      console.warn("API Error during run execution:", err.message);
       setRunStatus("FAILED");
       setProgressDetail(err.message || "Run failed due to an API error.");
       setIsRunning(false);
