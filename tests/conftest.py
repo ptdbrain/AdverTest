@@ -1,3 +1,5 @@
+import importlib
+
 import numpy as np
 import pytest
 import pytest_asyncio
@@ -6,20 +8,49 @@ from httpx import ASGITransport, AsyncClient
 from src.adapters import get_adapter
 from src.adapters.base import ModelAdapter
 from src.attacks.base import AttackContext
+from src.config import get_settings
 from src.core.types import Sample
 from src.datasets import get_dataset
-from src.main import app
 
 #: Fixed so every test compares against the same pixels.
 TEST_SEED = 4242
 
 
 @pytest_asyncio.fixture
-async def client():
+async def client(tmp_path, monkeypatch):
     """Async HTTP client for testing API endpoints."""
+    test_root = tmp_path / "api-state"
+    artifact_root = test_root / "artifacts"
+    runs_root = test_root / "runs"
+    temp_root = test_root / "tmp"
+    static_root = test_root / "data"
+    database_path = test_root / "app.db"
+
+    for path in (artifact_root, runs_root, temp_root, static_root):
+        path.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.chdir(test_root)
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path.as_posix()}")
+    monkeypatch.setenv("ARTIFACT_ROOT", str(artifact_root))
+    monkeypatch.setenv("RUNS_ROOT", str(runs_root))
+    monkeypatch.setenv("TEMP", str(temp_root))
+    monkeypatch.setenv("TMP", str(temp_root))
+    monkeypatch.setenv("TMPDIR", str(temp_root))
+    monkeypatch.setenv("CORS_ORIGINS", "http://test")
+    get_settings.cache_clear()
+
+    import src.api.routes as routes_module
+    import src.main as main_module
+
+    importlib.reload(routes_module)
+    main_module = importlib.reload(main_module)
+
+    app = main_module.app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+    get_settings.cache_clear()
 
 
 @pytest.fixture
