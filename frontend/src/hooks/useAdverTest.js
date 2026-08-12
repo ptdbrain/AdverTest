@@ -66,7 +66,7 @@ export function useAdverTest() {
         if (initial) setSelectedModelVersion(initial.id);
         if (d.length > 0) {
           const defaultDs = d.find((ds) => ds.name === "synthetic_shapes") || d.find((ds) => ds.anonymized);
-          setSelectedDataset(defaultDs ? defaultDs.name : d[0].name);
+          setSelectedDataset(defaultDs ? (defaultDs.id || defaultDs.name) : (d[0].id || d[0].name));
         }
       })
       .catch((err) => {
@@ -80,6 +80,17 @@ export function useAdverTest() {
     setSelectedAttacks((prev) =>
       prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
     );
+  }, []);
+
+  /* ---- Add dataset helper ---- */
+  const addDataset = useCallback((newDs) => {
+    if (!newDs) return;
+    setDatasets((prev) => {
+      const idToMatch = newDs.id || newDs.name;
+      const exists = prev.some((d) => (d.id || d.name) === idToMatch);
+      return exists ? prev.map((d) => ((d.id || d.name) === idToMatch ? { ...d, ...newDs } : d)) : [newDs, ...prev];
+    });
+    setSelectedDataset(newDs.id || newDs.name || newDs.dataset);
   }, []);
 
   /* ---- Run attack ---- */
@@ -97,14 +108,19 @@ export function useAdverTest() {
     setProgressDetail("Queueing...");
 
     try {
+      const dsObj = datasets.find((item) => (item.id || item.name) === selectedDataset) || { name: selectedDataset };
+      const targetDataset = dsObj.dataset || dsObj.name || selectedDataset;
+      const targetDatasetParams = dsObj.dataset_params || (
+        targetDataset === "synthetic_shapes"
+          ? { brightness_range: [0.28, 0.48], background_level: 0.18, n_samples: 48 }
+          : {}
+      );
+
       const config = {
         model: "yolo11",
         adapter_params: { weights: version.checkpoint_path },
-        dataset: selectedDataset,
-        dataset_params:
-          selectedDataset === "synthetic_shapes"
-            ? { brightness_range: [0.28, 0.48], background_level: 0.18, n_samples: 48 }
-            : {},
+        dataset: targetDataset,
+        dataset_params: targetDatasetParams,
         attacks: selectedAttacks,
         severities: [severity],
         limit: 8,
@@ -156,7 +172,7 @@ export function useAdverTest() {
       setProgressDetail(err.message || "Run failed due to an API error.");
       setIsRunning(false);
     }
-  }, [selectedDataset, selectedAttacks, severity, mode, modelVersions, selectedModelVersion]);
+  }, [selectedDataset, selectedAttacks, severity, mode, modelVersions, selectedModelVersion, datasets]);
 
   const createBacklog = useCallback(async () => {
     const failures = (report?.cells ?? []).filter((cell) => cell.degradation > 0);
@@ -179,6 +195,48 @@ export function useAdverTest() {
       setIsCreatingBacklog(false);
     }
   }, [backlog, isCreatingBacklog, report, runId]);
+
+  /* ---- Recipe Strategy Actions ---- */
+  const loadPreset = useCallback((presetId) => {
+    if (presetId === "weather_robustness") {
+      setSelectedAttacks(["fog", "rain", "snow", "brightness"]);
+      setSeverity(3);
+    } else if (presetId === "sensor_fault_suite") {
+      setSelectedAttacks(["gaussian_noise", "shot_noise", "impulse_noise"]);
+      setSeverity(4);
+    }
+  }, []);
+
+  const randomizeRecipeAction = useCallback((nSteps = 3) => {
+    if (attacks.length === 0) return;
+    const shuffled = [...attacks].sort(() => 0.5 - Math.random());
+    const selected = shuffled.slice(0, Math.min(nSteps, attacks.length)).map((a) => a.name);
+    setSelectedAttacks(selected);
+  }, [attacks]);
+
+  const sweepRecipeAction = useCallback((attackName) => {
+    setSelectedAttacks([attackName]);
+    setSeverity(5);
+  }, []);
+
+  const previewRecipeAction = useCallback(async (payload) => {
+    return {
+      estimated_seconds: (payload?.recipe?.steps?.length || selectedAttacks.length) * 0.4,
+      total_samples: payload?.n_samples || 8,
+      total_cost_class: "LIGHT",
+    };
+  }, [selectedAttacks]);
+
+  const cancelRunAction = useCallback(async () => {
+    if (!runId) return;
+    try {
+      setRunStatus("CANCEL_REQUESTED");
+      setProgressDetail("Cancelling job...");
+      setIsRunning(false);
+    } catch (err) {
+      console.error("Failed to cancel run:", err);
+    }
+  }, [runId]);
 
   const version = modelVersions.find((item) => item.id === selectedModelVersion);
   const trainingBlockedReason = version?.runnable ? "" : "WAITING_FOR_ARTIFACTS";
@@ -218,6 +276,7 @@ export function useAdverTest() {
     },
     actions: {
       setSelectedDataset,
+      addDataset,
       setSeverity,
       setMode,
       setSelectedModelVersion,
@@ -225,6 +284,12 @@ export function useAdverTest() {
       handleRun,
       createBacklog,
       setActiveTab,
+      loadPreset,
+      randomizeRecipe: randomizeRecipeAction,
+      sweepRecipe: sweepRecipeAction,
+      previewRecipe: previewRecipeAction,
+      cancelRun: cancelRunAction,
     }
   };
 }
+

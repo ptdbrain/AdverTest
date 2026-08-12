@@ -10,7 +10,6 @@ from typing import Any
 
 from fastapi import HTTPException
 
-
 # Standard error code constants
 WAITING_FOR_ARTIFACTS = "WAITING_FOR_ARTIFACTS"
 PROTOCOL_MISMATCH = "PROTOCOL_MISMATCH"

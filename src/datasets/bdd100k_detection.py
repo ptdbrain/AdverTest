@@ -15,14 +15,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
-import numpy as np
 from pydantic import Field as PydanticField
 
 from src.core.types import Box, Sample
 from src.datasets import DATASETS
 from src.datasets.base import DatasetInfo, DatasetParams, DatasetSource
 from src.datasets.io import load_image
-
 
 # ---- Versioned class mapping ----
 

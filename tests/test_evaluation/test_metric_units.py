@@ -11,11 +11,10 @@ import math
 import numpy as np
 import pytest
 
-from src.core.types import Box, DetectionPrediction, Sample
+from src.core.types import Box, Sample
 from src.evaluation.contracts import MetricEnvelope
 from src.evaluation.report import CellResult, RunReport
 from src.evaluation.robustness_metrics import degradation_metrics
-
 
 # ---- Helpers ----
 

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from src.datasets.bdd100k_detection import (
     BDD100K_CLASS_MAPPING_V1,
     ClassMapping,

@@ -13,14 +13,9 @@ from __future__ import annotations
 
 import math
 
-import pytest
-
 from src.evaluation.contracts import MetricEnvelope
 from src.evaluation.model_comparison import (
-    CheckpointGateConfig,
-    CheckpointGateResult,
     ComparisonInput,
-    ModelComparison,
     checkpoint_gate,
     compare_models,
 )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.core.events import EventEnvelope, JobRequest, ProgressEvent
+from src.core.events import EventEnvelope
 
 
 class TestEventEnvelope:

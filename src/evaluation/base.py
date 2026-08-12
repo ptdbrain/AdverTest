@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.types import ModelPrediction, Sample, Task
 from src.evaluation.contracts import FailureCase, MetricEnvelope
-from src.pipeline.protocol import BenchmarkProtocol
+
+if TYPE_CHECKING:
+    from src.pipeline.protocol import BenchmarkProtocol
+
 
 
 class EvaluationResult(BaseModel):

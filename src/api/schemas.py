@@ -426,6 +426,16 @@ class ClosedLoopStartIn(BaseModel):
     run_id: str = Field(min_length=1, max_length=128)
 
 
+class ClosedLoopAdvanceIn(BaseModel):
+    """Advance a recovery loop to a target state using valid persisted evidence."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target: str = Field(min_length=1, max_length=128)
+    artifact_id: str = Field(min_length=1, max_length=256)
+
+
+
 class ClosedLoopSnapshotOut(BaseModel):
     """Durable, evidence-linked state of one recovery loop."""
 
@@ -471,3 +481,55 @@ class EvidenceStatusOut(BaseModel):
     summary: EvidenceSummaryOut
     components: dict[str, EvidenceComponentOut]
     evidence_tiers: list[str]
+
+
+class RecipeRandomizeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    n_steps: int = Field(default=3, ge=1, le=10)
+    group: str | None = Field(default=None, min_length=1, max_length=1)
+
+
+class RecipeSweepIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    attack_id: str = Field(min_length=1, max_length=128)
+    severity_range: list[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5])
+
+
+class RecipePreviewIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recipe_id: str | None = None
+    recipe: dict[str, Any] | None = None
+    dataset_version_id: str | None = None
+
+
+class FailureClusterCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cluster_id: str | None = None
+    name: str = Field(min_length=1, max_length=128)
+    member_ids: list[str] = Field(default_factory=list)
+    defense_profile_id: str | None = None
+
+
+class ModelVersionDetailOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version_id: str
+    model_id: str
+    parent_id: str | None = None
+    checkpoint_hash: str | None = None
+    status: str
+    evidence_tier: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class LineageGraphOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version_id: str
+    parent_id: str | None = None
+    parent_lineage: list[str] = Field(default_factory=list)
+    children: list[str] = Field(default_factory=list)

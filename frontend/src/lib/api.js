@@ -123,3 +123,154 @@ export function approveRetrainingBacklog(backlogId) {
     method: "POST",
   });
 }
+
+/* ---- Recipe API ---- */
+export function getRecipePresets() {
+  return apiFetch("/api/v1/catalog/recipes/presets");
+}
+
+export function randomizeRecipe(nSteps = 3, group = null) {
+  return apiFetch("/api/v1/attack-recipes/randomize", {
+    method: "POST",
+    body: JSON.stringify({ n_steps: nSteps, group }),
+  });
+}
+
+export function sweepRecipe(attackId, severityRange = [1, 2, 3, 4, 5]) {
+  return apiFetch("/api/v1/attack-recipes/sweep", {
+    method: "POST",
+    body: JSON.stringify({ attack_id: attackId, severity_range: severityRange }),
+  });
+}
+
+export function previewRecipe(payload) {
+  return apiFetch("/api/v1/attack-recipes/preview", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function validateRecipe(recipePayload) {
+  return apiFetch("/api/v1/attack-recipes/validate", {
+    method: "POST",
+    body: JSON.stringify(recipePayload),
+  });
+}
+
+/* ---- Failure Clusters ---- */
+export function getFailureClusters() {
+  return apiFetch("/api/v1/failure-clusters");
+}
+
+export function createFailureCluster(name, memberIds, defenseProfileId = null) {
+  return apiFetch("/api/v1/failure-clusters", {
+    method: "POST",
+    body: JSON.stringify({ name, member_ids: memberIds, defense_profile_id: defenseProfileId }),
+  });
+}
+
+export function getFailureCluster(clusterId) {
+  return apiFetch(`/api/v1/failure-clusters/${clusterId}`);
+}
+
+/* ---- Model Lineage & Gate Evidence ---- */
+export function getModelVersionLineage(versionId) {
+  return apiFetch(`/api/v1/model-versions/${versionId}/lineage`);
+}
+
+export function getModelVersionBenchmarkHistory(versionId) {
+  return apiFetch(`/api/v1/model-versions/${versionId}/benchmark-history`);
+}
+
+export function getModelVersionGateEvidence(versionId) {
+  return apiFetch(`/api/v1/model-versions/${versionId}/gate-evidence`);
+}
+
+/* ---- Model Comparisons ---- */
+export function createModelComparison(baselineRunId, candidateRunId) {
+  return apiFetch("/api/v1/model-comparisons", {
+    method: "POST",
+    body: JSON.stringify({ baseline_run_id: baselineRunId, candidate_run_id: candidateRunId }),
+  });
+}
+
+export function getModelComparison(comparisonId) {
+  return apiFetch(`/api/v1/model-comparisons/${comparisonId}`);
+}
+
+export function getModelComparisonFailures(comparisonId) {
+  return apiFetch(`/api/v1/model-comparisons/${comparisonId}/failures`);
+}
+
+export function exportModelComparison(comparisonId, format = "json") {
+  return apiFetch(`/api/v1/model-comparisons/${comparisonId}/export?format=${format}`);
+}
+
+/* ---- Closed-Loop ---- */
+export function startClosedLoop(runId) {
+  return apiFetch("/api/v1/closed-loop/start", {
+    method: "POST",
+    body: JSON.stringify({ run_id: runId }),
+  });
+}
+
+export function advanceClosedLoop(loopId, target, artifactId) {
+  return apiFetch(`/api/v1/closed-loop/${loopId}/advance`, {
+    method: "POST",
+    body: JSON.stringify({ target, artifact_id: artifactId }),
+  });
+}
+
+export function getClosedLoop(loopId) {
+  return apiFetch(`/api/v1/closed-loop/${loopId}`);
+}
+
+/* ---- Defense Profiles ---- */
+export function createDefenseProfile(profile) {
+  return apiFetch("/api/v1/defense-profiles", {
+    method: "POST",
+    body: JSON.stringify(profile),
+  });
+}
+
+export function getDefenseProfile(profileId) {
+  return apiFetch(`/api/v1/defense-profiles/${profileId}`);
+}
+
+/* ---- Status / Evidence ---- */
+export function getStatusEvidence() {
+  return apiFetch("/api/v1/status/evidence");
+}
+
+/* ---- Upload & Dataset Import ---- */
+export async function uploadImage(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const res = await fetch(`${API_BASE}/api/v1/uploads/images`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "x-filename": file.name,
+    },
+    body: bytes,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Upload failed with status ${res.status}`);
+  }
+  return res.json();
+}
+
+export function importFolderDataset({ root, name, inputFormat = "yolo", anonymizationManifest = "manifest.jsonl", maxSamples = 50 }) {
+  return apiFetch("/api/v1/datasets/import", {
+    method: "POST",
+    body: JSON.stringify({
+      root,
+      name,
+      input_format: inputFormat,
+      anonymization_manifest: anonymizationManifest,
+      max_samples: maxSamples,
+    }),
+  });
+}
+
+

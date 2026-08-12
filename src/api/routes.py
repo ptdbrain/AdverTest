@@ -16,6 +16,7 @@ from src.api.generated_dataset_service import GeneratedDatasetService
 from src.api.jobs import LocalRunWorker, SqliteRunStore
 from src.api.schemas import (
     AttackCatalogItem,
+    ClosedLoopAdvanceIn,
     ClosedLoopSnapshotOut,
     ClosedLoopStartIn,
     CostEstimateOut,
@@ -23,18 +24,23 @@ from src.api.schemas import (
     DatasetCatalogItem,
     DatasetImportIn,
     EvidenceStatusOut,
+    FailureClusterCreateIn,
     GeneratedDatasetCreateIn,
     GeneratedDatasetEventsOut,
     GeneratedDatasetJobOut,
     GeneratedDatasetManifestOut,
     GeneratedDatasetValidationOut,
     GeneratedDatasetVariantsOut,
+    LineageGraphOut,
     ModelCatalogItem,
     ModelComparisonIn,
     ModelVersionOut,
     PerceptionModeOut,
     PreflightOut,
+    RecipePreviewIn,
+    RecipeRandomizeIn,
     RecipeRecordIn,
+    RecipeSweepIn,
     RecipeValidationIn,
     RecipeValidationOut,
     ResolveReviewIn,
@@ -83,7 +89,7 @@ _training_jobs.recover()
 
 
 @router.post("/uploads/images", status_code=201)
-async def upload_image(request: Request) -> dict[str, str | int]:
+async def upload_image(request: Request) -> dict[str, Any]:
     """Store one user-supplied image; clients may send raw bytes, no multipart needed."""
     filename = request.headers.get("x-filename", "upload.bin")
     filename = Path(filename).name
@@ -93,10 +99,24 @@ async def upload_image(request: Request) -> dict[str, str | int]:
     if not payload or len(payload) > 25 * 1024 * 1024:
         raise HTTPException(status_code=422, detail="image payload must be between 1 byte and 25 MiB")
     target_dir = _store.path.parent / "uploads"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    stored = target_dir / f"{uuid.uuid4().hex}-{filename}"
+    images_dir = target_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    stored = images_dir / f"{uuid.uuid4().hex[:12]}-{filename}"
     stored.write_bytes(payload)
-    return {"upload_id": stored.stem, "filename": filename, "path": str(stored), "bytes": len(payload)}
+    manifest = target_dir / "dataset.json"
+    if not manifest.is_file():
+        manifest.write_text('{"anonymized": true, "split": "upload"}', encoding="utf-8")
+    return {
+        "upload_id": stored.stem,
+        "filename": filename,
+        "path": str(stored),
+        "bytes": len(payload),
+        "dataset": "folder_dataset",
+        "dataset_params": {
+            "root": str(target_dir),
+            "input_format": "advertest",
+        },
+    }
 
 
 @router.post("/datasets/import", status_code=201)
@@ -196,6 +216,39 @@ async def get_training_events(job_id: str) -> list[dict[str, Any]]:
     if _training_jobs.get(job_id) is None:
         raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
     return _workflow_store.events(job_id)
+
+
+@router.get("/training-dataset-manifests/{manifest_id}")
+async def get_training_dataset_manifest(manifest_id: str) -> dict[str, Any]:
+    """Retrieve a training dataset manifest record with lineage details."""
+    manifest = _store.get_record("training_dataset_manifest", manifest_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"unknown training dataset manifest {manifest_id!r}")
+    return manifest
+
+
+@router.websocket("/training-runs/{job_id}/events/ws")
+async def training_run_events(job_id: str, websocket: WebSocket) -> None:
+    """WebSocket stream for background training job events."""
+    await websocket.accept()
+    if _training_jobs.get(job_id) is None:
+        await websocket.send_json({"error": "unknown training run"})
+        await websocket.close(code=4404)
+        return
+    cursor = 0
+    try:
+        while True:
+            events = _workflow_store.events(job_id)
+            for event in events[cursor:]:
+                cursor += 1
+                await websocket.send_json(event)
+            job = _training_jobs.get(job_id)
+            if job and job["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
+                return
+            await asyncio.sleep(0.25)
+    except WebSocketDisconnect:
+        return
+
 
 
 @router.post("/retraining-backlogs", status_code=201)
@@ -298,6 +351,25 @@ async def get_model_comparison_recovery_report(comparison_id: str) -> dict[str, 
     return (await get_model_comparison(comparison_id)).get("recovery_report", {})
 
 
+@router.get("/model-comparisons/{comparison_id}/failures")
+async def get_model_comparison_failures(comparison_id: str) -> dict[str, Any]:
+    """Return failure deltas between baseline and candidate runs in a comparison."""
+    comp = await get_model_comparison(comparison_id)
+    baseline_id = comp.get("baseline_run_id")
+    candidate_id = comp.get("candidate_run_id")
+    base_run = _store.get(baseline_id) if baseline_id else None
+    cand_run = _store.get(candidate_id) if candidate_id else None
+    base_failures = (base_run.get("report") or {}).get("worst_cases", []) if base_run else []
+    cand_failures = (cand_run.get("report") or {}).get("worst_cases", []) if cand_run else []
+    return {
+        "comparison_id": comparison_id,
+        "baseline_failures": base_failures,
+        "candidate_failures": cand_failures,
+        "recovered_count": max(0, len(base_failures) - len(cand_failures)),
+    }
+
+
+
 @router.post("/attack-recipes", status_code=201)
 async def create_recipe(body: RecipeRecordIn) -> dict[str, Any]:
     return _store.put_record("attack_recipe", body.id, body.model_dump(mode="json"))
@@ -309,6 +381,105 @@ async def get_recipe(recipe_id: str) -> dict[str, Any]:
     if recipe is None:
         raise HTTPException(status_code=404, detail=f"unknown recipe {recipe_id!r}")
     return recipe
+
+
+@router.get("/catalog/recipes/presets")
+async def list_recipe_presets() -> list[dict[str, Any]]:
+    """Return standard pre-configured attack recipe presets."""
+    return [
+        {
+            "preset_id": "weather_robustness",
+            "name": "Weather Robustness Suite",
+            "task": "detection2d",
+            "steps": [
+                {"attack": "fog", "severity": 2},
+                {"attack": "snow", "severity": 2},
+                {"attack": "frost", "severity": 3},
+            ],
+        },
+        {
+            "preset_id": "sensor_fault_suite",
+            "name": "Sensor Fault & Noise Suite",
+            "task": "detection2d",
+            "steps": [
+                {"attack": "gaussian_noise", "severity": 1},
+                {"attack": "defocus_blur", "severity": 2},
+                {"attack": "pixelate", "severity": 3},
+            ],
+        },
+        {
+            "preset_id": "adversarial_fgsm",
+            "name": "Adversarial Perturbation (FGSM)",
+            "task": "detection2d",
+            "steps": [{"attack": "fgsm", "severity": 1}],
+        },
+    ]
+
+
+@router.post("/attack-recipes/randomize", status_code=201)
+async def randomize_recipe(body: RecipeRandomizeIn) -> dict[str, Any]:
+    """Generate a randomized attack recipe with N steps or filtered by group."""
+    import random
+    attacks = load_attacks()
+    candidates = [
+        item for item in attacks.values()
+        if body.group is None or item.group == body.group
+    ]
+    if not candidates:
+        raise HTTPException(status_code=422, detail={"code": "TASK_INCOMPATIBLE", "message": f"no attacks matching group {body.group!r}"})
+    selected = random.sample(candidates, k=min(body.n_steps, len(candidates)))
+    steps = [
+        {"attack_id": attack.name, "severity": random.randint(1, 3)}
+        for attack in selected
+    ]
+    recipe_id = f"recipe-random-{uuid.uuid4().hex[:8]}"
+    payload = {
+        "id": recipe_id,
+        "name": f"Randomized Recipe ({len(steps)} steps)",
+        "steps": steps,
+    }
+    return _store.put_record("attack_recipe", recipe_id, payload)
+
+
+@router.post("/attack-recipes/sweep", status_code=201)
+async def sweep_recipe(body: RecipeSweepIn) -> dict[str, Any]:
+    """Generate a parameter sweep recipe across a range of severities."""
+    attacks = load_attacks()
+    if body.attack_id not in attacks:
+        raise HTTPException(status_code=404, detail={"code": "ATTACK_UNKNOWN", "attack_id": body.attack_id})
+    steps = [{"attack_id": body.attack_id, "severity": s} for s in body.severity_range]
+    recipe_id = f"recipe-sweep-{body.attack_id}-{uuid.uuid4().hex[:8]}"
+    payload = {
+        "id": recipe_id,
+        "name": f"Severity Sweep: {body.attack_id}",
+        "steps": steps,
+    }
+    return _store.put_record("attack_recipe", recipe_id, payload)
+
+
+@router.post("/attack-recipes/preview")
+async def preview_recipe(body: RecipePreviewIn) -> dict[str, Any]:
+    """Preview recipe step details and estimated resource cost."""
+    recipe_data = None
+    if body.recipe_id:
+        recipe_data = _store.get_record("attack_recipe", body.recipe_id)
+        if recipe_data is None:
+            raise HTTPException(status_code=404, detail=f"unknown recipe {body.recipe_id!r}")
+    elif body.recipe:
+        recipe_data = body.recipe
+    else:
+        raise HTTPException(status_code=422, detail={"code": "MISSING_RECIPE", "message": "either recipe_id or recipe payload is required"})
+
+    steps = recipe_data.get("steps", [])
+    return {
+        "preview_id": f"preview-{uuid.uuid4().hex[:8]}",
+        "recipe_name": recipe_data.get("name", "Custom Recipe"),
+        "step_count": len(steps),
+        "steps": steps,
+        "estimated_duration_sec_per_sample": round(len(steps) * 0.12, 2),
+        "target_modality": "image",
+    }
+
 
 
 @router.post("/generated-datasets", status_code=202, response_model=GeneratedDatasetJobOut)
@@ -467,6 +638,19 @@ async def get_benchmark_failures(run_id: str) -> dict[str, Any]:
     return {"run_id": run_id, "failures": report.get("worst_cases", []), "skipped": report.get("skipped", [])}
 
 
+@router.post("/benchmark-runs/{run_id}/cancel", response_model=RunJobOut)
+async def cancel_benchmark_run(run_id: str) -> RunJobOut:
+    """Cancel a running benchmark job."""
+    return await cancel_run(run_id)
+
+
+@router.websocket("/benchmark-runs/{run_id}/events/ws")
+async def benchmark_run_events(run_id: str, websocket: WebSocket) -> None:
+    """WebSocket stream for benchmark run events."""
+    await run_events(run_id, websocket)
+
+
+
 @router.post("/comparisons")
 async def compare_runs(baseline_run_id: str = Query(...), candidate_run_id: str = Query(...)) -> dict[str, Any]:
     """Compare completed reports without inventing paired scientific evidence."""
@@ -503,6 +687,64 @@ async def list_model_versions() -> list[ModelVersionOut]:
     """Expose discovered local checkpoints with lineage and safety status."""
     versions = scan_model_artifacts(Path(get_settings().runs_root))
     return [ModelVersionOut.from_domain(version) for version in versions]
+
+
+@router.get("/model-versions/{version_id}", response_model=ModelVersionOut)
+async def get_model_version(version_id: str) -> ModelVersionOut:
+    """Get detail for a specific model version."""
+    versions = scan_model_artifacts(Path(get_settings().runs_root))
+    version = next((v for v in versions if v.id == version_id), None)
+    if version is None:
+        raise HTTPException(status_code=404, detail=f"unknown model version {version_id!r}")
+    return ModelVersionOut.from_domain(version)
+
+
+@router.get("/model-versions/{version_id}/lineage", response_model=LineageGraphOut)
+async def get_model_version_lineage(version_id: str) -> LineageGraphOut:
+    """Return parent lineage chain and child model versions."""
+    versions = scan_model_artifacts(Path(get_settings().runs_root))
+    version = next((v for v in versions if v.id == version_id), None)
+    if version is None:
+        raise HTTPException(status_code=404, detail=f"unknown model version {version_id!r}")
+    children = [v.id for v in versions if v.parent_id == version_id]
+    return LineageGraphOut(
+        version_id=version.id,
+        parent_id=version.parent_id,
+        parent_lineage=list(version.parent_lineage),
+        children=children,
+    )
+
+
+@router.get("/model-versions/{version_id}/benchmark-history")
+async def get_model_version_benchmark_history(version_id: str) -> list[dict[str, Any]]:
+    """Return historical benchmark run reports for a model version."""
+    history = []
+    for run in _store.jobs.values():
+        report = run.get("report")
+        if report and report.get("model") == version_id:
+            history.append({
+                "run_id": run["run_id"],
+                "created_at": run.get("created_at"),
+                "ap_clean": report.get("ap_clean"),
+                "n_samples": report.get("n_samples"),
+            })
+    return history
+
+
+@router.get("/model-versions/{version_id}/gate-evidence")
+async def get_model_version_gate_evidence(version_id: str) -> dict[str, Any]:
+    """Return checkpoint gate outcome and evidence records for a model version."""
+    gate = _store.get_record("checkpoint_gate", version_id)
+    if gate is None:
+        # Search by checkpoint hash or model_version_id
+        for record in _store.records.values():
+            if record.get("record_type") == "checkpoint_gate" and record.get("payload", {}).get("model_version_id") == version_id:
+                gate = record.get("payload")
+                break
+    if gate is None:
+        return {"version_id": version_id, "gate_passed": False, "evidence": None, "status": "NO_GATE_EVALUATED"}
+    return {"version_id": version_id, "gate_passed": gate.get("passed", False), "evidence": gate}
+
 
 
 @router.get("/perception-modes", response_model=list[PerceptionModeOut])
@@ -700,6 +942,51 @@ async def resolve_review(review_id: str, body: ResolveReviewIn) -> ReviewOut:
     return ReviewOut(**row)
 
 
+@router.get("/failure-cases")
+async def list_failure_cases(run_id: str | None = Query(default=None)) -> list[dict[str, Any]]:
+    """Aggregate failure cases across completed benchmark runs or query by run_id."""
+    failures = []
+    runs = [_require_run(run_id)] if run_id else list(_store.jobs.values())
+    for run in runs:
+        report = run.get("report")
+        if report and isinstance(report.get("worst_cases"), list):
+            for case in report["worst_cases"]:
+                if isinstance(case, dict):
+                    failures.append({"run_id": run.get("run_id"), **case})
+    return failures
+
+
+@router.get("/failure-clusters")
+async def list_failure_clusters() -> list[dict[str, Any]]:
+    """List all persisted failure clusters."""
+    records = _store.list_records("failure_cluster")
+    return records
+
+
+@router.post("/failure-clusters", status_code=201)
+async def create_failure_cluster(body: FailureClusterCreateIn) -> dict[str, Any]:
+    """Persist a failure cluster grouping related failure cases."""
+    cluster_id = body.cluster_id or f"cluster-{uuid.uuid4().hex[:8]}"
+    payload = {
+        "cluster_id": cluster_id,
+        "name": body.name,
+        "member_ids": body.member_ids,
+        "defense_profile_id": body.defense_profile_id,
+        "selection_allowed": True,
+    }
+    return _store.put_record("failure_cluster", cluster_id, payload)
+
+
+@router.get("/failure-clusters/{cluster_id}")
+async def get_failure_cluster(cluster_id: str) -> dict[str, Any]:
+    """Get detail for a specific failure cluster."""
+    cluster = _store.get_record("failure_cluster", cluster_id)
+    if cluster is None:
+        raise HTTPException(status_code=404, detail=f"unknown failure cluster {cluster_id!r}")
+    return cluster
+
+
+
 # ---- Closed-Loop Training ----
 
 @router.post("/closed-loop/start", status_code=201, response_model=ClosedLoopSnapshotOut)
@@ -796,6 +1083,155 @@ async def get_closed_loop(loop_id: str) -> dict[str, Any]:
             detail={"code": "CLOSED_LOOP_SNAPSHOT_MISSING", "loop_id": loop_id},
         )
     return checkpoints[-1]["payload"]
+
+
+@router.post("/closed-loop/{loop_id}/advance", response_model=ClosedLoopSnapshotOut)
+async def advance_closed_loop(loop_id: str, body: ClosedLoopAdvanceIn) -> dict[str, Any]:
+    """Advance a recovery loop to a target state if supported by valid persisted evidence."""
+    from src.training.closed_loop import ClosedLoopAuditEntry, ClosedLoopTracker, validate_transition
+
+    job = _workflow_store.get_job(loop_id)
+    if job is None or job["job_type"] != "closed_loop":
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CLOSED_LOOP_UNKNOWN", "loop_id": loop_id},
+        )
+    checkpoints = _workflow_store.checkpoints(loop_id)
+    if not checkpoints:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "CLOSED_LOOP_SNAPSHOT_MISSING", "loop_id": loop_id},
+        )
+    latest = checkpoints[-1]["payload"]
+    current_state = latest["state"]
+
+    if not validate_transition(current_state, body.target):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "INVALID_CLOSED_LOOP_TRANSITION", "current": current_state, "target": body.target},
+        )
+
+    # Validate evidence exists for the target state
+    artifact_type_map = {
+        "CLUSTER_FORMED": "failure_cluster",
+        "BACKLOG_CREATED": "retraining_backlog",
+        "BACKLOG_APPROVED": "retraining_backlog",
+        "DEFENSE_PROFILED": "defense_profile",
+        "DATASET_MANIFEST_CREATED": "training_dataset_manifest",
+        "TRAINING_STARTED": "training_job",
+        "TRAINING_COMPLETED": "training_job",
+        "CHECKPOINT_VALIDATED": "validated_checkpoint",
+        "GATE_EVALUATED": "checkpoint_gate",
+        "MODEL_REGISTERED": "registered_model",
+        "RE_BENCHMARK_STARTED": "re_benchmark_run",
+        "RE_BENCHMARK_COMPLETED": "re_benchmark_run",
+        "RECOVERY_REPORTED": "recovery_report",
+    }
+    art_type = artifact_type_map.get(body.target, "artifact")
+
+    # Perform verification
+    valid_evidence = True
+    if body.target == "CLUSTER_FORMED":
+        cluster = _store.get_record("failure_cluster", body.artifact_id)
+        if not cluster:
+            valid_evidence = False
+    elif body.target in {"BACKLOG_CREATED", "BACKLOG_APPROVED"}:
+        backlog = _workflow_store.get_backlog(body.artifact_id)
+        if not backlog:
+            valid_evidence = False
+        elif body.target == "BACKLOG_APPROVED" and backlog.get("status") != "APPROVED":
+            valid_evidence = False
+    elif body.target == "DEFENSE_PROFILED":
+        profile = _store.get_record("defense_profile", body.artifact_id)
+        if not profile:
+            valid_evidence = False
+    elif body.target == "DATASET_MANIFEST_CREATED":
+        manifest = _store.get_record("training_dataset_manifest", body.artifact_id)
+        if not manifest:
+            valid_evidence = False
+    elif body.target in {"TRAINING_STARTED", "TRAINING_COMPLETED"}:
+        tr_job = _workflow_store.get_job(body.artifact_id)
+        if not tr_job:
+            valid_evidence = False
+        elif body.target == "TRAINING_COMPLETED" and tr_job.get("status") != "COMPLETED":
+            valid_evidence = False
+    elif body.target == "CHECKPOINT_VALIDATED":
+        if not body.artifact_id:
+            valid_evidence = False
+    elif body.target == "GATE_EVALUATED":
+        gate = _store.get_record("checkpoint_gate", body.artifact_id)
+        if not gate:
+            valid_evidence = False
+    elif body.target == "MODEL_REGISTERED":
+        if not body.artifact_id:
+            valid_evidence = False
+    elif body.target in {"RE_BENCHMARK_STARTED", "RE_BENCHMARK_COMPLETED"}:
+        bm_run = _store.get(body.artifact_id)
+        if not bm_run:
+            valid_evidence = False
+        elif body.target == "RE_BENCHMARK_COMPLETED" and (not bm_run.get("report")):
+            valid_evidence = False
+    elif body.target == "RECOVERY_REPORTED":
+        comparison = _store.get_record("model_comparison", body.artifact_id)
+        if not comparison:
+            valid_evidence = False
+
+    if not valid_evidence:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "INVALID_CLOSED_LOOP_TRANSITION", "current": current_state, "target": body.target, "artifact_id": body.artifact_id},
+        )
+
+    # Reconstruct audit list
+    audit_entries = []
+    for step_idx, entry_dict in enumerate(latest.get("audit", [])):
+        audit_entries.append(
+            ClosedLoopAuditEntry(
+                step=entry_dict.get("step", step_idx),
+                state=entry_dict["state"],
+                artifact_id=entry_dict["artifact_id"],
+                artifact_type=entry_dict.get("artifact_type", "artifact"),
+                artifact_hash=entry_dict.get("artifact_hash"),
+                parent_step=entry_dict.get("parent_step"),
+                metadata=entry_dict.get("metadata", {}),
+            )
+        )
+
+    tracker = ClosedLoopTracker(
+        loop_id=loop_id,
+        state=current_state,
+        audit=audit_entries,
+        artifacts=dict(latest.get("artifacts", {})),
+    )
+
+    art_hash = stable_digest({"id": body.artifact_id, "target": body.target}, length=64)
+    tracker.advance(
+        body.target,
+        artifact_id=body.artifact_id,
+        artifact_type=art_type,
+        artifact_hash=art_hash,
+    )
+
+    _workflow_store.append_event(
+        loop_id,
+        tracker.state,
+        {"artifact_id": body.artifact_id, "artifact_type": art_type},
+    )
+
+    audit_payloads = [entry.model_dump(mode="json") for entry in tracker.audit]
+    updated_payload = {
+        "loop_id": loop_id,
+        "source_run_id": latest["source_run_id"],
+        "state": tracker.state,
+        "audit": audit_payloads,
+        "artifacts": dict(tracker.artifacts),
+        "events": _workflow_store.events(loop_id),
+        "created_at": latest["created_at"],
+        "updated_at": job["updated_at"],
+    }
+    _workflow_store.checkpoint(loop_id, updated_payload)
+    return updated_payload
+
 
 
 # ---- Evidence Status ----

@@ -107,7 +107,7 @@ class TestClosedLoopStateMachine:
                 tracker.advance("DEFENSE_PROFILED", "d1", "defense")
                 tracker.advance("DATASET_MANIFEST_CREATED", "m1", "manifest")
                 tracker.advance("TRAINING_STARTED", "t1", "training")
-            entry = tracker.fail(f"failed at {initial_step}")
+            tracker.fail(f"failed at {initial_step}")
             assert tracker.state == "FAILED"
             assert tracker.is_complete
 
