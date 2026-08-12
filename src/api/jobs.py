@@ -78,6 +78,8 @@ class SqliteRunStore:
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (record_type, record_id)
                 );
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_review_cell
+                ON reviews(run_id, attack, severity, flagged_by);
                 """
             )
 
@@ -100,6 +102,24 @@ class SqliteRunStore:
                 "SELECT * FROM product_records WHERE record_type=? AND record_id=?", (record_type, record_id)
             ).fetchone()
         return _product_row(row)
+
+    def update_record(self, record_type: str, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Update an existing product configuration record (e.g., protocol state transition)."""
+        now = _now()
+        with self._lock, self._connection() as connection:
+            serialized = json.dumps(payload, sort_keys=True)
+            connection.execute(
+                """
+                UPDATE product_records
+                SET payload_json=?, updated_at=?
+                WHERE record_type=? AND record_id=?
+                """,
+                (serialized, now, record_type, record_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM product_records WHERE record_type=? AND record_id=?", (record_type, record_id)
+            ).fetchone()
+        return _product_row(row) if row else payload
 
     def get_record(self, record_type: str, record_id: str) -> dict[str, Any] | None:
         with self._connection() as connection:
@@ -271,7 +291,17 @@ class SqliteRunStore:
         now = _now()
         with self._lock, self._connection() as connection:
             for cell in report.get("cells", []):
-                if cell.get("degradation", 0) >= threshold:
+                degradation_percent = cell.get(
+                    "degradation_percent",
+                    float(cell.get("degradation_ratio", cell.get("degradation", 0.0))) * 100.0,
+                )
+                if degradation_percent >= threshold:
+                    existing = connection.execute(
+                        "SELECT review_id FROM reviews WHERE run_id=? AND attack=? AND severity=? AND flagged_by='system_auto'",
+                        (run_id, cell["attack"], cell["severity"]),
+                    ).fetchone()
+                    if existing is not None:
+                        continue
                     review_id = f"REV-{uuid.uuid4().hex[:8]}"
                     connection.execute(
                         """INSERT OR IGNORE INTO reviews
@@ -281,7 +311,7 @@ class SqliteRunStore:
                             review_id, run_id, cell["attack"], cell["severity"],
                             report.get("dataset", config.get("dataset", "")),
                             report.get("model", config.get("model", "")),
-                            cell["degradation"], now, now,
+                            cell.get("degradation", 0), now, now,
                         ),
                     )
                     created_ids.append(review_id)

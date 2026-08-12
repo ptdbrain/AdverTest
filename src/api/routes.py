@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import uuid
 from dataclasses import replace
+from io import BytesIO
 from pathlib import Path
 from typing import Any
+
+from PIL import Image, UnidentifiedImageError
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 
@@ -88,6 +92,22 @@ for _run_id, _config in _store.recoverable():
 _training_jobs.recover()
 
 
+def _validate_uploaded_image(payload: bytes) -> tuple[str, tuple[int, int]]:
+    try:
+        with Image.open(BytesIO(payload)) as image:
+            image.verify()
+        with Image.open(BytesIO(payload)) as image:
+            return image.format or "unknown", image.size
+    except (UnidentifiedImageError, OSError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_IMAGE",
+                "message": "Payload is not a decodable image.",
+            },
+        ) from exc
+
+
 @router.post("/uploads/images", status_code=201)
 async def upload_image(request: Request) -> dict[str, Any]:
     """Store one user-supplied image; clients may send raw bytes, no multipart needed."""
@@ -98,19 +118,39 @@ async def upload_image(request: Request) -> dict[str, Any]:
     payload = await request.body()
     if not payload or len(payload) > 25 * 1024 * 1024:
         raise HTTPException(status_code=422, detail="image payload must be between 1 byte and 25 MiB")
-    target_dir = _store.path.parent / "uploads"
+
+    image_format, (width, height) = _validate_uploaded_image(payload)
+
+    batch_id = request.headers.get("x-upload-batch-id")
+    if not batch_id or not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", batch_id):
+        batch_id = f"batch-{uuid.uuid4().hex[:12]}"
+
+    target_dir = _store.path.parent / "uploads" / batch_id
     images_dir = target_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
     stored = images_dir / f"{uuid.uuid4().hex[:12]}-{filename}"
     stored.write_bytes(payload)
+
     manifest = target_dir / "dataset.json"
     if not manifest.is_file():
-        manifest.write_text('{"anonymized": true, "split": "upload"}', encoding="utf-8")
+        descriptor = {
+            "anonymized": False,
+            "annotated": False,
+            "benchmark_ready": False,
+            "split": "upload",
+        }
+        manifest.write_text(json.dumps(descriptor), encoding="utf-8")
+
     return {
         "upload_id": stored.stem,
+        "batch_id": batch_id,
         "filename": filename,
         "path": str(stored),
         "bytes": len(payload),
+        "image_format": image_format,
+        "width": width,
+        "height": height,
+        "benchmark_ready": False,
         "dataset": "folder_dataset",
         "dataset_params": {
             "root": str(target_dir),
@@ -597,7 +637,7 @@ async def lock_benchmark_protocol(protocol_id: str) -> dict[str, Any]:
         {k: v for k, v in record.items() if k not in {"protocol_id", "state", "identity_hash", "id", "record_type", "created_at", "updated_at", "metadata"}},
         length=40,
     )
-    return _store.put_record("benchmark_protocol", protocol_id, record)
+    return _store.update_record("benchmark_protocol", protocol_id, record)
 
 
 @router.get("/benchmark/protocols/{protocol_id}")
@@ -611,8 +651,17 @@ async def get_benchmark_protocol(protocol_id: str) -> dict[str, Any]:
 @router.post("/benchmark/runs", status_code=202, response_model=RunJobOut)
 async def create_benchmark_run(config: RunConfig, protocol_id: str = Query(...)) -> RunJobOut:
     """Execute a locked protocol through the same durable async run worker."""
-    if _store.get_record("benchmark_protocol", protocol_id) is None:
+    protocol = _store.get_record("benchmark_protocol", protocol_id)
+    if protocol is None:
         raise HTTPException(status_code=404, detail=f"unknown protocol {protocol_id!r}")
+    if protocol.get("state") != "LOCKED":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "PROTOCOL_NOT_LOCKED",
+                "state": protocol.get("state"),
+            },
+        )
     preflight = _runner.preflight(config)
     if preflight.fatal_errors:
         raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
@@ -719,9 +768,9 @@ async def get_model_version_lineage(version_id: str) -> LineageGraphOut:
 async def get_model_version_benchmark_history(version_id: str) -> list[dict[str, Any]]:
     """Return historical benchmark run reports for a model version."""
     history = []
-    for run in _store.jobs.values():
+    for run in _store.list():
         report = run.get("report")
-        if report and report.get("model") == version_id:
+        if report and (report.get("model") == version_id or report.get("model_version_id") == version_id):
             history.append({
                 "run_id": run["run_id"],
                 "created_at": run.get("created_at"),
@@ -737,9 +786,9 @@ async def get_model_version_gate_evidence(version_id: str) -> dict[str, Any]:
     gate = _store.get_record("checkpoint_gate", version_id)
     if gate is None:
         # Search by checkpoint hash or model_version_id
-        for record in _store.records.values():
-            if record.get("record_type") == "checkpoint_gate" and record.get("payload", {}).get("model_version_id") == version_id:
-                gate = record.get("payload")
+        for record in _store.list_records("checkpoint_gate"):
+            if record.get("model_version_id") == version_id or record.get("id") == version_id:
+                gate = record
                 break
     if gate is None:
         return {"version_id": version_id, "gate_passed": False, "evidence": None, "status": "NO_GATE_EVALUATED"}
@@ -946,7 +995,7 @@ async def resolve_review(review_id: str, body: ResolveReviewIn) -> ReviewOut:
 async def list_failure_cases(run_id: str | None = Query(default=None)) -> list[dict[str, Any]]:
     """Aggregate failure cases across completed benchmark runs or query by run_id."""
     failures = []
-    runs = [_require_run(run_id)] if run_id else list(_store.jobs.values())
+    runs = [_require_run(run_id)] if run_id else _store.list()
     for run in runs:
         report = run.get("report")
         if report and isinstance(report.get("worst_cases"), list):

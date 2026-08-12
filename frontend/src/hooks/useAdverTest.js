@@ -10,6 +10,7 @@ import {
   getRunSamples,
   connectRunWebSocket,
   triggerAutoFlag,
+  cancelRun,
   createRetrainingBacklog,
   addRetrainingBacklogItem,
   approveRetrainingBacklog,
@@ -94,9 +95,34 @@ export function useAdverTest() {
   }, []);
 
   /* ---- Run attack ---- */
+  /* ---- Run attack ---- */
   const handleRun = useCallback(async () => {
     const version = modelVersions.find((item) => item.id === selectedModelVersion);
-    if (!selectedDataset || selectedAttacks.length === 0 || mode !== "detection2d" || !version?.runnable) return;
+    if (!selectedDataset) {
+      setProgressDetail("Select a dataset before running.");
+      setRunStatus("BLOCKED");
+      return;
+    }
+    if (selectedAttacks.length === 0) {
+      setProgressDetail("Select at least one attack before running.");
+      setRunStatus("BLOCKED");
+      return;
+    }
+    if (mode !== "detection2d") {
+      setProgressDetail("Segmentation mode is not connected to the primary runner yet.");
+      setRunStatus("BLOCKED");
+      return;
+    }
+    if (!version?.runnable || !version.checkpoint_path) {
+      setProgressDetail(
+        version?.blocked_reason
+          ? `Model version unavailable: ${version.blocked_reason}`
+          : "YOLO checkpoint unavailable. Check /api/v1/model-versions and RUNS_ROOT."
+      );
+      setRunStatus("BLOCKED");
+      return;
+    }
+
     setIsRunning(true);
     setRunStatus("QUEUED");
     setProgress(0);
@@ -142,23 +168,33 @@ export function useAdverTest() {
         if (event.state === "EVALUATING") setProgressDetail("Computing metrics...");
         if (event.state === "COMPLETED") {
           setProgressDetail("Done!");
-          getRunReport(job.run_id).then((r) => {
-            setReport(r);
-            setIsRunning(false);
-            // Auto-flag severe degradations (> 30%)
-            triggerAutoFlag(job.run_id, 30).catch(console.error);
-          });
-          getRunSamples(job.run_id).then((rawSamples) => {
-            const baseUrl = "http://localhost:8000/data/";
-            const fixPath = (p) => p ? p.replace(/\\/g, "/").replace(/^.*\/data\//i, baseUrl) : "";
-            const mapped = rawSamples.map(s => ({
-              ...s,
-              clean_image: fixPath(s.clean_image_path),
-              attacked_image: fixPath(s.attacked_image_path),
-              overlay_image: fixPath(s.overlay_path)
-            }));
-            setSamples(mapped);
-          });
+          getRunReport(job.run_id)
+            .then((r) => {
+              setReport(r);
+              setIsRunning(false);
+              // Auto-flag severe degradations (> 30%)
+              triggerAutoFlag(job.run_id, 30).catch(console.error);
+            })
+            .catch((err) => {
+              console.error("Failed to fetch run report:", err);
+              setIsRunning(false);
+            });
+          getRunSamples(job.run_id)
+            .then((rawSamples) => {
+              const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+              const baseUrl = `${apiBase.replace(/\/$/, "")}/data/`;
+              const fixPath = (p) => (p ? p.replace(/\\/g, "/").replace(/^.*\/data\//i, baseUrl) : "");
+              const mapped = rawSamples.map((s) => ({
+                ...s,
+                clean_image: fixPath(s.clean_image_path),
+                attacked_image: fixPath(s.attacked_image_path),
+                overlay_image: fixPath(s.overlay_path),
+              }));
+              setSamples(mapped);
+            })
+            .catch((err) => {
+              console.error("Failed to fetch run samples:", err);
+            });
         }
         if (event.state === "FAILED") {
           setProgressDetail(event.payload?.error || "Run failed");
@@ -232,9 +268,11 @@ export function useAdverTest() {
     try {
       setRunStatus("CANCEL_REQUESTED");
       setProgressDetail("Cancelling job...");
-      setIsRunning(false);
+      const job = await cancelRun(runId);
+      if (job?.status) setRunStatus(job.status);
     } catch (err) {
       console.error("Failed to cancel run:", err);
+      setProgressDetail(err.message || "Failed to cancel run.");
     }
   }, [runId]);
 

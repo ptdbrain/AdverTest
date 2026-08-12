@@ -14,7 +14,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
   // Folder Import State
   const [folderPath, setFolderPath] = useState("data/anonymized/kitti");
   const [datasetName, setDatasetName] = useState("Custom Folder Import");
-  const [inputFormat, setInputFormat] = useState("yolo");
+  const [inputFormat, setInputFormat] = useState("advertest");
   const [maxSamples, setMaxSamples] = useState(50);
 
   // URL Ingestion State
@@ -37,6 +37,9 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
   };
 
   const removeFile = (index) => {
+    if (filePreviews[index]?.url) {
+      URL.revokeObjectURL(filePreviews[index].url);
+    }
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
     setFilePreviews((prev) => prev.filter((_, i) => i !== index));
   };
@@ -51,9 +54,10 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
     setStatusMessage("Uploading images to server...");
 
     try {
+      const batchId = `batch-${Date.now()}`;
       const results = [];
       for (const file of selectedFiles) {
-        const uploaded = await uploadImage(file);
+        const uploaded = await uploadImage(file, batchId);
         results.push(uploaded);
       }
       setStatusMessage(`Successfully uploaded ${results.length} images!`);
@@ -62,12 +66,13 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
         id: uploadId,
         name: uploadId,
         dataset: "folder_dataset",
-        title: `📤 Uploaded Images (${results.length})`,
+        title: `📤 Uploaded Raw Images (${results.length})`,
         dataset_params: results[0]?.dataset_params || {
-          root: "data/uploads",
+          root: `data/uploads/${batchId}`,
           input_format: "advertest",
         },
-        anonymized: true,
+        anonymized: false,
+        benchmark_ready: false,
       };
       onDatasetCreated(customDataset);
       setTimeout(() => {
@@ -322,9 +327,8 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
               <div>
                 <label className="config-panel__label">Annotation Format</label>
                 <select className="select-field" value={inputFormat} onChange={(e) => setInputFormat(e.target.value)}>
-                  <option value="yolo">YOLO Format (.txt boxes)</option>
-                  <option value="coco">COCO JSON Format</option>
-                  <option value="raw">Raw Unannotated Folder</option>
+                  <option value="advertest">AdverTest Annotated Folder</option>
+                  <option value="kitti">KITTI Format</option>
                 </select>
               </div>
 

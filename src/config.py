@@ -36,10 +36,15 @@ class Settings(BaseSettings):
     review_degradation_threshold: float = Field(default=0.30, ge=0.0, le=1.0)
 
     # Storage (in-memory today; PostgreSQL + MinIO per plan §4)
-    database_url: str = "sqlite:///./data/app.db"
+    data_root: str = str(PROJECT_ROOT / "data")
+    database_url: str = f"sqlite:///{(PROJECT_ROOT / 'data' / 'app.db').as_posix()}"
     worker_max_concurrency: int = Field(default=1, ge=1, le=8)
     runs_root: str = str(PROJECT_ROOT / "runs")
-    artifact_root: str = "data/artifacts"
+    artifact_root: str = str(PROJECT_ROOT / "data" / "artifacts")
+
+    # Execution hardware defaults
+    model_device: str = "cpu"
+    model_half_precision: bool = False
 
     @property
     def severity_list(self) -> list[int]:

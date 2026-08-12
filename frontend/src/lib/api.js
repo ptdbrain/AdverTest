@@ -8,7 +8,13 @@ export async function apiFetch(path, options = {}) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `API error ${res.status}`);
+    const detail =
+      typeof body.detail === "string"
+        ? body.detail
+        : body.detail
+          ? JSON.stringify(body.detail)
+          : `API error ${res.status}`;
+    throw new Error(detail);
   }
   return res.json();
 }
@@ -243,24 +249,34 @@ export function getStatusEvidence() {
 }
 
 /* ---- Upload & Dataset Import ---- */
-export async function uploadImage(file) {
+export async function uploadImage(file, batchId = null) {
   const bytes = new Uint8Array(await file.arrayBuffer());
+  const headers = {
+    "Content-Type": "application/octet-stream",
+    "x-filename": file.name,
+  };
+  if (batchId) {
+    headers["x-upload-batch-id"] = batchId;
+  }
   const res = await fetch(`${API_BASE}/api/v1/uploads/images`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/octet-stream",
-      "x-filename": file.name,
-    },
+    headers,
     body: bytes,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Upload failed with status ${res.status}`);
+    const detail =
+      typeof err.detail === "string"
+        ? err.detail
+        : err.detail
+          ? JSON.stringify(err.detail)
+          : `Upload failed with status ${res.status}`;
+    throw new Error(detail);
   }
   return res.json();
 }
 
-export function importFolderDataset({ root, name, inputFormat = "yolo", anonymizationManifest = "manifest.jsonl", maxSamples = 50 }) {
+export function importFolderDataset({ root, name, inputFormat = "advertest", anonymizationManifest = "manifest.jsonl", maxSamples = 50 }) {
   return apiFetch("/api/v1/datasets/import", {
     method: "POST",
     body: JSON.stringify({

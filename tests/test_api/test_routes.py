@@ -100,3 +100,72 @@ async def test_unknown_run_is_404(client):
 async def test_unknown_config_field_is_422(client):
     response = await client.post("/api/v1/runs", json={"not_a_field": 1})
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_non_image_bytes(client):
+    response = await client.post(
+        "/api/v1/uploads/images",
+        headers={"x-filename": "test.png"},
+        content=b"not an image file content",
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "INVALID_IMAGE"
+
+
+@pytest.mark.asyncio
+async def test_raw_upload_is_not_marked_anonymized(client):
+    import io
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (10, 10), color="red").save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+
+    response = await client.post(
+        "/api/v1/uploads/images",
+        headers={"x-filename": "sample.png", "x-upload-batch-id": "batch-test-123456"},
+        content=png_bytes,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["benchmark_ready"] is False
+    assert data["batch_id"] == "batch-test-123456"
+
+
+@pytest.mark.asyncio
+async def test_protocol_must_lock_before_benchmark(client):
+    proto_res = await client.post(
+        "/api/v1/benchmark/protocols",
+        json={
+            "dataset_version_id": "ds-v1",
+            "model_version_id": "mv-v1",
+            "recipe": {"steps": [{"attack": "gaussian_noise", "severity": 1}]},
+            "task": "detection2d",
+            "state": "VALIDATED",
+        },
+    )
+    assert proto_res.status_code == 201
+    proto_id = proto_res.json()["id"]
+
+    run_config = {
+        "model": "blob_detector",
+        "dataset": "synthetic_shapes",
+        "attacks": ["gaussian_noise"],
+        "severities": [1],
+        "limit": 1,
+    }
+    # Attempting to run non-LOCKED (VALIDATED) protocol fails with 409 PROTOCOL_NOT_LOCKED
+    run_res = await client.post(f"/api/v1/benchmark/runs?protocol_id={proto_id}", json=run_config)
+    assert run_res.status_code == 409
+    assert run_res.json()["detail"]["code"] == "PROTOCOL_NOT_LOCKED"
+
+    # Locking advances VALIDATED protocol to LOCKED
+    lock_res = await client.post(f"/api/v1/benchmark/protocols/{proto_id}/lock")
+    assert lock_res.status_code == 200
+    assert lock_res.json()["state"] == "LOCKED"
+
+    # After lock, run creation succeeds
+    run_res2 = await client.post(f"/api/v1/benchmark/runs?protocol_id={proto_id}", json=run_config)
+    assert run_res2.status_code == 202
+

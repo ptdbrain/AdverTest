@@ -30,8 +30,8 @@ class Sam2Adapter(ModelAdapter):
     name: ClassVar[str] = "sam2"
     task = "segmentation"
     version: ClassVar[str] = "sam2.1-hiera-small-v1"
-    supports_gradients: ClassVar[bool] = True
-    capabilities: ClassVar[frozenset[SurrogateCapability]] = frozenset({"segmentation_loss", "input_gradient"})
+    supports_gradients: ClassVar[bool] = False
+    capabilities: ClassVar[frozenset[SurrogateCapability]] = frozenset({"segmentation_loss"})
     owner: ClassVar[str] = "group-c"
 
     def __init__(
@@ -56,7 +56,7 @@ class Sam2Adapter(ModelAdapter):
             name=self.name,
             task="segmentation",
             version=f"{self.version}:{checkpoint.stem}",
-            supports_gradients=True,
+            supports_gradients=False,
             capabilities=self.capabilities,
             checkpoint_hash=file_digest(checkpoint) if checkpoint.is_file() else None,
             preprocessing_version="sam2-rgb-uint8-original-resolution-box-prompt-v1",

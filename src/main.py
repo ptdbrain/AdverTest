@@ -8,6 +8,7 @@ decides (plan §7).
 
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,6 +48,9 @@ app = FastAPI(
 )
 
 settings = get_settings()
+data_root = Path(settings.data_root).expanduser().resolve()
+data_root.mkdir(parents=True, exist_ok=True)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins.split(","),
@@ -56,7 +60,7 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api/v1")
-app.mount("/data", StaticFiles(directory="data"), name="data")
+app.mount("/data", StaticFiles(directory=str(data_root)), name="data")
 
 
 @app.middleware("http")

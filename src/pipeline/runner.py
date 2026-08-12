@@ -152,6 +152,10 @@ class TestRunner:
         selected, skipped = self._resolve_attacks(config, dataset, adapter.metadata(), samples)
         estimate = self.estimate(config)
         fatal = []
+        if adapter.metadata().task != "detection2d":
+            fatal.append(
+                f"primary TestRunner currently supports detection2d only; adapter task is {adapter.metadata().task!r}"
+            )
         if not adapter.metadata().runnable:
             fatal.append(f"adapter {adapter.metadata().name!r} is generation-only and cannot run benchmark inference")
         if not samples:
