@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import io
+
 import pytest
+from PIL import Image
 
 
 @pytest.mark.asyncio
@@ -44,9 +47,11 @@ async def test_recipe_validation_returns_explicit_compatibility_errors(client):
 
 @pytest.mark.asyncio
 async def test_upload_endpoint_accepts_a_declared_image_payload(client):
+    image = io.BytesIO()
+    Image.new("RGB", (8, 8), color="white").save(image, format="JPEG")
     response = await client.post(
         "/api/v1/uploads/images",
-        content=b"not-a-real-image-but-owned-by-the-upload-service",
+        content=image.getvalue(),
         headers={"x-filename": "frame.jpg", "content-type": "image/jpeg"},
     )
 

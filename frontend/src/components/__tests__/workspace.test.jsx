@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import Workspace from "@/components/Workspace";
 
@@ -6,10 +6,12 @@ describe("Workspace", () => {
   it("renders the ordered investigation stages and per-object failure evidence for a completed YOLO run", () => {
     const samples = [
       {
-        clean_image: "http://localhost:8000/data/clean.jpg",
-        attacked_image: "http://localhost:8000/data/attacked.jpg",
-        clean_overlay: "http://localhost:8000/data/clean_overlay.jpg",
-        attacked_overlay: "http://localhost:8000/data/attacked_overlay.jpg",
+        artifacts: {
+          clean_input_url: "http://localhost:8000/data/clean.jpg",
+          attacked_input_url: "http://localhost:8000/data/attacked.jpg",
+          clean_prediction_url: "http://localhost:8000/data/clean_overlay.jpg",
+          attacked_prediction_url: "http://localhost:8000/data/attacked_overlay.jpg",
+        },
         per_object_failures: [
           { id: "obj-1", label: "person", clean_conf: 0.95, attacked_conf: 0.10, degradation: 89.5, status: "FAILED" },
         ],
@@ -33,5 +35,36 @@ describe("Workspace", () => {
 
     expect(screen.getByText("SAM2 Handoff Gated")).toBeVisible();
     expect(screen.getByText("WAITING_FOR_ARTIFACTS")).toBeVisible();
+  });
+
+  it("does not fabricate object evidence or substitute an input for a prediction", () => {
+    render(
+      <Workspace
+        report={{ cells: [] }}
+        samples={[{ clean_image: "/data/clean.jpg", attacked_image: "/data/attacked.jpg" }]}
+        mode="detection2d"
+      />,
+    );
+
+    expect(screen.getByText(/No per-object evidence was produced/)).toBeVisible();
+    expect(screen.getByText("Clean prediction unavailable")).toBeVisible();
+    expect(screen.getByText("Attacked prediction unavailable")).toBeVisible();
+  });
+
+  it("lets the reviewer choose an evidence sample and keeps its report cell paired by attack and severity", () => {
+    const samples = [
+      { sample_id: "first", attack: "fog", severity: 1, clean_image: "/data/one.jpg" },
+      { sample_id: "second", attack: "fog", severity: 3, clean_image: "/data/two.jpg" },
+    ];
+    render(
+      <Workspace
+        report={{ cells: [{ attack: "fog", severity: 1 }, { attack: "fog", severity: 3 }] }}
+        samples={samples}
+        mode="detection2d"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Evidence sample"), { target: { value: "1" } });
+    expect(screen.getByText(/fog, severity 3/)).toBeVisible();
   });
 });

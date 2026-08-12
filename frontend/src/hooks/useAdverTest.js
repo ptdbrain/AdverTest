@@ -1,43 +1,42 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  getCatalogAttacks,
-  getCatalogModels,
-  getCatalogDatasets,
-  getModelVersions,
-  getPerceptionModes,
-  createRun,
-  getRunReport,
-  getRunSamples,
-  connectRunWebSocket,
-  triggerAutoFlag,
-  cancelRun,
-  createRetrainingBacklog,
-  addRetrainingBacklogItem,
-  approveRetrainingBacklog,
+  getCatalogAttacks, getCatalogModels, getCatalogDatasets, getModelVersions, getPerceptionModes,
+  createRun, createInferenceExperiment, getRun, getRunReport, getRunSamples, connectRunWebSocket, triggerAutoFlag, cancelRun,
+  createRetrainingBacklog, addRetrainingBacklogItem, approveRetrainingBacklog,
+  estimateRun, preflightRun, randomizeRecipe as randomizeRecipeRequest,
+  sweepRecipe as sweepRecipeRequest, previewRecipe as previewRecipeRequest,
 } from "@/lib/api";
 
-/**
- * Custom hook to manage AdverTest state and API interactions.
- * Ensures business logic is separated from UI rendering.
- * @returns {Object} Application state and handlers.
- */
+const TERMINAL_STATES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
+
+function artifactUrl(value) {
+  if (!value) return null;
+  if (/^https?:\/\//i.test(value)) return value;
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  return new URL(value, `${apiBase.replace(/\/$/, "")}/`).href;
+}
+
+function normalizeSamples(rawSamples) {
+  return rawSamples.map((sample) => ({
+    ...sample,
+    artifacts: Object.fromEntries(Object.entries(sample.artifacts ?? {}).map(([key, value]) => [key, artifactUrl(value)])),
+  }));
+}
+
 export function useAdverTest() {
-  /* ---- Catalog state ---- */
   const [attacks, setAttacks] = useState([]);
   const [models, setModels] = useState([]);
   const [datasets, setDatasets] = useState([]);
   const [modelVersions, setModelVersions] = useState([]);
   const [modes, setModes] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  /* ---- Config state ---- */
   const [selectedDataset, setSelectedDataset] = useState("");
   const [selectedAttacks, setSelectedAttacks] = useState([]);
-  const [severity, setSeverity] = useState(3);
-  const [mode, setMode] = useState("detection2d");
+  const [severity, setSeverityState] = useState(3);
+  const [selectedSeverities, setSelectedSeverities] = useState([3]);
+  const [mode, setModeState] = useState("detection2d");
   const [selectedModelVersion, setSelectedModelVersion] = useState("");
-
-  /* ---- Run state ---- */
+  const [runOptions, setRunOptionsState] = useState({ seed: 42, limit: 8, confidence: 0.25, iou: 0.5 });
   const [runId, setRunId] = useState(null);
   const [runStatus, setRunStatus] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -48,295 +47,175 @@ export function useAdverTest() {
   const [backlog, setBacklog] = useState(null);
   const [backlogError, setBacklogError] = useState("");
   const [isCreatingBacklog, setIsCreatingBacklog] = useState(false);
-
-  /* ---- View state ---- */
-  const [activeTab, setActiveTab] = useState("compare"); // "compare" | "report"
-  
+  const [activeTab, setActiveTab] = useState("evidence");
   const wsRef = useRef(null);
+  const pollRef = useRef(null);
+  const finalizedRef = useRef(false);
 
-  /* ---- Load catalog on mount ---- */
   useEffect(() => {
     Promise.all([getCatalogAttacks(), getCatalogModels(), getCatalogDatasets(), getModelVersions(), getPerceptionModes()])
       .then(([a, m, d, versions, availableModes]) => {
-        setAttacks(a);
-        setModels(m);
-        setDatasets(d);
-        setModelVersions(versions);
-        setModes(availableModes);
+        setAttacks(a); setModels(m); setDatasets(d); setModelVersions(versions); setModes(availableModes);
         const initial = versions.find((item) => item.task === "detection2d" && item.runnable);
         if (initial) setSelectedModelVersion(initial.id);
-        if (d.length > 0) {
-          const defaultDs = d.find((ds) => ds.name === "synthetic_shapes") || d.find((ds) => ds.anonymized);
-          setSelectedDataset(defaultDs ? (defaultDs.id || defaultDs.name) : (d[0].id || d[0].name));
+        if (d.length) {
+          const defaultDataset = d.find((item) => item.name === "synthetic_shapes") || d.find((item) => item.anonymized) || d[0];
+          setSelectedDataset(defaultDataset.id || defaultDataset.name);
         }
       })
-      .catch((err) => {
-        console.error("Failed to load catalog:", err);
-      })
+      .catch((error) => console.error("Failed to load catalog:", error))
       .finally(() => setLoading(false));
   }, []);
 
-  /* ---- Toggle attack selection ---- */
-  const toggleAttack = useCallback((name) => {
-    setSelectedAttacks((prev) =>
-      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
-    );
+  const setSeverity = useCallback((value) => {
+    setSeverityState(value);
+    setSelectedSeverities([value]);
   }, []);
-
-  /* ---- Add dataset helper ---- */
-  const addDataset = useCallback((newDs) => {
-    if (!newDs) return;
-    setDatasets((prev) => {
-      const idToMatch = newDs.id || newDs.name;
-      const exists = prev.some((d) => (d.id || d.name) === idToMatch);
-      return exists ? prev.map((d) => ((d.id || d.name) === idToMatch ? { ...d, ...newDs } : d)) : [newDs, ...prev];
+  const setMode = useCallback((nextMode) => {
+    setModeState(nextMode);
+    const valid = modelVersions.find((item) => item.id === selectedModelVersion && item.task === nextMode && item.runnable);
+    if (!valid) setSelectedModelVersion(modelVersions.find((item) => item.task === nextMode && item.runnable)?.id ?? "");
+  }, [modelVersions, selectedModelVersion]);
+  const setRunOptions = useCallback((changes) => setRunOptionsState((current) => ({ ...current, ...changes })), []);
+  const toggleAttack = useCallback((name) => setSelectedAttacks((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]), []);
+  const addDataset = useCallback((dataset) => {
+    if (!dataset) return;
+    setDatasets((current) => {
+      const id = dataset.id || dataset.name;
+      return current.some((item) => (item.id || item.name) === id)
+        ? current.map((item) => (item.id || item.name) === id ? { ...item, ...dataset } : item)
+        : [dataset, ...current];
     });
-    setSelectedDataset(newDs.id || newDs.name || newDs.dataset);
+    setSelectedDataset(dataset.id || dataset.name || dataset.dataset);
   }, []);
 
-  /* ---- Run attack ---- */
-  /* ---- Run attack ---- */
+  const buildRunConfig = useCallback(() => {
+    const version = modelVersions.find((item) => item.id === selectedModelVersion);
+    const dataset = datasets.find((item) => (item.id || item.name) === selectedDataset) || { name: selectedDataset };
+    return {
+      model: "yolo11",
+      adapter_params: { weights: version?.checkpoint_path },
+      dataset: dataset.dataset || dataset.name || selectedDataset,
+      dataset_params: dataset.dataset_params || {},
+      attacks: selectedAttacks,
+      severities: selectedSeverities,
+      limit: runOptions.limit,
+      seed: runOptions.seed,
+      iou_threshold: runOptions.iou,
+      confidence_threshold: runOptions.confidence,
+    };
+  }, [datasets, modelVersions, runOptions, selectedAttacks, selectedDataset, selectedModelVersion, selectedSeverities]);
+
+  const finalizeRun = useCallback(async (id, job = null) => {
+    if (finalizedRef.current) return;
+    finalizedRef.current = true;
+    try {
+      const [completedReport, rawSamples] = await Promise.all([getRunReport(id), getRunSamples(id)]);
+      setReport(completedReport);
+      setSamples(normalizeSamples(rawSamples));
+      setProgressDetail("Done!");
+      triggerAutoFlag(id, 30).catch(console.warn);
+    } catch (error) {
+      setProgressDetail(error.message || "Run completed but evidence could not be loaded.");
+    } finally {
+      if (pollRef.current) clearInterval(pollRef.current);
+      wsRef.current?.close();
+      setRunStatus(job?.status || "COMPLETED");
+      setIsRunning(false);
+    }
+  }, []);
+
+  const monitorRun = useCallback((id) => {
+    const applyStatus = (job) => {
+      setRunStatus(job.status || job.state);
+      if (job.progress != null) setProgress(Math.round(job.progress * 100));
+      if (job.status === "PREPARING") setProgressDetail("Loading model & dataset...");
+      if (job.status === "GENERATING") setProgressDetail("Generating attack variants...");
+      if (job.status === "INFERENCING") setProgressDetail("Running inference...");
+      if (job.status === "EVALUATING") setProgressDetail("Computing metrics...");
+      if (job.status === "COMPLETED") finalizeRun(id, job);
+      if (job.status && job.status !== "COMPLETED" && TERMINAL_STATES.has(job.status)) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        setProgressDetail(job.error || "Run did not complete.");
+        setIsRunning(false);
+      }
+    };
+    wsRef.current = connectRunWebSocket(id, (event) => applyStatus({ status: event.state, progress: event.payload?.progress, error: event.payload?.error }));
+    pollRef.current = setInterval(async () => {
+      try { applyStatus(await getRun(id)); } catch (error) { console.warn("Run status polling failed:", error); }
+    }, 1500);
+  }, [finalizeRun]);
+
   const handleRun = useCallback(async () => {
     const version = modelVersions.find((item) => item.id === selectedModelVersion);
-    if (!selectedDataset) {
-      setProgressDetail("Select a dataset before running.");
-      setRunStatus("BLOCKED");
-      return;
+    if (!selectedDataset || !selectedAttacks.length) {
+      setProgressDetail(!selectedDataset ? "Select a dataset before running." : "Select at least one attack before running.");
+      setRunStatus("BLOCKED"); return;
     }
-    if (selectedAttacks.length === 0) {
-      setProgressDetail("Select at least one attack before running.");
-      setRunStatus("BLOCKED");
-      return;
+    if (mode !== "detection2d" || !version?.runnable || !version.checkpoint_path) {
+      setProgressDetail(mode !== "detection2d" ? "Segmentation is not yet runnable from this workflow." : version?.blocked_reason ? `Model version unavailable: ${version.blocked_reason}` : "YOLO checkpoint unavailable. Check /api/v1/model-versions and RUNS_ROOT.");
+      setRunStatus("BLOCKED"); return;
     }
-    if (mode !== "detection2d") {
-      setProgressDetail("Segmentation mode is not connected to the primary runner yet.");
-      setRunStatus("BLOCKED");
-      return;
-    }
-    if (!version?.runnable || !version.checkpoint_path) {
-      setProgressDetail(
-        version?.blocked_reason
-          ? `Model version unavailable: ${version.blocked_reason}`
-          : "YOLO checkpoint unavailable. Check /api/v1/model-versions and RUNS_ROOT."
-      );
-      setRunStatus("BLOCKED");
-      return;
-    }
-
-    const dsObj = datasets.find((item) => (item.id || item.name) === selectedDataset) || { name: selectedDataset };
-    if (dsObj.anonymized === false || dsObj.benchmark_ready === false) {
-      setProgressDetail(
-        "Uploaded raw image dataset has not passed anonymization & ground-truth labeling (Privacy Gate). Benchmark AP execution is disabled for raw uploads."
-      );
-      setRunStatus("BLOCKED");
-      setIsRunning(false);
-      return;
-    }
-
-    setIsRunning(true);
-    setRunStatus("QUEUED");
-    setProgress(0);
-    setReport(null);
-    setSamples([]);
-    setBacklog(null);
-    setBacklogError("");
-    setActiveTab("compare");
-    setProgressDetail("Queueing...");
-
+    const dataset = datasets.find((item) => (item.id || item.name) === selectedDataset);
+    const isQuickInference = dataset?.benchmark_ready === false && dataset?.status === "RAW";
+    const config = buildRunConfig();
+    setIsRunning(true); setRunStatus("PREFLIGHT"); setProgress(0); setReport(null); setSamples([]); setBacklog(null); setBacklogError(""); setActiveTab("evidence"); setProgressDetail("Checking dataset, model and recipe..."); finalizedRef.current = false;
     try {
-      const targetDataset = dsObj.dataset || dsObj.name || selectedDataset;
-      const targetDatasetParams = dsObj.dataset_params || (
-        targetDataset === "synthetic_shapes"
-          ? { brightness_range: [0.28, 0.48], background_level: 0.18, n_samples: 48 }
-          : {}
-      );
-
-      const config = {
-        model: "yolo11",
-        adapter_params: { weights: version.checkpoint_path },
-        dataset: targetDataset,
-        dataset_params: targetDatasetParams,
-        attacks: selectedAttacks,
-        severities: [severity],
-        limit: 8,
-        seed: 42,
-      };
-      const job = await createRun(config);
-      setRunId(job.run_id);
-
-      // Connect WebSocket for progress
-      if (wsRef.current) wsRef.current.close();
-      const ws = connectRunWebSocket(job.run_id, (event) => {
-        setRunStatus(event.state);
-        if (event.payload?.progress != null) {
-          setProgress(Math.round(event.payload.progress * 100));
+      let job;
+      if (isQuickInference) {
+        job = await createInferenceExperiment({
+          upload_batch_id: dataset.id,
+          model_version_id: version.id,
+          attacks: selectedAttacks,
+          severities: selectedSeverities,
+          seed: runOptions.seed,
+          limit: runOptions.limit,
+          iou_threshold: runOptions.iou,
+          confidence_threshold: runOptions.confidence,
+        });
+      } else {
+        const preflight = await preflightRun(config);
+        if (preflight.fatal_errors?.length) {
+          setRunStatus("BLOCKED"); setProgressDetail(preflight.fatal_errors.join(" ")); setIsRunning(false); return;
         }
-        if (event.state === "PREPARING") setProgressDetail("Loading model & dataset...");
-        if (event.state === "GENERATING") setProgressDetail("Generating attack variants...");
-        if (event.state === "INFERENCING") setProgressDetail("Running inference...");
-        if (event.state === "EVALUATING") setProgressDetail("Computing metrics...");
-        if (event.state === "COMPLETED") {
-          setProgressDetail("Done!");
-          getRunReport(job.run_id)
-            .then((r) => {
-              setReport(r);
-              setIsRunning(false);
-              // Auto-flag severe degradations (> 30%)
-              triggerAutoFlag(job.run_id, 30).catch(console.warn);
-            })
-            .catch((err) => {
-              console.warn("Failed to fetch run report:", err.message);
-              setIsRunning(false);
-            });
-          getRunSamples(job.run_id)
-            .then((rawSamples) => {
-              const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-              const baseUrl = `${apiBase.replace(/\/$/, "")}/data/`;
-              const fixPath = (p) => (p ? p.replace(/\\/g, "/").replace(/^.*\/data\//i, baseUrl) : "");
-              const mapped = rawSamples.map((s) => ({
-                ...s,
-                clean_image: fixPath(s.clean_image_path),
-                attacked_image: fixPath(s.attacked_image_path),
-                overlay_image: fixPath(s.overlay_path),
-              }));
-              setSamples(mapped);
-            })
-            .catch((err) => {
-              console.warn("Failed to fetch run samples:", err.message);
-            });
-        }
-        if (event.state === "FAILED") {
-          setProgressDetail(event.payload?.error || "Run failed");
-          setIsRunning(false);
-        }
-      });
-      wsRef.current = ws;
-    } catch (err) {
-      console.warn("API Error during run execution:", err.message);
-      setRunStatus("FAILED");
-      setProgressDetail(err.message || "Run failed due to an API error.");
-      setIsRunning(false);
+        job = await createRun(config);
+      }
+      setRunId(job.run_id); setRunStatus(job.status); setProgressDetail("Queueing..."); monitorRun(job.run_id);
+    } catch (error) {
+      setRunStatus("FAILED"); setProgressDetail(error.message || "Run failed due to an API error."); setIsRunning(false);
     }
-  }, [selectedDataset, selectedAttacks, severity, mode, modelVersions, selectedModelVersion, datasets]);
+  }, [buildRunConfig, datasets, mode, modelVersions, monitorRun, runOptions, selectedAttacks, selectedDataset, selectedModelVersion, selectedSeverities]);
 
   const createBacklog = useCallback(async () => {
     const failures = (report?.cells ?? []).filter((cell) => cell.degradation > 0);
-    if (!runId || failures.length === 0 || isCreatingBacklog || backlog) return;
-
-    setIsCreatingBacklog(true);
-    setBacklogError("");
+    if (!runId || !failures.length || isCreatingBacklog || backlog) return;
+    setIsCreatingBacklog(true); setBacklogError("");
     try {
       const created = await createRetrainingBacklog(`Measured failures from ${runId}`);
       let updated = created;
-      for (const cell of failures) {
-        const failureId = `${runId}:${cell.attack}:severity-${cell.severity}`;
-        updated = await addRetrainingBacklogItem(created.id, failureId);
-      }
+      for (const cell of failures) updated = await addRetrainingBacklogItem(created.id, `${runId}:${cell.attack}:severity-${cell.severity}`);
       setBacklog(await approveRetrainingBacklog(updated.id));
-    } catch (err) {
-      console.error("Failed to create retraining backlog:", err);
-      setBacklogError(err.message || "Could not create the retraining backlog.");
-    } finally {
-      setIsCreatingBacklog(false);
-    }
+    } catch (error) { setBacklogError(error.message || "Could not create the retraining backlog."); }
+    finally { setIsCreatingBacklog(false); }
   }, [backlog, isCreatingBacklog, report, runId]);
 
-  /* ---- Recipe Strategy Actions ---- */
   const loadPreset = useCallback((presetId) => {
-    if (presetId === "weather_robustness") {
-      setSelectedAttacks(["fog", "rain", "snow", "brightness"]);
-      setSeverity(3);
-    } else if (presetId === "sensor_fault_suite") {
-      setSelectedAttacks(["gaussian_noise", "shot_noise", "impulse_noise"]);
-      setSeverity(4);
-    }
+    const recipes = { weather_robustness: ["fog", "rain", "snow", "brightness"], sensor_fault_suite: ["gaussian_noise", "shot_noise", "impulse_noise"] };
+    if (recipes[presetId]) { setSelectedAttacks(recipes[presetId]); setSeverity(3); }
+  }, [setSeverity]);
+  const randomizeRecipe = useCallback(async (nSteps = 3) => {
+    const recipe = await randomizeRecipeRequest(nSteps, null, runOptions.seed);
+    setSelectedAttacks(recipe.steps.map((step) => step.attack_id));
+    setSelectedSeverities([...new Set(recipe.steps.map((step) => step.severity))]);
+  }, [runOptions.seed]);
+  const sweepRecipe = useCallback(async (attack) => {
+    const recipe = await sweepRecipeRequest(attack);
+    setSelectedAttacks([attack]); setSelectedSeverities(recipe.steps.map((step) => step.severity));
   }, []);
+  const previewRecipe = useCallback(async () => estimateRun(buildRunConfig()), [buildRunConfig]);
+  const cancelRunAction = useCallback(async () => { if (!runId) return; setRunStatus("CANCEL_REQUESTED"); setProgressDetail("Cancelling job..."); const job = await cancelRun(runId); setRunStatus(job.status); }, [runId]);
 
-  const randomizeRecipeAction = useCallback((nSteps = 3) => {
-    if (attacks.length === 0) return;
-    const shuffled = [...attacks].sort(() => 0.5 - Math.random());
-    const selected = shuffled.slice(0, Math.min(nSteps, attacks.length)).map((a) => a.name);
-    setSelectedAttacks(selected);
-  }, [attacks]);
-
-  const sweepRecipeAction = useCallback((attackName) => {
-    setSelectedAttacks([attackName]);
-    setSeverity(5);
-  }, []);
-
-  const previewRecipeAction = useCallback(async (payload) => {
-    return {
-      estimated_seconds: (payload?.recipe?.steps?.length || selectedAttacks.length) * 0.4,
-      total_samples: payload?.n_samples || 8,
-      total_cost_class: "LIGHT",
-    };
-  }, [selectedAttacks]);
-
-  const cancelRunAction = useCallback(async () => {
-    if (!runId) return;
-    try {
-      setRunStatus("CANCEL_REQUESTED");
-      setProgressDetail("Cancelling job...");
-      const job = await cancelRun(runId);
-      if (job?.status) setRunStatus(job.status);
-    } catch (err) {
-      console.error("Failed to cancel run:", err);
-      setProgressDetail(err.message || "Failed to cancel run.");
-    }
-  }, [runId]);
-
+  useEffect(() => () => { wsRef.current?.close(); if (pollRef.current) clearInterval(pollRef.current); }, []);
   const version = modelVersions.find((item) => item.id === selectedModelVersion);
-  const trainingBlockedReason = version?.runnable ? "" : "WAITING_FOR_ARTIFACTS";
-
-  /* ---- Cleanup WS ---- */
-  useEffect(() => {
-    return () => {
-      if (wsRef.current) wsRef.current.close();
-    };
-  }, []);
-
-  return {
-    state: {
-      attacks,
-      models,
-      datasets,
-      modelVersions,
-      modes,
-      loading,
-      selectedDataset,
-      selectedAttacks,
-      severity,
-      mode,
-      selectedModelVersion,
-      runId,
-      runStatus,
-      progress,
-      progressDetail,
-      report,
-      samples,
-      isRunning,
-      backlog,
-      backlogError,
-      isCreatingBacklog,
-      trainingBlockedReason,
-      activeTab,
-    },
-    actions: {
-      setSelectedDataset,
-      addDataset,
-      setSeverity,
-      setMode,
-      setSelectedModelVersion,
-      toggleAttack,
-      handleRun,
-      createBacklog,
-      setActiveTab,
-      loadPreset,
-      randomizeRecipe: randomizeRecipeAction,
-      sweepRecipe: sweepRecipeAction,
-      previewRecipe: previewRecipeAction,
-      cancelRun: cancelRunAction,
-    }
-  };
+  return { state: { attacks, models, datasets, modelVersions, modes, loading, selectedDataset, selectedAttacks, severity, selectedSeverities, mode, selectedModelVersion, runOptions, runId, runStatus, progress, progressDetail, report, samples, isRunning, backlog, backlogError, isCreatingBacklog, trainingBlockedReason: version?.runnable ? "" : "WAITING_FOR_ARTIFACTS", activeTab }, actions: { setSelectedDataset, addDataset, setSeverity, setMode, setSelectedModelVersion, setRunOptions, toggleAttack, handleRun, createBacklog, setActiveTab, loadPreset, randomizeRecipe, sweepRecipe, previewRecipe, cancelRun: cancelRunAction } };
 }
-

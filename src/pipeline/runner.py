@@ -13,7 +13,7 @@ import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,6 +31,7 @@ from src.evaluation.detection_metrics import (
     average_precision,
     bootstrap_average_precision,
     detection_metric_suite,
+    per_object_detection_comparison,
 )
 from src.evaluation.report import CellResult, RunReport, SampleResult, SkippedAttack
 from src.pipeline.cache import MemoryCache, PredictionCache
@@ -52,6 +53,8 @@ class RunConfig(BaseModel):
     limit: int | None = 8
     seed: int = 20260730
     iou_threshold: float = Field(default=DEFAULT_IOU_THRESHOLD, gt=0.0, lt=1.0)
+    confidence_threshold: float = Field(default=0.25, ge=0.0, le=1.0)
+    execution_mode: Literal["benchmark", "quick_inference"] = "benchmark"
     gpu_budget_cap: float | None = Field(default=None, gt=0.0)
     evidence_dir: str | None = None
     bootstrap_repetitions: int = Field(default=1000, ge=0, le=5000)
@@ -146,7 +149,8 @@ class TestRunner:
     def preflight(self, config: RunConfig) -> PreflightResult:
         """Validate the concrete model/dataset/attack combination before enqueue."""
         dataset = get_dataset(config.dataset, **config.dataset_params)
-        dataset.require_anonymized()
+        if config.execution_mode == "benchmark":
+            dataset.require_anonymized()
         adapter = get_adapter(config.model, **config.adapter_params)
         samples = dataset.load(config.limit)
         selected, skipped = self._resolve_attacks(config, dataset, adapter.metadata(), samples)
@@ -177,7 +181,8 @@ class TestRunner:
     ) -> RunReport:
         started = perf_counter()
         dataset = get_dataset(config.dataset, **config.dataset_params)
-        dataset.require_anonymized()
+        if config.execution_mode == "benchmark":
+            dataset.require_anonymized()
         adapter = get_adapter(config.model, **config.adapter_params)
         info = adapter.metadata()
         samples = dataset.load(config.limit)
@@ -200,7 +205,7 @@ class TestRunner:
             model_version=info.version,
             dataset=dataset.name,
             n_samples=len(samples),
-            ap_clean=average_precision(clean, samples, config.iou_threshold),
+            ap_clean=average_precision(clean, samples, config.iou_threshold) if config.execution_mode == "benchmark" else 0.0,
             provenance={
                 "model": {
                     "name": info.name,
@@ -255,9 +260,13 @@ class TestRunner:
         report.seconds = perf_counter() - started
         from src.evaluation.robustness_metrics import summary
 
-        clean_metrics = detection_metric_suite(clean, samples)
-        clean_metrics["ap50_ci95"] = _bootstrap_interval(clean, samples, config)
-        report.metrics = {"clean": clean_metrics, "robustness": summary(report)}
+        if config.execution_mode == "benchmark":
+            clean_metrics = detection_metric_suite(clean, samples)
+            clean_metrics["ap50_ci95"] = _bootstrap_interval(clean, samples, config)
+            report.metrics = {"clean": clean_metrics, "robustness": summary(report)}
+        else:
+            report.metrics = {"benchmark_metrics_available": False}
+            report.benchmark_metrics_available = False
         if progress:
             progress("EVALUATING", {"cells": len(report.cells)})
         return report
@@ -284,13 +293,18 @@ class TestRunner:
             hits_before = self.cache.hits
             variants = [self._attack_sample(attack, sample, severity, config, adapter) for sample in samples]
             predictions = self._predict_variants(adapter, variants, attack, severity)
-            metrics = detection_metric_suite(predictions, samples)
-            metrics["ap50_ci95"] = _bootstrap_interval(predictions, samples, config)
+            metrics = (
+                {"benchmark_metrics_available": False}
+                if config.execution_mode == "quick_inference"
+                else detection_metric_suite(predictions, samples)
+            )
+            if config.execution_mode == "benchmark":
+                metrics["ap50_ci95"] = _bootstrap_interval(predictions, samples, config)
             cell = CellResult(
                 attack=attack.name,
                 group=attack.group,
                 severity=severity,
-                ap=average_precision(predictions, samples, config.iou_threshold),
+                ap=average_precision(predictions, samples, config.iou_threshold) if config.execution_mode == "benchmark" else 0.0,
                 n_samples=len(samples),
                 seconds=perf_counter() - started,
                 cache_hits=self.cache.hits - hits_before,
@@ -323,7 +337,16 @@ class TestRunner:
                         attacked_prediction=prediction_payload(attacked_prediction),
                         clean_image_path=paths.get("clean_image"),
                         attacked_image_path=paths.get("attacked_image"),
-                        overlay_path=paths.get("overlay"),
+                        clean_prediction_path=paths.get("clean_prediction"),
+                        attacked_prediction_path=paths.get("attacked_prediction"),
+                        object_evidence=[
+                            detail.as_dict()
+                            for detail in per_object_detection_comparison(
+                                [clean_prediction], [attacked_prediction], [clean_sample],
+                                iou_threshold=config.iou_threshold,
+                                confidence_threshold=config.confidence_threshold,
+                            )
+                        ],
                         degradation_hint=_sample_degradation_hint(clean_prediction, attacked_prediction),
                         attack_version=attack.version,
                         attack_params=attack.param_dict(),

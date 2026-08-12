@@ -56,6 +56,13 @@ export function createRun(config) {
   });
 }
 
+export function createInferenceExperiment(payload) {
+  return apiFetch("/api/v1/inference-experiments", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function listRuns() {
   return apiFetch("/api/v1/runs");
 }
@@ -135,10 +142,10 @@ export function getRecipePresets() {
   return apiFetch("/api/v1/catalog/recipes/presets");
 }
 
-export function randomizeRecipe(nSteps = 3, group = null) {
+export function randomizeRecipe(nSteps = 3, group = null, seed = 42) {
   return apiFetch("/api/v1/attack-recipes/randomize", {
     method: "POST",
-    body: JSON.stringify({ n_steps: nSteps, group }),
+    body: JSON.stringify({ n_steps: nSteps, group, seed }),
   });
 }
 
@@ -288,5 +295,3 @@ export function importFolderDataset({ root, name, inputFormat = "advertest", ano
     }),
   });
 }
-
-

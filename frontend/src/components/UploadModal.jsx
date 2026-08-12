@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { uploadImage, importFolderDataset } from "@/lib/api";
 
 export default function UploadModal({ isOpen, onClose, onDatasetCreated, datasets = [] }) {
@@ -10,6 +10,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
   const [isUploading, setIsUploading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const previewUrls = useRef(new Set());
 
   // Folder Import State
   const [folderPath, setFolderPath] = useState("data/anonymized/kitti");
@@ -17,8 +18,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
   const [inputFormat, setInputFormat] = useState("advertest");
   const [maxSamples, setMaxSamples] = useState(50);
 
-  // URL Ingestion State
-  const [imageUrl, setImageUrl] = useState("");
+  useEffect(() => () => previewUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
 
   if (!isOpen) return null;
 
@@ -27,18 +27,18 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
     if (!files.length) return;
     setSelectedFiles((prev) => [...prev, ...files]);
 
-    const newPreviews = files.map((file) => ({
-      name: file.name,
-      size: (file.size / 1024).toFixed(1) + " KB",
-      url: URL.createObjectURL(file),
-      file,
-    }));
+    const newPreviews = files.map((file) => {
+      const url = URL.createObjectURL(file);
+      previewUrls.current.add(url);
+      return { name: file.name, size: (file.size / 1024).toFixed(1) + " KB", url, file };
+    });
     setFilePreviews((prev) => [...prev, ...newPreviews]);
   };
 
   const removeFile = (index) => {
     if (filePreviews[index]?.url) {
       URL.revokeObjectURL(filePreviews[index].url);
+      previewUrls.current.delete(filePreviews[index].url);
     }
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
     setFilePreviews((prev) => prev.filter((_, i) => i !== index));
@@ -61,18 +61,18 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
         results.push(uploaded);
       }
       setStatusMessage(`Successfully uploaded ${results.length} images!`);
-      const uploadId = `upload-${Date.now()}`;
+      const upload = results[0];
       const customDataset = {
-        id: uploadId,
-        name: uploadId,
-        dataset: "folder_dataset",
+        id: upload.batch_id,
+        name: upload.batch_id,
+        dataset: upload.dataset,
         title: `📤 Uploaded Raw Images (${results.length})`,
-        dataset_params: results[0]?.dataset_params || {
-          root: `data/uploads/${batchId}`,
-          input_format: "advertest",
-        },
-        anonymized: false,
-        benchmark_ready: false,
+        dataset_params: upload.dataset_params,
+        status: upload.status,
+        sample_count: results.length,
+        anonymized: upload.anonymized,
+        annotation_status: upload.annotation_status,
+        benchmark_ready: upload.benchmark_ready,
       };
       onDatasetCreated(customDataset);
       setTimeout(() => {
@@ -101,19 +101,17 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
         inputFormat,
         maxSamples,
       });
-      const folderId = res.version_id || res.id || `folder-${Date.now()}`;
+      const folderId = res.version_id || res.id;
       setStatusMessage(`Folder imported successfully as dataset '${folderId}'!`);
       const customDataset = {
         id: folderId,
         name: folderId,
         dataset: "folder_dataset",
         title: `📂 ${datasetName || res.name || folderPath}`,
-        dataset_params: {
-          root: folderPath,
-          input_format: inputFormat,
-          anonymization_manifest: "dataset.json",
-        },
-        anonymized: true,
+        dataset_params: res.dataset_params,
+        anonymized: res.anonymized,
+        annotation_status: res.annotation_status,
+        benchmark_ready: res.benchmark_ready,
       };
       onDatasetCreated(customDataset);
       setTimeout(() => {
@@ -194,7 +192,6 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
             { id: "files", label: "📁 Batch Image Upload" },
             { id: "folder", label: "📂 Folder Path Import" },
             { id: "catalog", label: "📊 Preset Catalog" },
-            { id: "url", label: "🌐 Direct Image URL" },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -269,6 +266,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element -- object URLs are local, short-lived upload previews. */}
                       <img src={item.url} alt="thumb" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4 }} />
                       <span className="text-primary truncate" style={{ maxWidth: "240px" }}>{item.name}</span>
                       <span className="text-tertiary text-xs">({item.size})</span>
@@ -292,7 +290,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
               onClick={handleUploadFiles}
               style={{ marginTop: "auto" }}
             >
-              {isUploading ? "Uploading..." : `Upload & Attack ${selectedFiles.length} Images`}
+              {isUploading ? "Uploading..." : `Upload ${selectedFiles.length} Images`}
             </button>
           </div>
         )}
@@ -390,46 +388,6 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
           </div>
         )}
 
-        {/* TAB 4: Direct URL Ingestion */}
-        {activeTab === "url" && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "14px" }}>
-            <div>
-              <label className="config-panel__label">Direct Image URL</label>
-              <input
-                type="url"
-                className="select-field"
-                placeholder="https://example.com/sample_image.jpg"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-              />
-            </div>
-
-            {imageUrl && (
-              <div className="glass-panel" style={{ padding: "12px", textAlign: "center" }}>
-                <div className="text-xs text-secondary mb-2">Image Preview</div>
-                <img
-                  src={imageUrl}
-                  alt="preview"
-                  style={{ maxHeight: "160px", maxWidth: "100%", objectFit: "contain", borderRadius: "var(--radius-sm)" }}
-                  onError={() => setErrorMessage("Could not load image preview from URL")}
-                />
-              </div>
-            )}
-
-            <button
-              type="button"
-              className="run-button"
-              disabled={!imageUrl}
-              onClick={() => {
-                onDatasetCreated({ id: `url-${Date.now()}`, name: "Direct URL Image", url: imageUrl });
-                onClose();
-              }}
-              style={{ marginTop: "auto" }}
-            >
-              Use Image URL
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

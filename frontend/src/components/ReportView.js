@@ -39,13 +39,13 @@ export default function ReportView({ report }) {
         <div>
           <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600 }}>AP Clean</div>
           <div className="text-mono text-success" style={{ fontSize: "1rem", fontWeight: 600 }}>
-            {report.ap_clean?.toFixed(3)}
+            {report.benchmark_metrics_available === false ? "Unavailable" : report.ap_clean?.toFixed(3)}
           </div>
         </div>
         <div>
           <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600 }}>Avg Degradation</div>
           <div className="text-mono text-danger" style={{ fontSize: "1rem", fontWeight: 600 }}>
-            {avgDegradation.toFixed(1)}%
+            {report.benchmark_metrics_available === false ? "Unavailable" : `${avgDegradation.toFixed(1)}%`}
           </div>
         </div>
         <div>
@@ -56,8 +56,7 @@ export default function ReportView({ report }) {
         </div>
       </div>
 
-      <HeatmapMatrix cells={report.cells} heatmap={report.heatmap} />
-      <RAChart cells={report.cells} apClean={report.ap_clean} />
+      {report.benchmark_metrics_available !== false && <><HeatmapMatrix cells={report.cells} heatmap={report.heatmap} /><RAChart cells={report.cells} apClean={report.ap_clean} /></>}
     </>
   );
 }

@@ -61,7 +61,9 @@ class SampleResult:
     attacked_prediction: dict[str, Any]
     clean_image_path: str | None = None
     attacked_image_path: str | None = None
-    overlay_path: str | None = None
+    clean_prediction_path: str | None = None
+    attacked_prediction_path: str | None = None
+    object_evidence: list[dict[str, Any]] = field(default_factory=list)
     degradation_hint: float = 0.0
     attack_version: str = ""
     attack_params: dict[str, Any] = field(default_factory=dict)
@@ -76,7 +78,9 @@ class SampleResult:
             "attacked_prediction": self.attacked_prediction,
             "clean_image_path": self.clean_image_path,
             "attacked_image_path": self.attacked_image_path,
-            "overlay_path": self.overlay_path,
+            "clean_prediction_path": self.clean_prediction_path,
+            "attacked_prediction_path": self.attacked_prediction_path,
+            "object_evidence": self.object_evidence,
             "degradation_hint": round(self.degradation_hint, 6),
             "attack_version": self.attack_version,
             "attack_params": self.attack_params,
@@ -102,6 +106,7 @@ class RunReport:
     seconds: float = 0.0
     #: Never remove: this platform evaluates in simulation only (plan §7).
     simulation_only: bool = True
+    benchmark_metrics_available: bool = True
 
     def degradation(self, cell: CellResult) -> float:
         """``D(c, s)`` as a fraction in ``[0, 1]``; 0.0 when the baseline is 0."""
@@ -147,4 +152,5 @@ class RunReport:
             "provenance": self.provenance,
             "seconds": round(self.seconds, 3),
             "simulation_only": True,
+            "benchmark_metrics_available": self.benchmark_metrics_available,
         }

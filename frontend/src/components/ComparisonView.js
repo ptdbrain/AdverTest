@@ -41,8 +41,8 @@ export default function ComparisonView({ report, samples, severity }) {
           <span className="comparison-container__label comparison-container__label--clean">
             Clean — Original
           </span>
-          {currentSample?.clean_image ? (
-            <Image className="comparison-image" src={currentSample.clean_image} alt="Clean" width={1280} height={720} unoptimized />
+          {currentSample?.artifacts?.clean_input_url ? (
+            <Image className="comparison-image" src={currentSample.artifacts.clean_input_url} alt="Clean" width={1280} height={720} unoptimized />
           ) : (
             <div className="flex-center" style={{ flex: 1, color: "var(--text-muted)" }}>
               <div style={{ textAlign: "center" }}>
@@ -61,8 +61,8 @@ export default function ComparisonView({ report, samples, severity }) {
           <span className="comparison-container__label comparison-container__label--attacked">
             Attacked — {currentSample?.attack || "N/A"} (Sev.{currentSample?.severity || severity})
           </span>
-          {currentSample?.attacked_image ? (
-            <Image className="comparison-image" src={currentSample.attacked_image} alt="Attacked" width={1280} height={720} unoptimized />
+          {currentSample?.artifacts?.attacked_input_url ? (
+            <Image className="comparison-image" src={currentSample.artifacts.attacked_input_url} alt="Attacked" width={1280} height={720} unoptimized />
           ) : (
             <div className="flex-center" style={{ flex: 1, color: "var(--text-muted)" }}>
               <div style={{ textAlign: "center" }}>

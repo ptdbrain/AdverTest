@@ -38,8 +38,7 @@ describe("ConfigPanel", () => {
 
     fireEvent.change(screen.getByLabelText("Model Version"), { target: { value: "yolo-b0" } });
     expect(actions.setSelectedModelVersion).toHaveBeenCalledWith("yolo-b0");
-    fireEvent.change(screen.getByLabelText("Perception Mode"), { target: { value: "segmentation" } });
-    expect(actions.setMode).toHaveBeenCalledWith("segmentation");
+    expect(screen.getByRole("option", { name: /SAM2.*waiting/i })).toBeDisabled();
   });
 
   it("supports recipe strategy modes and cost preview button", () => {
@@ -104,9 +103,9 @@ describe("ConfigPanel", () => {
       />
     );
 
-    expect(screen.queryByText(/Seed: 42/)).toBeNull();
+    expect(screen.queryByLabelText("Seed")).toBeNull();
     fireEvent.click(screen.getByText(/Show Advanced Settings Drawer/));
-    expect(screen.getByText(/Seed: 42/)).toBeVisible();
+    expect(screen.getByLabelText("Seed")).toHaveValue(42);
+    expect(screen.getByLabelText("Sample Limit")).toHaveValue(8);
   });
 });
-

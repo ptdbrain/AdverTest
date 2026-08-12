@@ -41,6 +41,7 @@ from src.api.schemas import (
     ModelVersionOut,
     PerceptionModeOut,
     PreflightOut,
+    QuickInferenceIn,
     RecipePreviewIn,
     RecipeRandomizeIn,
     RecipeRecordIn,
@@ -151,6 +152,9 @@ async def upload_image(request: Request) -> dict[str, Any]:
         "width": width,
         "height": height,
         "benchmark_ready": False,
+        "status": "RAW",
+        "anonymized": False,
+        "annotation_status": "MISSING",
         "dataset": "folder_dataset",
         "dataset_params": {
             "root": str(target_dir),
@@ -180,7 +184,20 @@ async def import_dataset(body: DatasetImportIn) -> dict[str, Any]:
         "input_format": body.input_format,
         "anonymization_manifest": body.anonymization_manifest,
     }
-    return _store.put_record("dataset_version", version.version_id, payload)
+    stored = _store.put_record("dataset_version", version.version_id, payload)
+    return {
+        **stored,
+        "dataset": "folder_dataset",
+        "dataset_params": {
+            "root": str(root),
+            "input_format": body.input_format,
+            "anonymization_manifest": body.anonymization_manifest,
+            "max_samples": body.max_samples,
+        },
+        "anonymized": True,
+        "annotation_status": "VALIDATED",
+        "benchmark_ready": True,
+    }
 
 
 @router.post("/defense-profiles", status_code=201)
@@ -467,15 +484,17 @@ async def randomize_recipe(body: RecipeRandomizeIn) -> dict[str, Any]:
     ]
     if not candidates:
         raise HTTPException(status_code=422, detail={"code": "TASK_INCOMPATIBLE", "message": f"no attacks matching group {body.group!r}"})
-    selected = random.sample(candidates, k=min(body.n_steps, len(candidates)))
+    rng = random.Random(body.seed)
+    selected = rng.sample(candidates, k=min(body.n_steps, len(candidates)))
     steps = [
-        {"attack_id": attack.name, "severity": random.randint(1, 3)}
+        {"attack_id": attack.name, "severity": rng.randint(1, 3)}
         for attack in selected
     ]
     recipe_id = f"recipe-random-{uuid.uuid4().hex[:8]}"
     payload = {
         "id": recipe_id,
         "name": f"Randomized Recipe ({len(steps)} steps)",
+        "seed": body.seed,
         "steps": steps,
     }
     return _store.put_record("attack_recipe", recipe_id, payload)
@@ -734,14 +753,14 @@ async def list_models() -> list[ModelCatalogItem]:
 @router.get("/model-versions", response_model=list[ModelVersionOut])
 async def list_model_versions() -> list[ModelVersionOut]:
     """Expose discovered local checkpoints with lineage and safety status."""
-    versions = scan_model_artifacts(Path(get_settings().runs_root))
+    versions = _registered_model_versions()
     return [ModelVersionOut.from_domain(version) for version in versions]
 
 
 @router.get("/model-versions/{version_id}", response_model=ModelVersionOut)
 async def get_model_version(version_id: str) -> ModelVersionOut:
     """Get detail for a specific model version."""
-    versions = scan_model_artifacts(Path(get_settings().runs_root))
+    versions = _registered_model_versions()
     version = next((v for v in versions if v.id == version_id), None)
     if version is None:
         raise HTTPException(status_code=404, detail=f"unknown model version {version_id!r}")
@@ -751,7 +770,7 @@ async def get_model_version(version_id: str) -> ModelVersionOut:
 @router.get("/model-versions/{version_id}/lineage", response_model=LineageGraphOut)
 async def get_model_version_lineage(version_id: str) -> LineageGraphOut:
     """Return parent lineage chain and child model versions."""
-    versions = scan_model_artifacts(Path(get_settings().runs_root))
+    versions = _registered_model_versions()
     version = next((v for v in versions if v.id == version_id), None)
     if version is None:
         raise HTTPException(status_code=404, detail=f"unknown model version {version_id!r}")
@@ -799,7 +818,7 @@ async def get_model_version_gate_evidence(version_id: str) -> dict[str, Any]:
 @router.get("/perception-modes", response_model=list[PerceptionModeOut])
 async def list_perception_modes() -> list[PerceptionModeOut]:
     """Product-facing mode availability, including the honest SAM handoff gate."""
-    versions = scan_model_artifacts(Path(get_settings().runs_root))
+    versions = _registered_model_versions()
     sam = next((version for version in versions if version.task == "segmentation"), None)
     return [
         PerceptionModeOut(
@@ -879,6 +898,40 @@ async def create_run(config: RunConfig) -> RunJobOut:
     return _job_out(_store.get(run_id))
 
 
+@router.post("/inference-experiments", status_code=202, response_model=RunJobOut)
+async def create_inference_experiment(body: QuickInferenceIn) -> RunJobOut:
+    """Queue a qualitative raw-upload experiment without manufacturing AP/mAP."""
+    batch_root = (_store.path.parent / "uploads" / body.upload_batch_id).resolve()
+    uploads_root = (_store.path.parent / "uploads").resolve()
+    if uploads_root not in batch_root.parents or not (batch_root / "images").is_dir():
+        raise HTTPException(status_code=404, detail="UPLOAD_BATCH_UNKNOWN")
+    version = next(
+        (item for item in _registered_model_versions() if item.id == body.model_version_id),
+        None,
+    )
+    if version is None or not version.runnable or not version.checkpoint_path:
+        raise HTTPException(status_code=409, detail="WAITING_FOR_ARTIFACTS")
+    config = RunConfig(
+        model="yolo11",
+        adapter_params={"weights": version.checkpoint_path},
+        dataset="folder_dataset",
+        dataset_params={"root": str(batch_root), "input_format": "advertest"},
+        attacks=body.attacks,
+        severities=body.severities,
+        seed=body.seed,
+        limit=body.limit,
+        iou_threshold=body.iou_threshold,
+        confidence_threshold=body.confidence_threshold,
+        execution_mode="quick_inference",
+    )
+    preflight = _runner.preflight(config)
+    if preflight.fatal_errors:
+        raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
+    run_id = _store.create(config)
+    _worker.enqueue(run_id, config)
+    return _job_out(_store.get(run_id))
+
+
 @router.get("/runs", response_model=list[RunJobOut])
 async def list_runs() -> list[RunJobOut]:
     return [_job_out(item) for item in _store.list()]
@@ -908,7 +961,7 @@ async def list_samples(
     if report is None:
         raise HTTPException(status_code=409, detail="sample evidence is not available until the run completes")
     return [
-        sample
+        _sample_with_artifact_urls(sample)
         for sample in report.get("sample_results", [])
         if (attack is None or sample["attack"] == attack) and (severity is None or sample["severity"] == severity)
     ]
@@ -1361,6 +1414,45 @@ async def get_evidence_status() -> dict[str, Any]:
 
 
 # ---- Helpers ----
+
+def _sample_with_artifact_urls(sample: dict[str, Any]) -> dict[str, Any]:
+    """Expose only browser-readable artifact URIs; never leak filesystem paths."""
+    result = {key: value for key, value in sample.items() if not key.endswith("_path")}
+    result["artifacts"] = {
+        "clean_input_url": _artifact_uri(sample.get("clean_image_path")),
+        "attacked_input_url": _artifact_uri(sample.get("attacked_image_path")),
+        "clean_prediction_url": _artifact_uri(sample.get("clean_prediction_path")),
+        "attacked_prediction_url": _artifact_uri(sample.get("attacked_prediction_path")),
+    }
+    return result
+
+
+def _artifact_uri(path_value: Any) -> str | None:
+    if not path_value:
+        return None
+    candidate = Path(str(path_value)).expanduser().resolve()
+    data_root = Path(get_settings().data_root).expanduser().resolve()
+    if candidate != data_root and data_root not in candidate.parents:
+        return None
+    return f"/data/{candidate.relative_to(data_root).as_posix()}"
+
+
+def _registered_model_versions() -> list[Any]:
+    """Keep every planned lineage role visible even when its artifact is absent."""
+    placeholders = list_known_versions()
+    by_role = {str(item.training_metadata.get("role", "")): item for item in placeholders}
+    versions = {item.id: item for item in placeholders}
+    for discovered in scan_model_artifacts(Path(get_settings().runs_root)):
+        placeholder = by_role.get(str(discovered.training_metadata.get("role", "")))
+        if placeholder:
+            discovered = replace(
+                discovered,
+                id=placeholder.id,
+                parent_id=placeholder.parent_id,
+                parent_lineage=placeholder.parent_lineage,
+            )
+        versions[discovered.id] = discovered
+    return sorted(versions.values(), key=lambda item: item.id)
 
 def _is_failure_case(payload: dict[str, Any]) -> bool:
     """Accept only benchmark samples carrying an explicit failure signal."""

@@ -282,6 +282,21 @@ class DatasetCatalogItem(BaseModel):
     params_schema: dict[str, Any] = Field(default_factory=dict)
 
 
+class QuickInferenceIn(BaseModel):
+    """Raw-upload inference request; intentionally excludes benchmark metrics."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    upload_batch_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    model_version_id: str = Field(min_length=1, max_length=256)
+    attacks: list[str] = Field(min_length=1)
+    severities: list[int] = Field(default_factory=lambda: [3])
+    seed: int = Field(default=42, ge=0)
+    limit: int | None = Field(default=8, ge=1)
+    iou_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
+    confidence_threshold: float = Field(default=0.25, ge=0.0, le=1.0)
+
+
 class CostEstimateOut(BaseModel):
     """Pre-run estimate — plan §5 requires this before a run may start."""
 
@@ -346,6 +361,7 @@ class RunReportOut(BaseModel):
     seconds: float = 0.0
     #: Constant reminder that nothing here validates a model for deployment.
     simulation_only: bool = True
+    benchmark_metrics_available: bool = True
 
 
 class RunSummaryOut(BaseModel):
@@ -488,6 +504,7 @@ class RecipeRandomizeIn(BaseModel):
 
     n_steps: int = Field(default=3, ge=1, le=10)
     group: str | None = Field(default=None, min_length=1, max_length=1)
+    seed: int = Field(default=42, ge=0)
 
 
 class RecipeSweepIn(BaseModel):

@@ -14,16 +14,18 @@ function number(value, unit) {
 
 export default function FiveMetrics({ report }) {
   const firstCell = report?.cells?.[0];
+  const benchmarkAvailable = report?.benchmark_metrics_available !== false;
   const values = {
-    ap_clean: report?.ap_clean,
-    attacked: firstCell?.ap,
-    degradation: firstCell?.degradation,
-    broken: firstCell?.metrics?.objects_broken,
-    robust_score_normalized: report?.metrics?.robust_score_normalized,
+    ap_clean: benchmarkAvailable ? report?.ap_clean : null,
+    attacked: benchmarkAvailable ? firstCell?.ap : null,
+    degradation: benchmarkAvailable ? firstCell?.degradation : null,
+    broken: benchmarkAvailable ? firstCell?.metrics?.objects_broken : null,
+    robust_score_normalized: benchmarkAvailable ? report?.metrics?.robust_score_normalized : null,
   };
 
   return (
     <div className="five-metrics">
+      {!benchmarkAvailable && <p className="five-metrics__unavailable">No ground truth supplied. Benchmark AP/mAP metrics are unavailable.</p>}
       {METRICS.map(([label, key, unit], index) => (
         <div className="five-metrics__item" key={key}>
           <span>{String(index + 1).padStart(2, "0")}</span>

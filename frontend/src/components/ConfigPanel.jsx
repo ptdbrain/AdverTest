@@ -13,6 +13,7 @@ export default function ConfigPanel({
   selectedDataset,
   selectedAttacks,
   severity,
+  runOptions,
   isRunning,
   actions,
 }) {
@@ -28,6 +29,7 @@ export default function ConfigPanel({
     randomizeRecipe,
     sweepRecipe,
     previewRecipe,
+    setRunOptions,
   } = actions;
 
   const [recipeMode, setRecipeMode] = useState("manual"); // "manual" | "preset" | "random_n" | "sweep"
@@ -45,8 +47,7 @@ export default function ConfigPanel({
   const handlePreviewCost = async () => {
     setWarningMessage("");
     try {
-      if (previewRecipe) {
-        const est = await previewRecipe({
+      const est = await previewRecipe({
           recipe: {
             id: `recipe-preview-${Date.now()}`,
             task: mode,
@@ -55,12 +56,8 @@ export default function ConfigPanel({
           n_samples: 8,
         });
         setEstimatedCost(est);
-        if (est.estimated_seconds > 30) {
-          setWarningMessage("High compute cost: Estimated run time > 30 seconds.");
-        }
-      } else {
-        const seconds = selectedAttacks.length * severity * 0.5;
-        setEstimatedCost({ estimated_seconds: seconds, total_samples: 8 * selectedAttacks.length });
+      if (est.estimated_seconds > 30) {
+        setWarningMessage("High compute cost: Estimated run time > 30 seconds.");
       }
     } catch (err) {
       setWarningMessage(err.message || "Failed to preview resource cost");
@@ -179,7 +176,7 @@ export default function ConfigPanel({
             onChange={(e) => setMode(e.target.value)}
           >
             {modes.map((item) => (
-              <option key={item.id} value={item.id}>
+              <option key={item.id} value={item.id} disabled={!item.runnable}>
                 {item.title}
                 {item.runnable ? "" : " (waiting)"}
               </option>
@@ -235,9 +232,9 @@ export default function ConfigPanel({
             onChange={(e) => setSelectedDataset(e.target.value)}
           >
             {datasets.map((ds) => (
-              <option key={ds.id || ds.name} value={ds.id || ds.name} disabled={ds.anonymized === false}>
+              <option key={ds.id || ds.name} value={ds.id || ds.name}>
                 {ds.title || ds.name || ds.id}
-                {ds.anonymized === false ? " (Private)" : ""}
+                {ds.benchmark_ready === false ? " (Quick inference only)" : ""}
               </option>
             ))}
           </select>
@@ -269,6 +266,8 @@ export default function ConfigPanel({
               type="button"
               className={`attack-card ${selectedAttacks.includes(atk.name) ? "attack-card--selected" : ""}`}
               onClick={() => toggleAttack(atk.name)}
+              disabled={atk.available === false}
+              title={atk.available === false ? atk.reason : undefined}
             >
               <span className="attack-card__name">{atk.name.replace(/_/g, " ")}</span>
               <span className="attack-card__group">{GROUP_LABELS[atk.group] || atk.group}</span>
@@ -330,10 +329,14 @@ export default function ConfigPanel({
 
         {showAdvanced && (
           <div className="glass-panel mt-2" style={{ padding: "10px", fontSize: "0.8rem" }}>
-            <label style={{ display: "block", marginBottom: "4px" }}>Seed: 42</label>
-            <label style={{ display: "block", marginBottom: "4px" }}>Sample Limit: 8</label>
-            <label style={{ display: "block", marginBottom: "4px" }}>IoU Threshold: 0.50</label>
-            <label style={{ display: "block" }}>Confidence Threshold: 0.25</label>
+            <label htmlFor="run-seed">Seed</label>
+            <input id="run-seed" aria-label="Seed" type="number" min="0" value={runOptions?.seed ?? 42} onChange={(event) => setRunOptions?.({ seed: Number(event.target.value) })} />
+            <label htmlFor="run-limit">Sample Limit</label>
+            <input id="run-limit" aria-label="Sample Limit" type="number" min="1" value={runOptions?.limit ?? 8} onChange={(event) => setRunOptions?.({ limit: Number(event.target.value) })} />
+            <label htmlFor="run-iou">IoU Threshold</label>
+            <input id="run-iou" aria-label="IoU Threshold" type="number" min="0" max="1" step="0.01" value={runOptions?.iou ?? 0.5} onChange={(event) => setRunOptions?.({ iou: Number(event.target.value) })} />
+            <label htmlFor="run-confidence">Confidence Threshold</label>
+            <input id="run-confidence" aria-label="Confidence Threshold" type="number" min="0" max="1" step="0.01" value={runOptions?.confidence ?? 0.25} onChange={(event) => setRunOptions?.({ confidence: Number(event.target.value) })} />
           </div>
         )}
       </div>
@@ -349,4 +352,3 @@ export default function ConfigPanel({
     </aside>
   );
 }
-

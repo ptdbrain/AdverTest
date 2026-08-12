@@ -1,89 +1,107 @@
+"use client";
+
+import { useState } from "react";
 import Image from "next/image";
 
 import EvidenceStage from "@/components/EvidenceStage";
 import FiveMetrics from "@/components/FiveMetrics";
 import SamWaitingState from "@/components/SamWaitingState";
 
-function sourceLabel(sample, key, fallback) {
-  if (sample?.[key]) {
-    return <Image src={sample[key]} alt={fallback} width={1280} height={720} unoptimized />;
+function EvidenceImage({ src, alt, unavailableTitle, unavailableDetail }) {
+  if (!src) {
+    return (
+      <div className="evidence-media__empty">
+        <strong>{unavailableTitle}</strong>
+        <span>{unavailableDetail}</span>
+      </div>
+    );
   }
-  return <p>{fallback}</p>;
-}
-
-export default function Workspace({ report, samples, mode }) {
-  if (mode === "segmentation") return <SamWaitingState />;
-  const sample = samples?.[0];
-  const attack = report?.cells?.[0];
-
-  // Distinct evidence properties to ensure clean and attacked predictions are NEVER shared
-  const cleanOverlayKey = sample?.clean_overlay ? "clean_overlay" : sample?.clean_prediction_path ? "clean_prediction_path" : "clean_image";
-  const attackedOverlayKey = sample?.attacked_overlay ? "attacked_overlay" : "overlay_image";
-
-  // Per-object failure evidence extraction
-  const perObjectFailures = sample?.per_object_failures || sample?.object_evidence || [
-    { id: "obj-1", label: "person", clean_conf: 0.94, attacked_conf: 0.12, degradation: 87.2, status: "FAILED" },
-    { id: "obj-2", label: "car", clean_conf: 0.88, attacked_conf: 0.35, degradation: 60.2, status: "DEGRADED" },
-  ];
 
   return (
-    <div className="workspace">
-      <EvidenceStage title="Input and ground truth" description="Source image and reviewed bounding-box labels.">
-        {sourceLabel(sample, "clean_image", "Run a validated benchmark to inspect source evidence.")}
-      </EvidenceStage>
-      <EvidenceStage title="Attacked input" description={attack ? `${attack.attack}, severity ${attack.severity}, paired with the same source sample.` : "Recipe evidence will appear after a completed run."}>
-        {sourceLabel(sample, "attacked_image", "No attacked variant yet.")}
-      </EvidenceStage>
-      <EvidenceStage title="Clean model prediction" description="Prediction before perturbation, evaluated against the locked ground truth.">
-        {sourceLabel(sample, cleanOverlayKey, "No clean prediction evidence yet.")}
-      </EvidenceStage>
-      <EvidenceStage title="Attacked model prediction" description="Paired prediction after the final ordered recipe step.">
-        {sourceLabel(sample, attackedOverlayKey, "No attacked prediction evidence yet.")}
-      </EvidenceStage>
-      
-      {/* Per-Object Failure Evidence */}
-      <section className="workspace__per_object_failures" aria-label="Per-object failure evidence">
-        <header style={{ marginBottom: "var(--space-md)" }}>
-          <p className="evidence-stage__eyebrow" style={{ color: "var(--warning)" }}>Granular Evidence</p>
-          <h2 style={{ fontSize: "1.2rem", color: "var(--text-primary)" }}>Per-Object Failure Breakdown</h2>
-        </header>
-        <div className="per-object-table-wrapper" style={{ overflowX: "auto" }}>
-          <table className="data-table" style={{ width: "100%", fontSize: "0.85rem", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid var(--border-subtle)", textAlign: "left" }}>
-                <th style={{ padding: "8px" }}>Object ID</th>
-                <th style={{ padding: "8px" }}>Label</th>
-                <th style={{ padding: "8px" }}>Clean Conf.</th>
-                <th style={{ padding: "8px" }}>Attacked Conf.</th>
-                <th style={{ padding: "8px" }}>Degradation</th>
-                <th style={{ padding: "8px" }}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {perObjectFailures.map((obj) => (
-                <tr key={obj.id} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                  <td style={{ padding: "8px", fontFamily: "var(--font-mono)" }}>{obj.id}</td>
-                  <td style={{ padding: "8px" }}>{obj.label}</td>
-                  <td style={{ padding: "8px", color: "var(--success)" }}>{(obj.clean_conf * 100).toFixed(1)}%</td>
-                  <td style={{ padding: "8px", color: "var(--danger)" }}>{(obj.attacked_conf * 100).toFixed(1)}%</td>
-                  <td style={{ padding: "8px", fontWeight: "bold", color: "var(--danger)" }}>↓ {obj.degradation.toFixed(1)}%</td>
-                  <td style={{ padding: "8px" }}>
-                    <span className={`status-badge ${obj.status === "FAILED" ? "status-badge--failed" : "status-badge--queued"}`}>
-                      {obj.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="workspace__metrics" aria-label="Five key metrics">
-        <header><p className="evidence-stage__eyebrow">Decision summary</p><h2>Five key metrics</h2></header>
-        <FiveMetrics report={report} />
-      </section>
+    <div className="evidence-media">
+      <Image
+        src={src}
+        alt={alt}
+        fill
+        sizes="(max-width: 1100px) 100vw, 50vw"
+        unoptimized
+        className="evidence-media__image"
+      />
     </div>
   );
 }
 
+function EvidenceUnavailable({ title, detail }) {
+  return <div className="evidence-media__empty"><strong>{title}</strong><span>{detail}</span></div>;
+}
+
+export default function Workspace({ report, samples, mode }) {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const normalizedSamples = samples ?? [];
+  const activeIndex = Math.min(selectedIndex, Math.max(0, normalizedSamples.length - 1));
+  const sample = normalizedSamples[activeIndex];
+  const attack = report?.cells?.find((cell) => cell.attack === sample?.attack && cell.severity === sample?.severity) ?? null;
+  const artifacts = sample?.artifacts ?? {};
+  const perObjectFailures = sample?.per_object_failures ?? sample?.object_evidence ?? [];
+  const config = report?.provenance?.run_config ?? {};
+
+  if (mode === "segmentation") return <SamWaitingState />;
+
+  return (
+    <div className="workspace">
+      {normalizedSamples.length > 1 && (
+        <div className="workspace__evidence_selector">
+          <label htmlFor="evidence-sample">Evidence sample</label>
+          <select id="evidence-sample" value={String(activeIndex)} onChange={(event) => setSelectedIndex(Number(event.target.value))}>
+            {normalizedSamples.map((item, index) => (
+              <option key={`${item.sample_id}-${item.attack}-${item.severity}`} value={index}>
+                {item.sample_id} · {item.attack} · severity {item.severity}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <EvidenceStage title="Input and ground truth" description="Source image and reviewed bounding-box labels.">
+        <EvidenceImage src={artifacts.clean_input_url} alt="Clean input" unavailableTitle="Source input unavailable" unavailableDetail="The backend did not return a source artifact for this sample." />
+      </EvidenceStage>
+      <EvidenceStage title="Attacked input" description={attack ? `${attack.attack}, severity ${attack.severity}, paired with the same source sample.` : "Recipe evidence will appear after a completed run."}>
+        <EvidenceImage src={artifacts.attacked_input_url} alt="Attacked input" unavailableTitle="Attacked input unavailable" unavailableDetail="The backend did not return an attacked input artifact." />
+      </EvidenceStage>
+      <EvidenceStage title="Clean model prediction" description="Prediction before perturbation, evaluated against the locked ground truth.">
+        <EvidenceImage src={artifacts.clean_prediction_url} alt="Clean prediction" unavailableTitle="Clean prediction unavailable" unavailableDetail="The backend did not return a rendered clean prediction artifact." />
+      </EvidenceStage>
+      <EvidenceStage title="Attacked model prediction" description="Paired prediction after the final ordered recipe step.">
+        <EvidenceImage src={artifacts.attacked_prediction_url} alt="Attacked prediction" unavailableTitle="Attacked prediction unavailable" unavailableDetail="The backend did not return a rendered attacked prediction artifact." />
+      </EvidenceStage>
+
+      <section className="workspace__per_object_failures" aria-label="Per-object failure evidence">
+        <header><p className="evidence-stage__eyebrow">Granular Evidence</p><h2>Per-Object Failure Breakdown</h2></header>
+        {perObjectFailures.length === 0 ? <EvidenceUnavailable title="No per-object evidence was produced for this sample." detail="Verify that model inference and object matching completed successfully." /> : (
+          <div className="per-object-table-wrapper"><table className="data-table"><thead><tr><th>Object ID</th><th>Label</th><th>Clean Conf.</th><th>Attacked Conf.</th><th>Degradation</th><th>Status</th></tr></thead><tbody>
+            {perObjectFailures.map((obj) => {
+              const cleanConfidence = obj.clean_conf ?? obj.clean_confidence ?? 0;
+              const attackedConfidence = obj.attacked_conf ?? obj.attacked_confidence ?? 0;
+              const degradation = obj.degradation ?? Math.max(0, (cleanConfidence - attackedConfidence) * 100);
+              const status = obj.status ?? (obj.failure_reason ? "FAILED" : "PASSED");
+              return <tr key={obj.id ?? obj.object_id}><td>{obj.id ?? obj.object_id}</td><td>{obj.label ?? obj.gt_box?.label ?? "unavailable"}</td><td>{(cleanConfidence * 100).toFixed(1)}%</td><td>{(attackedConfidence * 100).toFixed(1)}%</td><td>↓ {degradation.toFixed(1)}%</td><td><span className={`status-badge ${status === "FAILED" ? "status-badge--failed" : "status-badge--queued"}`}>{status}</span></td></tr>;
+            })}
+          </tbody></table></div>
+        )}
+      </section>
+
+      <section className="workspace__provenance" aria-label="Evidence provenance">
+        <strong>Evidence provenance</strong>
+        <span>Model: {report?.model_version || report?.model || "unavailable"}</span>
+        <span>Checkpoint hash: {sample?.model_checkpoint_hash || report?.provenance?.model?.checkpoint_hash || "unavailable"}</span>
+        <span>Dataset: {report?.dataset || "unavailable"}</span>
+        <span>Sample: {sample?.sample_id || "unavailable"}</span>
+        <span>Attack: {sample?.attack || "unavailable"}</span>
+        <span>Severity: {sample?.severity ?? "unavailable"}</span>
+        <span>Seed: {config.seed ?? "unavailable"}</span>
+        <span>Run ID: {report?.run_id || "unavailable"}</span>
+      </section>
+
+      <section className="workspace__metrics" aria-label="Five key metrics"><header><p className="evidence-stage__eyebrow">Decision summary</p><h2>Five key metrics</h2></header><FiveMetrics report={report} /></section>
+    </div>
+  );
+}

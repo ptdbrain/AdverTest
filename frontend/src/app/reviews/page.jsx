@@ -68,15 +68,15 @@ export default function ReviewPage() {
     getRunSamples(selectedReview.run_id)
       .then((samples) => {
         if (ignore) return;
-        const baseUrl = "http://localhost:8000/data/";
-        const fixPath = (p) => (p ? p.replace(/\\/g, "/").replace(/^.*\/data\//i, baseUrl) : "");
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const artifactUrl = (value) => value ? new URL(value, `${apiBase.replace(/\/$/, "")}/`).href : null;
         setReviewSamples(
           samples.map((s) => ({
             ...s,
-            clean_image: fixPath(s.clean_image_path),
-            attacked_image: fixPath(s.attacked_image_path),
-            clean_overlay: fixPath(s.clean_overlay || s.clean_prediction_path || s.clean_image_path),
-            attacked_overlay: fixPath(s.overlay_path || s.attacked_image_path),
+            clean_image: artifactUrl(s.artifacts?.clean_input_url),
+            attacked_image: artifactUrl(s.artifacts?.attacked_input_url),
+            clean_overlay: artifactUrl(s.artifacts?.clean_prediction_url),
+            attacked_overlay: artifactUrl(s.artifacts?.attacked_prediction_url),
           }))
         );
       })

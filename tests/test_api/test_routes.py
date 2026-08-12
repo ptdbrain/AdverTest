@@ -1,4 +1,6 @@
 import asyncio
+import io
+from pathlib import Path
 
 import pytest
 
@@ -82,6 +84,12 @@ async def test_run_is_queued_and_report_is_retrievable(client):
     assert set(report["heatmap"]) == {"gaussian_noise"}
     samples = await client.get(f"/api/v1/runs/{job['run_id']}/samples", params={"attack": "gaussian_noise"})
     assert len(samples.json()) == 4
+    sample = samples.json()[0]
+    assert "clean_image_path" not in sample
+    assert set(sample["artifacts"]) == {
+        "clean_input_url", "attacked_input_url", "clean_prediction_url", "attacked_prediction_url"
+    }
+    assert all(value is None or value.startswith("/data/") for value in sample["artifacts"].values())
 
 
 @pytest.mark.asyncio
@@ -130,7 +138,78 @@ async def test_raw_upload_is_not_marked_anonymized(client):
     assert response.status_code == 201
     data = response.json()
     assert data["benchmark_ready"] is False
+    assert data["status"] == "RAW"
+    assert data["annotation_status"] == "MISSING"
     assert data["batch_id"] == "batch-test-123456"
+
+
+@pytest.mark.asyncio
+async def test_quick_inference_fails_fast_without_a_runnable_checkpoint(client):
+    response = await client.post("/api/v1/inference-experiments", json={
+        "upload_batch_id": "batch-missing-123",
+        "model_version_id": "yolo_b0",
+        "attacks": ["gaussian_noise"],
+    })
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_quick_inference_accepts_the_runnable_catalog_model_id(client, monkeypatch, tmp_path):
+    """The model ID returned by the catalog must be accepted by quick inference."""
+    from PIL import Image
+
+    import src.api.routes as routes
+    from src.models.versions import ModelVersion
+    from src.pipeline import PreflightResult
+
+    actual_checkpoint = tmp_path / "yolo11s-clean-b0.pt"
+    actual_checkpoint.write_bytes(b"checkpoint")
+    discovered = ModelVersion(
+        id="yolo11s-clean-b0",
+        model_name="yolo11s",
+        task="detection2d",
+        checkpoint_path=str(actual_checkpoint),
+        checkpoint_hash="test-checkpoint",
+        parent_id=None,
+        training_metadata={"role": "yolo_b0"},
+        runnable=True,
+    )
+    monkeypatch.setattr(routes, "scan_model_artifacts", lambda _root: [discovered])
+    monkeypatch.setattr(
+        routes._runner,
+        "preflight",
+        lambda _config: PreflightResult(compatible=("gaussian_noise",), skipped=()),
+    )
+    monkeypatch.setattr(routes._worker, "enqueue", lambda _run_id, _config: None)
+
+    catalog = await client.get("/api/v1/model-versions")
+    model_id = next(item["id"] for item in catalog.json() if item["runnable"])
+
+    image = io.BytesIO()
+    Image.new("RGB", (10, 10), color="red").save(image, format="PNG")
+    uploaded = await client.post(
+        "/api/v1/uploads/images",
+        headers={"x-filename": "sample.png", "x-upload-batch-id": "batch-catalog-model"},
+        content=image.getvalue(),
+    )
+    assert uploaded.status_code == 201
+
+    response = await client.post("/api/v1/inference-experiments", json={
+        "upload_batch_id": "batch-catalog-model",
+        "model_version_id": model_id,
+        "attacks": ["gaussian_noise"],
+    })
+    assert response.status_code == 202
+
+
+@pytest.mark.asyncio
+async def test_random_recipe_is_seeded_and_replayable(client):
+    body = {"n_steps": 3, "seed": 195}
+    first = await client.post("/api/v1/attack-recipes/randomize", json=body)
+    second = await client.post("/api/v1/attack-recipes/randomize", json=body)
+    assert first.status_code == second.status_code == 201
+    assert first.json()["seed"] == second.json()["seed"] == 195
+    assert first.json()["steps"] == second.json()["steps"]
 
 
 @pytest.mark.asyncio
@@ -168,4 +247,3 @@ async def test_protocol_must_lock_before_benchmark(client):
     # After lock, run creation succeeds
     run_res2 = await client.post(f"/api/v1/benchmark/runs?protocol_id={proto_id}", json=run_config)
     assert run_res2.status_code == 202
-
