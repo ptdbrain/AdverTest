@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, ge=1, le=65535)
     app_host: str = "0.0.0.0"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     # Test-run defaults (plan §5: cheap by default, opt into expensive scans)
     default_model: str = "blob_detector"
@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     worker_max_concurrency: int = Field(default=1, ge=1, le=8)
     runs_root: str = str(PROJECT_ROOT / "runs")
     artifact_root: str = str(PROJECT_ROOT / "data" / "artifacts")
+    checkpoint_root: str = str(PROJECT_ROOT / "data" / "checkpoints")
 
     # Execution hardware defaults
     model_device: str = "cpu"

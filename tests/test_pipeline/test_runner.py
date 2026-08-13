@@ -57,6 +57,17 @@ def test_ordered_recipe_produces_one_final_evidence_result() -> None:
     assert all(len(item.recipe_steps) == 2 for item in report.sample_results)
 
 
+def test_evidence_includes_structured_ground_truth_boxes() -> None:
+    report = TestRunner().run(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1, bootstrap_repetitions=0))
+
+    ground_truth = report.sample_results[0].ground_truth
+    assert ground_truth["type"] == "boxes"
+    assert ground_truth["image_width"] > 0
+    assert ground_truth["image_height"] > 0
+    assert ground_truth["objects"]
+    assert set(ground_truth["objects"][0]) >= {"object_id", "label", "xyxy"}
+
+
 def test_report_bootstrap_resamples_samples_not_aggregate_cells() -> None:
     report = TestRunner().run(
         RunConfig(attacks=["gaussian_noise"], severities=[1], limit=2, bootstrap_repetitions=20)

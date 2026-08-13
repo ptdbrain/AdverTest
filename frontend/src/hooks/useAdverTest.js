@@ -32,8 +32,6 @@ export function useAdverTest() {
   const [loading, setLoading] = useState(true);
   const [selectedDataset, setSelectedDataset] = useState("");
   const [selectedAttacks, setSelectedAttacks] = useState([]);
-  const [severity, setSeverityState] = useState(3);
-  const [selectedSeverities, setSelectedSeverities] = useState([3]);
   const [mode, setModeState] = useState("detection2d");
   const [selectedModelVersion, setSelectedModelVersion] = useState("");
   const [runOptions, setRunOptionsState] = useState({ seed: 42, limit: 8, confidence: 0.25, iou: 0.5 });
@@ -41,6 +39,8 @@ export function useAdverTest() {
   const [runStatus, setRunStatus] = useState(null);
   const [progress, setProgress] = useState(0);
   const [progressDetail, setProgressDetail] = useState("");
+  const [resultLoadStatus, setResultLoadStatus] = useState("idle");
+  const [resultLoadError, setResultLoadError] = useState(null);
   const [report, setReport] = useState(null);
   const [samples, setSamples] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -55,24 +55,52 @@ export function useAdverTest() {
   const finalizedRef = useRef(false);
 
   useEffect(() => {
-    Promise.all([getCatalogAttacks(), getCatalogModels(), getCatalogDatasets(), getModelVersions(), getPerceptionModes(), getRecipePresets()])
-      .then(([a, m, d, versions, availableModes, presets]) => {
-        setAttacks(a); setModels(m); setDatasets(d); setModelVersions(versions); setModes(availableModes); setRecipePresets(presets);
-        const initial = versions.find((item) => item.task === "detection2d" && item.runnable);
-        if (initial) setSelectedModelVersion(initial.id);
-        if (d.length) {
+    let cancelled = false;
+    let attempts = 0;
+    const loadCatalog = async () => {
+      while (!cancelled && attempts < 3) {
+        attempts += 1;
+        const results = await Promise.allSettled([
+          getCatalogAttacks(), getCatalogModels(), getCatalogDatasets(),
+          getModelVersions(), getPerceptionModes(), getRecipePresets(),
+        ]);
+        if (cancelled) return;
+        const value = (index, fallback) => results[index].status === "fulfilled" ? results[index].value : fallback;
+        const [a, m, d, versions, availableModes, presets] = [
+          value(0, null), value(1, null), value(2, null), value(3, null), value(4, null), value(5, null),
+        ];
+        if (a) setAttacks(a);
+        if (m) setModels(m);
+        if (d) setDatasets(d);
+        if (versions) {
+          setModelVersions(versions);
+          const initial = versions.find((item) => item.task === "detection2d" && item.runnable);
+          if (initial) setSelectedModelVersion(initial.id);
+        }
+        if (availableModes) setModes(availableModes);
+        if (presets) setRecipePresets(presets);
+        if (d?.length) {
           const defaultDataset = d.find((item) => item.name === "synthetic_shapes") || d.find((item) => item.anonymized) || d[0];
           setSelectedDataset(defaultDataset.id || defaultDataset.name);
         }
-      })
-      .catch((error) => console.error("Failed to load catalog:", error))
-      .finally(() => setLoading(false));
+        if (results.some((result) => result.status === "fulfilled")) {
+          if (results.some((result) => result.status === "rejected")) console.warn("Some AdverTest catalogs failed to load; retrying only failed data on refresh.");
+          setLoading(false);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      if (!cancelled) {
+        console.error("Failed to load AdverTest catalogs after retries.");
+        setLoading(false);
+      }
+    };
+    loadCatalog();
+    return () => { cancelled = true; };
   }, []);
 
-  const setSeverity = useCallback((value) => {
-    setSeverityState(value);
-    setSelectedSeverities([value]);
-    setRecipe((current) => ({ ...current, steps: current.steps.map((step) => ({ ...step, severity: value })) }));
+  const updateAttackSeverity = useCallback((position, severity) => {
+    setRecipe((current) => ({ ...current, steps: current.steps.map((step) => step.position === position ? { ...step, severity } : step) }));
   }, []);
   const setMode = useCallback((nextMode) => {
     setModeState(nextMode);
@@ -85,12 +113,12 @@ export function useAdverTest() {
     setRecipe((current) => {
       const remaining = current.steps.filter((step) => step.attack_name !== name);
       const steps = remaining.length === current.steps.length
-        ? [...remaining, { position: remaining.length, attack_name: name, implementation_version: metadata?.version || "1.0.0", severity, parameters: {}, seed: runOptions.seed, expected_cost: 1 }]
+        ? [...remaining, { position: remaining.length, attack_name: name, implementation_version: metadata?.version || "1.0.0", severity: 3, parameters: {}, seed: runOptions.seed, expected_cost: 1 }]
         : remaining;
       return { ...current, steps: steps.map((step, position) => ({ ...step, position })) };
     });
     setSelectedAttacks((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]);
-  }, [attacks, runOptions.seed, severity]);
+  }, [attacks, runOptions.seed]);
   const addDataset = useCallback((dataset) => {
     if (!dataset) return;
     setDatasets((current) => {
@@ -106,6 +134,7 @@ export function useAdverTest() {
     const dataset = datasets.find((item) => (item.id || item.name) === selectedDataset) || { name: selectedDataset };
     return {
       model_version_id: selectedModelVersion,
+      task_id: mode,
       dataset: dataset.dataset || dataset.name || selectedDataset,
       dataset_params: dataset.dataset_params || {},
       recipe,
@@ -114,19 +143,25 @@ export function useAdverTest() {
       iou_threshold: runOptions.iou,
       confidence_threshold: runOptions.confidence,
     };
-  }, [datasets, recipe, runOptions, selectedDataset, selectedModelVersion]);
+  }, [datasets, mode, recipe, runOptions, selectedDataset, selectedModelVersion]);
 
   const finalizeRun = useCallback(async (id, job = null) => {
     if (finalizedRef.current) return;
     finalizedRef.current = true;
+    setResultLoadStatus("loading");
+    setResultLoadError(null);
     try {
       const [completedReport, rawSamples] = await Promise.all([getRunReport(id), getRunSamples(id)]);
       setReport(completedReport);
       setSamples(normalizeSamples(rawSamples));
       setProgressDetail("Done!");
+      setResultLoadStatus("ready");
       triggerAutoFlag(id, 30).catch(console.warn);
     } catch (error) {
-      setProgressDetail(error.message || "Run completed but evidence could not be loaded.");
+      const message = error.message || "Run completed but evidence could not be loaded.";
+      setProgressDetail(message);
+      setResultLoadStatus("failed");
+      setResultLoadError(message);
     } finally {
       if (pollRef.current) clearInterval(pollRef.current);
       wsRef.current?.close();
@@ -164,13 +199,13 @@ export function useAdverTest() {
       setRunStatus("BLOCKED"); return;
     }
     if (mode !== "detection2d" || !version?.runnable) {
-      setProgressDetail(mode !== "detection2d" ? "Segmentation is not yet runnable from this workflow." : version?.blocked_reason ? `Model version unavailable: ${version.blocked_reason}` : "YOLO checkpoint unavailable. Check /api/v1/model-versions and RUNS_ROOT.");
+      setProgressDetail(mode !== "detection2d" ? "This task needs a compatible, validated task runtime and checkpoint before it can be run." : version?.blocked_reason ? `Model version unavailable: ${version.blocked_reason}` : "YOLO checkpoint unavailable. Check /api/v1/model-versions and RUNS_ROOT.");
       setRunStatus("BLOCKED"); return;
     }
     const dataset = datasets.find((item) => (item.id || item.name) === selectedDataset);
     const isQuickInference = dataset?.benchmark_ready === false && dataset?.status === "RAW";
     const config = buildRunConfig();
-    setIsRunning(true); setRunStatus("PREFLIGHT"); setProgress(0); setReport(null); setSamples([]); setBacklog(null); setBacklogError(""); setActiveTab("evidence"); setProgressDetail("Checking dataset, model and recipe..."); finalizedRef.current = false;
+    setIsRunning(true); setRunStatus("PREFLIGHT"); setProgress(0); setReport(null); setSamples([]); setBacklog(null); setBacklogError(""); setActiveTab("evidence"); setProgressDetail("Checking dataset, model and recipe..."); setResultLoadStatus("idle"); setResultLoadError(null); finalizedRef.current = false;
     try {
       let job;
       if (isQuickInference) {
@@ -179,7 +214,7 @@ export function useAdverTest() {
           model_version_id: version.id,
           recipe,
           attacks: [],
-          severities: selectedSeverities,
+          severities: recipe.steps.map((step) => step.severity),
           seed: runOptions.seed,
           limit: runOptions.limit,
           iou_threshold: runOptions.iou,
@@ -196,7 +231,7 @@ export function useAdverTest() {
     } catch (error) {
       setRunStatus("FAILED"); setProgressDetail(error.message || "Run failed due to an API error."); setIsRunning(false);
     }
-  }, [buildRunConfig, datasets, mode, modelVersions, monitorRun, recipe, runOptions, selectedDataset, selectedModelVersion, selectedSeverities]);
+  }, [buildRunConfig, datasets, mode, modelVersions, monitorRun, recipe, runOptions, selectedDataset, selectedModelVersion]);
 
   const createBacklog = useCallback(async () => {
     const failures = (report?.cells ?? []).filter((cell) => cell.degradation > 0);
@@ -219,7 +254,6 @@ export function useAdverTest() {
     });
     setRecipe({ name: source.name || "recipe", steps });
     setSelectedAttacks(steps.map((step) => step.attack_name));
-    if (steps.length) { setSeverityState(steps.at(-1).severity); setSelectedSeverities([...new Set(steps.map((step) => step.severity))]); }
   }, [attacks, runOptions.seed]);
   const loadPreset = useCallback((presetId) => {
     const preset = recipePresets.find((item) => item.preset_id === presetId);
@@ -233,8 +267,9 @@ export function useAdverTest() {
   }, [setCanonicalRecipe]);
   const previewRecipe = useCallback(async (payload) => previewRecipeRequest(payload), []);
   const cancelRunAction = useCallback(async () => { if (!runId) return; setRunStatus("CANCEL_REQUESTED"); setProgressDetail("Cancelling job..."); const job = await cancelRun(runId); setRunStatus(job.status); }, [runId]);
+  const retryEvidence = useCallback(() => { if (!runId) return; finalizedRef.current = false; finalizeRun(runId, { status: "COMPLETED" }); }, [finalizeRun, runId]);
 
   useEffect(() => () => { wsRef.current?.close(); if (pollRef.current) clearInterval(pollRef.current); }, []);
   const version = modelVersions.find((item) => item.id === selectedModelVersion);
-  return { state: { attacks, models, datasets, modelVersions, modes, recipePresets, recipe, loading, selectedDataset, selectedAttacks, severity, selectedSeverities, mode, selectedModelVersion, runOptions, runId, runStatus, progress, progressDetail, report, samples, isRunning, backlog, backlogError, isCreatingBacklog, trainingBlockedReason: version?.runnable ? "" : "WAITING_FOR_ARTIFACTS", activeTab }, actions: { setSelectedDataset, addDataset, setSeverity, setMode, setSelectedModelVersion, setRunOptions, toggleAttack, handleRun, createBacklog, setActiveTab, loadPreset, randomizeRecipe, sweepRecipe, previewRecipe, cancelRun: cancelRunAction } };
+  return { state: { attacks, models, datasets, modelVersions, modes, recipePresets, recipe, loading, selectedDataset, selectedAttacks, mode, selectedModelVersion, runOptions, runId, runStatus, progress, progressDetail, resultLoadStatus, resultLoadError, report, samples, isRunning, backlog, backlogError, isCreatingBacklog, trainingBlockedReason: version?.runnable ? "" : "WAITING_FOR_ARTIFACTS", activeTab }, actions: { setSelectedDataset, addDataset, setMode, setSelectedModelVersion, setRunOptions, toggleAttack, updateAttackSeverity, handleRun, createBacklog, setActiveTab, loadPreset, randomizeRecipe, sweepRecipe, previewRecipe, retryEvidence, cancelRun: cancelRunAction } };
 }

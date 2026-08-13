@@ -20,6 +20,7 @@ from typing import Any
 from src.pipeline import RunConfig, TestRunner
 from src.pipeline.cache import SqliteCache
 from src.pipeline.runner import RunCancelledError
+from src.config import get_settings
 
 TERMINAL_STATES = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
 RUN_STATES = frozenset({"QUEUED", "PREPARING", "GENERATING", "INFERENCING", "EVALUATING", *TERMINAL_STATES})
@@ -385,7 +386,10 @@ class LocalRunWorker:
 
         try:
             config = config.model_copy(
-                update={"evidence_dir": config.evidence_dir or str(self.store.path.parent / "artifacts" / run_id)}
+                update={
+                    "evidence_dir": config.evidence_dir
+                    or str(Path(get_settings().artifact_root).expanduser().resolve() / "runs" / run_id)
+                }
             )
             runner = TestRunner(SqliteCache(str(self.store.path.parent / "prediction-cache.db")))
 

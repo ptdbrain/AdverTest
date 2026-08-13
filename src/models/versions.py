@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-TaskKind = Literal["detection2d", "segmentation"]
+TaskKind = Literal["detection2d", "segmentation", "detection3d"]
 
 
 @dataclass(frozen=True, slots=True)

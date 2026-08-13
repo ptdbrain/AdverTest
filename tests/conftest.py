@@ -24,20 +24,23 @@ async def client(tmp_path, monkeypatch):
     runs_root = test_root / "runs"
     temp_root = test_root / "tmp"
     static_root = test_root / "data"
+    checkpoint_root = test_root / "checkpoints"
     database_path = test_root / "app.db"
 
-    for path in (artifact_root, runs_root, temp_root, static_root):
+    for path in (artifact_root, runs_root, temp_root, static_root, checkpoint_root):
         path.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.chdir(test_root)
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path.as_posix()}")
     monkeypatch.setenv("ARTIFACT_ROOT", str(artifact_root))
+    monkeypatch.setenv("DATA_ROOT", str(static_root))
+    monkeypatch.setenv("CHECKPOINT_ROOT", str(checkpoint_root))
     monkeypatch.setenv("RUNS_ROOT", str(runs_root))
     monkeypatch.setenv("TEMP", str(temp_root))
     monkeypatch.setenv("TMP", str(temp_root))
     monkeypatch.setenv("TMPDIR", str(temp_root))
-    monkeypatch.setenv("CORS_ORIGINS", "http://test")
+    monkeypatch.setenv("CORS_ORIGINS", "http://test,http://127.0.0.1:3000")
     get_settings.cache_clear()
 
     import src.api.routes as routes_module

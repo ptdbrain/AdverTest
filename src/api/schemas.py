@@ -121,6 +121,7 @@ class PerceptionModeOut(BaseModel):
     metric_labels: tuple[str, ...]
     runnable: bool
     blocked_reason: str | None = None
+    status: str = "ready"
 
 
 class RecipeValidationIn(BaseModel):
@@ -289,6 +290,7 @@ class QuickInferenceIn(BaseModel):
 
     upload_batch_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     model_version_id: str = Field(min_length=1, max_length=256)
+    task_id: Task | None = None
     recipe: AttackRecipe | None = None
     attacks: list[str] = Field(default_factory=list)
     severities: list[int] = Field(default_factory=lambda: [3])

@@ -13,7 +13,7 @@ export default function ConfigPanel({
   selectedModelVersion,
   selectedDataset,
   selectedAttacks,
-  severity,
+  recipe = { steps: [] },
   runOptions,
   isRunning,
   actions,
@@ -24,7 +24,7 @@ export default function ConfigPanel({
     setMode,
     setSelectedModelVersion,
     toggleAttack,
-    setSeverity,
+    updateAttackSeverity,
     handleRun,
     loadPreset,
     randomizeRecipe,
@@ -41,9 +41,8 @@ export default function ConfigPanel({
   const [sweepAttack, setSweepAttack] = useState("gaussian_noise");
   const [showUploadModal, setShowUploadModal] = useState(false);
 
-  const selectedMode = modes.find((item) => item.id === mode);
   const versions = modelVersions.filter((item) => item.task === mode);
-  const blocked = !selectedMode?.runnable || !modelVersions.find((item) => item.id === selectedModelVersion)?.runnable;
+  const blocked = !modelVersions.find((item) => item.id === selectedModelVersion)?.runnable;
 
   const handlePreviewCost = async () => {
     setWarningMessage("");
@@ -51,7 +50,7 @@ export default function ConfigPanel({
       const est = await previewRecipe({
           recipe: {
             name: "preview",
-            steps: selectedAttacks.map((atk, position) => ({ position, attack_name: atk, implementation_version: attacks.find((item) => item.name === atk)?.version || "1.0.0", severity, seed: runOptions?.seed ?? 42, expected_cost: 1 })),
+            steps: recipe.steps,
           },
           dataset_version_id: selectedDataset,
         });
@@ -165,19 +164,19 @@ export default function ConfigPanel({
             onChange={(e) => setMode(e.target.value)}
           >
             {modes.map((item) => (
-              <option key={item.id} value={item.id} disabled={!item.runnable}>
+              <option key={item.id} value={item.id} disabled={item.status === "coming_later"}>
                 {item.title}
-                {item.runnable ? "" : " (waiting)"}
+                {item.status === "coming_later" ? " (coming later)" : ""}
               </option>
             ))}
           </select>
         </div>
       </div>
 
-      {/* Model Version */}
+      {/* Checkpoint */}
       <div className="config-panel__section">
         <label className="config-panel__label" htmlFor="model-version">
-          Model Version
+          Checkpoint
         </label>
         <div className="select-wrapper">
           <select
@@ -265,19 +264,17 @@ export default function ConfigPanel({
         </div>
       </div>
 
-      {/* Severity Slider */}
+      {/* Every ordered recipe step owns its severity. */}
       <div className="config-panel__section">
-        <label className="config-panel__label">Severity</label>
-        <div className="severity-value">{severity}</div>
-        <input
-          aria-label="Severity"
-          type="range"
-          className="severity-slider__input"
-          min="1"
-          max="5"
-          value={severity}
-          onChange={(e) => setSeverity(Number(e.target.value))}
-        />
+        <label className="config-panel__label">Selected Recipe</label>
+        {recipe.steps.map((step) => (
+          <label key={`${step.position}-${step.attack_name}`} className="recipe-step">
+            <span>{step.attack_name.replace(/_/g, " ")}</span>
+            <span>Severity {step.severity}</span>
+            <input aria-label={`${step.attack_name} severity`} type="range" min="1" max="5" value={step.severity} onChange={(event) => updateAttackSeverity?.(step.position, Number(event.target.value))} />
+          </label>
+        ))}
+        {!recipe.steps.length && <small className="text-secondary">Add an attack to create a recipe step.</small>}
       </div>
 
       {/* Resource Estimate & Cost Preview Button */}

@@ -70,6 +70,7 @@ class SampleResult:
     model_checkpoint_hash: str | None = None
     recipe_hash: str | None = None
     recipe_steps: list[dict[str, Any]] = field(default_factory=list)
+    ground_truth: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -89,6 +90,7 @@ class SampleResult:
             "model_checkpoint_hash": self.model_checkpoint_hash,
             "recipe_hash": self.recipe_hash,
             "recipe_steps": self.recipe_steps,
+            "ground_truth": self.ground_truth,
         }
 
 

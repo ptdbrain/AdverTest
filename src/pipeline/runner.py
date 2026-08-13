@@ -24,7 +24,7 @@ from src.attacks import get_attack, load_attacks
 from src.attacks.recipes import AttackRecipe
 from src.attacks.base import AttackContext, BaseAttack
 from src.core.hashing import clean_key, sample_digest, stable_digest, variant_key
-from src.core.types import COST_WEIGHT, ModelInfo, Prediction, Sample
+from src.core.types import COST_WEIGHT, ModelInfo, Prediction, Sample, Task
 from src.datasets import get_dataset
 from src.datasets.base import DatasetSource
 from src.evaluation.detection_metrics import (
@@ -49,6 +49,7 @@ class RunConfig(BaseModel):
 
     model: str = "blob_detector"
     model_version_id: str | None = None
+    task_id: Task | None = None
     dataset_version_id: str | None = None
     benchmark_protocol_id: str | None = None
     recipe: AttackRecipe | None = None
@@ -383,6 +384,7 @@ class TestRunner:
                         attack_version=attack.version,
                         attack_params=attack.param_dict(),
                         model_checkpoint_hash=adapter.metadata().checkpoint_hash,
+                        ground_truth=_ground_truth_payload(clean_sample),
                     )
                 )
             if on_cell:
@@ -410,7 +412,7 @@ class TestRunner:
         report.provenance["recipe"] = recipe.model_dump(mode="json")
         for clean_sample, variant, clean_prediction, attacked_prediction, composition in zip(samples, final_variants, clean_predictions, final_predictions, results, strict=True):
             paths = evidence.write(attack=recipe.recipe_id, severity=recipe.steps[-1].severity, clean=clean_sample, attacked=variant, clean_prediction=clean_prediction, attacked_prediction=attacked_prediction) if evidence else {}
-            report.sample_results.append(SampleResult(sample_id=clean_sample.sample_id, attack=recipe.recipe_id, severity=recipe.steps[-1].severity, clean_prediction=prediction_payload(clean_prediction), attacked_prediction=prediction_payload(attacked_prediction), clean_image_path=paths.get("clean_image"), attacked_image_path=paths.get("attacked_image"), clean_prediction_path=paths.get("clean_prediction"), attacked_prediction_path=paths.get("attacked_prediction"), object_evidence=[detail.as_dict() for detail in per_object_detection_comparison([clean_prediction], [attacked_prediction], [clean_sample], iou_threshold=config.iou_threshold, confidence_threshold=config.confidence_threshold)], degradation_hint=_sample_degradation_hint(clean_prediction, attacked_prediction), attack_version=recipe.steps[-1].implementation_version, attack_params=recipe.steps[-1].parameters, model_checkpoint_hash=adapter.metadata().checkpoint_hash, recipe_hash=recipe.recipe_hash, recipe_steps=[record.model_dump(mode="json") for record in composition.step_records]))
+            report.sample_results.append(SampleResult(sample_id=clean_sample.sample_id, attack=recipe.recipe_id, severity=recipe.steps[-1].severity, clean_prediction=prediction_payload(clean_prediction), attacked_prediction=prediction_payload(attacked_prediction), clean_image_path=paths.get("clean_image"), attacked_image_path=paths.get("attacked_image"), clean_prediction_path=paths.get("clean_prediction"), attacked_prediction_path=paths.get("attacked_prediction"), object_evidence=[detail.as_dict() for detail in per_object_detection_comparison([clean_prediction], [attacked_prediction], [clean_sample], iou_threshold=config.iou_threshold, confidence_threshold=config.confidence_threshold)], degradation_hint=_sample_degradation_hint(clean_prediction, attacked_prediction), attack_version=recipe.steps[-1].implementation_version, attack_params=recipe.steps[-1].parameters, model_checkpoint_hash=adapter.metadata().checkpoint_hash, recipe_hash=recipe.recipe_hash, recipe_steps=[record.model_dump(mode="json") for record in composition.step_records], ground_truth=_ground_truth_payload(clean_sample)))
 
     def _attack_sample(
         self,
@@ -578,6 +580,18 @@ def _sample_degradation_hint(clean: Prediction, attacked: Prediction) -> float:
     if clean_score <= 0.0:
         return 0.0
     return max(0.0, (clean_score - attacked_score) / clean_score)
+
+
+def _ground_truth_payload(sample: Sample) -> dict[str, Any]:
+    return {
+        "type": "boxes",
+        "image_width": int(sample.image.shape[1]),
+        "image_height": int(sample.image.shape[0]),
+        "objects": [
+            {"object_id": f"{sample.sample_id}:{index}", "label": box.label, "xyxy": list(box.as_tuple())}
+            for index, box in enumerate(sample.boxes)
+        ],
+    }
 
 
 def _model_cache_identity(info: ModelInfo) -> str:

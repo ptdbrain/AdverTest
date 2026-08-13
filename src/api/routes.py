@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import uuid
@@ -67,6 +68,7 @@ from src.datasets.folder import FolderDataset
 from src.datasets.versioning import DatasetIngestor, IngestConfig
 from src.evaluation.export import export_comparison
 from src.models import list_known_versions, scan_model_artifacts
+from src.models.families import FAMILIES, adapter_request
 from src.pipeline import RunConfig, TestRunner
 from src.services.person_d import PersonDServices
 from src.training.contracts import DefenseProfile, TrainingRunConfig
@@ -126,7 +128,7 @@ async def upload_image(request: Request) -> dict[str, Any]:
     if not batch_id or not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", batch_id):
         batch_id = f"batch-{uuid.uuid4().hex[:12]}"
 
-    target_dir = _store.path.parent / "uploads" / batch_id
+    target_dir = _upload_root() / batch_id
     images_dir = target_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
     stored = images_dir / f"{uuid.uuid4().hex[:12]}-{filename}"
@@ -163,6 +165,67 @@ async def upload_image(request: Request) -> dict[str, Any]:
     }
 
 
+@router.post("/checkpoints/uploads", status_code=201)
+async def upload_checkpoint(request: Request) -> dict[str, Any]:
+    """Persist an untrusted checkpoint for a separate validation worker.
+
+    No model deserialization happens in the request process; a checkpoint is
+    deliberately non-runnable until its validator records a READY result.
+    """
+    filename = Path(request.headers.get("x-filename", "checkpoint.pt")).name
+    task_id = request.headers.get("x-task-id", "")
+    family_id = request.headers.get("x-model-family-id", "")
+    display_name = request.headers.get("x-display-name", filename)
+    family = FAMILIES.get(family_id)
+    if family is None or task_id not in family.supported_tasks:
+        raise HTTPException(status_code=422, detail={"code": "MODEL_FAMILY_TASK_MISMATCH"})
+    if Path(filename).suffix.lower() not in family.checkpoint_extensions:
+        raise HTTPException(status_code=422, detail={"code": "CHECKPOINT_EXTENSION_INVALID"})
+    checkpoint_id = f"checkpoint-{uuid.uuid4().hex[:16]}"
+    target_root = Path(get_settings().checkpoint_root).expanduser().resolve() / "uploaded"
+    target_root.mkdir(parents=True, exist_ok=True)
+    target = target_root / f"{checkpoint_id}-{filename}"
+    digest = hashlib.sha256()
+    total = 0
+    with target.open("xb") as stream:
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > 4 * 1024 * 1024 * 1024:
+                target.unlink(missing_ok=True)
+                raise HTTPException(status_code=422, detail={"code": "CHECKPOINT_TOO_LARGE"})
+            digest.update(chunk)
+            stream.write(chunk)
+    if total == 0:
+        target.unlink(missing_ok=True)
+        raise HTTPException(status_code=422, detail={"code": "CHECKPOINT_EMPTY"})
+    payload = {
+        "checkpoint_id": checkpoint_id,
+        "display_name": display_name[:128],
+        "task_id": task_id,
+        "family_id": family_id,
+        "storage_path": str(target),
+        "sha256": digest.hexdigest(),
+        "bytes": total,
+        "status": "PENDING_VALIDATION",
+        "parent_checkpoint_id": request.headers.get("x-parent-checkpoint-id"),
+        "validation": {"state": "PENDING", "reason": "Validation runs outside the API request process."},
+    }
+    return _store.put_record("checkpoint", checkpoint_id, payload)
+
+
+@router.get("/checkpoints")
+async def list_checkpoints() -> list[dict[str, Any]]:
+    return _store.list_records("checkpoint")
+
+
+@router.get("/checkpoints/{checkpoint_id}")
+async def get_checkpoint(checkpoint_id: str) -> dict[str, Any]:
+    checkpoint = _store.get_record("checkpoint", checkpoint_id)
+    if checkpoint is None:
+        raise HTTPException(status_code=404, detail="CHECKPOINT_UNKNOWN")
+    return checkpoint
+
+
 @router.post("/datasets/import", status_code=201)
 async def import_dataset(body: DatasetImportIn) -> dict[str, Any]:
     """Version an explicitly supplied, annotated local folder without copying it."""
@@ -174,7 +237,7 @@ async def import_dataset(body: DatasetImportIn) -> dict[str, Any]:
         anonymization_manifest=body.anonymization_manifest, max_samples=body.max_samples,
     )
     source.require_anonymized()
-    version = DatasetIngestor(_store.path.parent / "dataset-versions").ingest(
+    version = DatasetIngestor(_dataset_root() / "versions").ingest(
         source, IngestConfig(name=body.name, logical_source_id=body.logical_source_id,
                              metadata={"input_format": body.input_format}),
     )
@@ -828,7 +891,7 @@ async def list_perception_modes() -> list[PerceptionModeOut]:
     return [
         PerceptionModeOut(
             id="detection2d",
-            title="2D Object Detection, YOLO11",
+            title="2D Object Detection",
             metric_labels=(
                 "Clean Detection Score",
                 "Score After Attack",
@@ -840,7 +903,7 @@ async def list_perception_modes() -> list[PerceptionModeOut]:
         ),
         PerceptionModeOut(
             id="segmentation",
-            title="Object Segmentation, SAM2",
+            title="Instance Segmentation",
             metric_labels=(
                 "Clean Mask Accuracy",
                 "Mask Accuracy After Attack",
@@ -850,6 +913,14 @@ async def list_perception_modes() -> list[PerceptionModeOut]:
             ),
             runnable=bool(sam and sam.runnable),
             blocked_reason=None if sam and sam.runnable else "WAITING_FOR_ARTIFACTS",
+        ),
+        PerceptionModeOut(
+            id="detection3d",
+            title="3D Object Detection",
+            metric_labels=(),
+            runnable=False,
+            blocked_reason="COMING_LATER",
+            status="coming_later",
         ),
     ]
 
@@ -907,8 +978,8 @@ async def create_run(config: RunConfig) -> RunJobOut:
 @router.post("/inference-experiments", status_code=202, response_model=RunJobOut)
 async def create_inference_experiment(body: QuickInferenceIn) -> RunJobOut:
     """Queue a qualitative raw-upload experiment without manufacturing AP/mAP."""
-    batch_root = (_store.path.parent / "uploads" / body.upload_batch_id).resolve()
-    uploads_root = (_store.path.parent / "uploads").resolve()
+    batch_root = (_upload_root() / body.upload_batch_id).resolve()
+    uploads_root = _upload_root()
     if uploads_root not in batch_root.parents or not (batch_root / "images").is_dir():
         raise HTTPException(status_code=404, detail="UPLOAD_BATCH_UNKNOWN")
     version = next(
@@ -919,6 +990,7 @@ async def create_inference_experiment(body: QuickInferenceIn) -> RunJobOut:
         raise HTTPException(status_code=409, detail="WAITING_FOR_ARTIFACTS")
     config = RunConfig(
         model_version_id=version.id,
+        task_id=body.task_id or version.task,
         dataset="folder_dataset",
         dataset_params={"root": str(batch_root), "input_format": "advertest"},
         recipe=body.recipe,
@@ -1462,6 +1534,18 @@ def _registered_model_versions() -> list[Any]:
     return sorted(versions.values(), key=lambda item: item.id)
 
 
+def _upload_root() -> Path:
+    root = Path(get_settings().data_root).expanduser().resolve() / "uploads"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _dataset_root() -> Path:
+    root = Path(get_settings().data_root).expanduser().resolve() / "datasets"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
 def _resolve_run_config(config: RunConfig) -> RunConfig:
     """Resolve a product ModelVersion server-side; browsers never receive weight paths."""
     if not config.model_version_id:
@@ -1472,21 +1556,29 @@ def _resolve_run_config(config: RunConfig) -> RunConfig:
     )
     if version is None:
         raise HTTPException(status_code=404, detail={"code": "MODEL_VERSION_UNKNOWN", "model_version_id": config.model_version_id})
+    if config.task_id is not None and config.task_id != version.task:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "MODEL_FAMILY_TASK_MISMATCH",
+                "task_id": config.task_id,
+                "model_version_id": config.model_version_id,
+                "model_task": version.task,
+            },
+        )
     if not version.runnable or not version.checkpoint_path:
         raise HTTPException(status_code=409, detail={"code": "MODEL_NOT_RUNNABLE", "model_version_id": config.model_version_id, "reason": version.blocked_reason})
     checkpoint = Path(version.checkpoint_path).resolve()
     if not checkpoint.is_file():
         raise HTTPException(status_code=409, detail={"code": "CHECKPOINT_MISSING", "model_version_id": config.model_version_id})
     settings = get_settings()
-    return config.model_copy(update={
-        "model": "yolo11" if version.model_name.startswith("yolo") else version.model_name,
-        "adapter_params": {
-            "weights": str(checkpoint),
-            "device": settings.model_device,
-            "batch_size": settings.model_batch_size,
-            "half": settings.model_half_precision and settings.model_device.startswith("cuda"),
-        },
-    })
+    try:
+        adapter_name, adapter_params = adapter_request(
+            version, checkpoint=str(checkpoint), config=config, settings=settings
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={"code": str(exc), "model_version_id": config.model_version_id}) from exc
+    return config.model_copy(update={"model": adapter_name, "adapter_params": adapter_params, "task_id": version.task})
 
 
 def _comparison_signature(report: dict[str, Any]) -> dict[str, Any]:

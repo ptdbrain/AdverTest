@@ -211,12 +211,24 @@ async def test_quick_inference_accepts_the_runnable_catalog_model_id(client, mon
     response = await client.post("/api/v1/inference-experiments", json={
         "upload_batch_id": "batch-catalog-model",
         "model_version_id": model_id,
+        "task_id": "segmentation",
         "attacks": ["gaussian_noise"],
+    })
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "MODEL_FAMILY_TASK_MISMATCH"
+
+    response = await client.post("/api/v1/inference-experiments", json={
+        "upload_batch_id": "batch-catalog-model",
+        "model_version_id": model_id,
+        "task_id": "detection2d",
+        "attacks": ["gaussian_noise"],
+        "confidence_threshold": 0.61,
     })
     assert response.status_code == 202
     assert enqueued[0].model_version_id == model_id
     assert enqueued[0].model == "yolo11"
     assert enqueued[0].adapter_params["weights"] == str(actual_checkpoint.resolve())
+    assert enqueued[0].adapter_params["score_threshold"] == 0.61
 
 
 @pytest.mark.asyncio

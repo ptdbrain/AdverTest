@@ -1,6 +1,6 @@
-export default function EvidenceStage({ title, description, children }) {
+export default function EvidenceStage({ title, description, children, className = "" }) {
   return (
-    <section className="evidence-stage" aria-label={title}>
+    <section className={`evidence-stage ${className}`} aria-label={title}>
       <header>
         <p className="evidence-stage__eyebrow">Evidence stage</p>
         <h2>{title}</h2>

@@ -5,9 +5,23 @@ import Image from "next/image";
 
 import EvidenceStage from "@/components/EvidenceStage";
 import FiveMetrics from "@/components/FiveMetrics";
-import SamWaitingState from "@/components/SamWaitingState";
 
-function EvidenceImage({ src, alt, unavailableTitle, unavailableDetail }) {
+function GroundTruthOverlay({ groundTruth }) {
+  if (groundTruth?.type !== "boxes" || !groundTruth.objects?.length) return null;
+  const width = Number(groundTruth.image_width) || 1;
+  const height = Number(groundTruth.image_height) || 1;
+  return (
+    <svg className="evidence-media__ground-truth" aria-label="Ground truth overlay" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+      {groundTruth.objects.map((object, index) => {
+        const [x1, y1, x2, y2] = object.xyxy ?? [];
+        if (![x1, y1, x2, y2].every(Number.isFinite)) return null;
+        return <g key={object.object_id ?? index}><rect x={x1} y={y1} width={Math.max(0, x2 - x1)} height={Math.max(0, y2 - y1)} /><text x={x1} y={Math.max(14, y1 - 4)}>{object.label ?? "object"}</text></g>;
+      })}
+    </svg>
+  );
+}
+
+function EvidenceImage({ src, alt, unavailableTitle, unavailableDetail, groundTruth }) {
   if (!src) {
     return (
       <div className="evidence-media__empty">
@@ -27,6 +41,7 @@ function EvidenceImage({ src, alt, unavailableTitle, unavailableDetail }) {
         unoptimized
         className="evidence-media__image"
       />
+      <GroundTruthOverlay groundTruth={groundTruth} />
     </div>
   );
 }
@@ -47,8 +62,6 @@ export default function Workspace({ report, samples, mode }) {
   const perObjectFailures = sample?.per_object_failures ?? sample?.object_evidence ?? [];
   const config = report?.provenance?.run_config ?? {};
 
-  if (mode === "segmentation") return <SamWaitingState />;
-
   return (
     <div className="workspace">
       {normalizedSamples.length > 1 && (
@@ -63,16 +76,16 @@ export default function Workspace({ report, samples, mode }) {
           </select>
         </div>
       )}
-      <EvidenceStage title="Input and ground truth" description="Source image and reviewed bounding-box labels.">
-        <EvidenceImage src={artifacts.clean_input_url} alt="Clean input" unavailableTitle="Source input unavailable" unavailableDetail="The backend did not return a source artifact for this sample." />
+      <EvidenceStage className="evidence-stage--source" title="Input and ground truth" description="Source image and reviewed bounding-box labels.">
+        <EvidenceImage src={artifacts.clean_input_url} alt="Clean input" unavailableTitle="Source input unavailable" unavailableDetail="The backend did not return a source artifact for this sample." groundTruth={sample?.ground_truth} />
       </EvidenceStage>
-      <EvidenceStage title="Attacked input" description={attack ? `${attack.attack}, severity ${attack.severity}, paired with the same source sample.` : "Recipe evidence will appear after a completed run."}>
+      <EvidenceStage className="evidence-stage--attacked" title="Attacked input" description={attack ? `${attack.attack}, severity ${attack.severity}, paired with the same source sample.` : "Recipe evidence will appear after a completed run."}>
         <EvidenceImage src={artifacts.attacked_input_url} alt="Attacked input" unavailableTitle="Attacked input unavailable" unavailableDetail="The backend did not return an attacked input artifact." />
       </EvidenceStage>
-      <EvidenceStage title="Clean model prediction" description="Prediction before perturbation, evaluated against the locked ground truth.">
+      <EvidenceStage className="evidence-stage--clean-pred" title="Clean model prediction" description="Prediction before perturbation, evaluated against the locked ground truth.">
         <EvidenceImage src={artifacts.clean_prediction_url} alt="Clean prediction" unavailableTitle="Clean prediction unavailable" unavailableDetail="The backend did not return a rendered clean prediction artifact." />
       </EvidenceStage>
-      <EvidenceStage title="Attacked model prediction" description="Paired prediction after the final ordered recipe step.">
+      <EvidenceStage className="evidence-stage--attacked-pred" title="Attacked model prediction" description="Paired prediction after the final ordered recipe step.">
         <EvidenceImage src={artifacts.attacked_prediction_url} alt="Attacked prediction" unavailableTitle="Attacked prediction unavailable" unavailableDetail="The backend did not return a rendered attacked prediction artifact." />
       </EvidenceStage>
 
