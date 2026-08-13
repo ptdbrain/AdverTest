@@ -4,7 +4,7 @@ import {
   createRun, createInferenceExperiment, getRun, getRunReport, getRunSamples, connectRunWebSocket, triggerAutoFlag, cancelRun,
   createRetrainingBacklog, addRetrainingBacklogItem,
   estimateRun, preflightRun, randomizeRecipe as randomizeRecipeRequest,
-  sweepRecipe as sweepRecipeRequest, previewRecipe as previewRecipeRequest, getRecipePresets,
+  sweepRecipe as sweepRecipeRequest, previewRecipe as previewRecipeRequest, getRecipePresets, createModelComparison,
 } from "@/lib/api";
 
 const TERMINAL_STATES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
@@ -53,11 +53,13 @@ export function useAdverTest() {
   const [isCreatingBacklog, setIsCreatingBacklog] = useState(false);
   const [activeTab, setActiveTab] = useState("evidence");
   const [defenceBaselineRunId, setDefenceBaselineRunId] = useState(null);
+  const [defenceComparison, setDefenceComparison] = useState(null);
   const [recipe, setRecipe] = useState({ name: "manual", steps: [] });
   const [recipePresets, setRecipePresets] = useState([]);
   const wsRef = useRef(null);
   const pollRef = useRef(null);
   const finalizedRef = useRef(false);
+  const defenceBaselineRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,6 +185,9 @@ export function useAdverTest() {
     setBaseCheckpoints(checkpoints);
     setSelectedModelVersion((current) => checkpoints.some((item) => item.id === current) ? current : (checkpoints[0]?.id || ""));
   }, [mode, selectedModelFamily]);
+  const refreshDefenceCheckpoints = useCallback(async () => {
+    setDefenceCheckpoints(await getDefenceCheckpoints(mode));
+  }, [mode]);
   const setRunOptions = useCallback((changes) => setRunOptionsState((current) => ({ ...current, ...changes })), []);
   const toggleAttack = useCallback((name) => {
     const metadata = attacks.find((item) => item.name === name);
@@ -232,6 +237,10 @@ export function useAdverTest() {
       const [completedReport, rawSamples] = await Promise.all([getRunReport(id), getRunSamples(id)]);
       setReport(completedReport);
       setSamples(normalizeSamples(rawSamples));
+      if (defenceBaselineRef.current && defenceBaselineRef.current !== id) {
+        try { setDefenceComparison(await createModelComparison(defenceBaselineRef.current, id)); }
+        catch (error) { console.warn("Defence comparison is unavailable:", error); }
+      }
       setProgressDetail("Done!");
       setResultLoadStatus("ready");
       triggerAutoFlag(id, 30).catch(console.warn);
@@ -315,7 +324,7 @@ export function useAdverTest() {
 
   const runDefence = useCallback(async (checkpointId) => {
     if (!runId || !checkpointId) return;
-    setDefenceBaselineRunId(runId);
+    setDefenceBaselineRunId(runId); defenceBaselineRef.current = runId; setDefenceComparison(null);
     setIsRunning(true); setRunStatus("PREFLIGHT"); setProgress(0); setProgressDetail("Locking the base-run protocol for Defence...");
     try {
       const job = await createDefenceRun(runId, checkpointId);
@@ -368,5 +377,5 @@ export function useAdverTest() {
 
   useEffect(() => () => { wsRef.current?.close(); if (pollRef.current) clearInterval(pollRef.current); }, []);
   const version = baseCheckpoints.find((item) => item.id === selectedModelVersion);
-  return { state: { attacks, models, datasets, modelVersions, modelFamilies, baseCheckpoints, defenceCheckpoints, modes, recipePresets, recipe, loading, selectedDataset, selectedAttacks, mode, selectedModelFamily, selectedModelVersion, runOptions, runId, runStatus, progress, progressDetail, resultLoadStatus, resultLoadError, report, samples, isRunning, backlog, backlogError, isCreatingBacklog, trainingBlockedReason: version?.runnable ? "" : "WAITING_FOR_ARTIFACTS", activeTab, defenceBaselineRunId }, actions: { setSelectedDataset, addDataset, setMode, setModelFamily, setSelectedModelVersion, setRunOptions, refreshBaseCheckpoints, toggleAttack, updateAttackSeverity, handleRun, runDefence, createBacklog, setActiveTab, loadPreset, randomizeRecipe, sweepRecipe, previewRecipe, retryEvidence, cancelRun: cancelRunAction } };
+  return { state: { attacks, models, datasets, modelVersions, modelFamilies, baseCheckpoints, defenceCheckpoints, modes, recipePresets, recipe, loading, selectedDataset, selectedAttacks, mode, selectedModelFamily, selectedModelVersion, runOptions, runId, runStatus, progress, progressDetail, resultLoadStatus, resultLoadError, report, samples, isRunning, backlog, backlogError, isCreatingBacklog, trainingBlockedReason: version?.runnable ? "" : "WAITING_FOR_ARTIFACTS", activeTab, defenceBaselineRunId, defenceComparison }, actions: { setSelectedDataset, addDataset, setMode, setModelFamily, setSelectedModelVersion, setRunOptions, refreshBaseCheckpoints, refreshDefenceCheckpoints, toggleAttack, updateAttackSeverity, handleRun, runDefence, createBacklog, setActiveTab, loadPreset, randomizeRecipe, sweepRecipe, previewRecipe, retryEvidence, cancelRun: cancelRunAction } };
 }

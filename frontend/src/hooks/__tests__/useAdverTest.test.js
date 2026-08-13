@@ -10,6 +10,7 @@ vi.mock("@/lib/api", () => ({
   getBaseCheckpoints: vi.fn().mockResolvedValue([{ id: "yolo11s-base", task: "detection2d", model_family_id: "yolo11", runnable: true }]),
   getDefenceCheckpoints: vi.fn().mockResolvedValue([]),
   createDefenceRun: vi.fn(),
+  createModelComparison: vi.fn(),
   getPerceptionModes: vi.fn().mockResolvedValue([{ id: "detection2d", title: "2D Object Detection", runnable: true }]),
   getRecipePresets: vi.fn().mockResolvedValue([]),
   createRetrainingBacklog: vi.fn().mockResolvedValue({ id: "backlog-1" }),
