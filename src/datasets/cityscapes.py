@@ -29,6 +29,9 @@ class CityscapesSegmentationDataset(DatasetSource):
     owner: ClassVar[str] = "group-c"
     loader_version: ClassVar[str] = "cityscapes-sam2-v1"
     params_model: ClassVar[type[DatasetParams]] = CityscapesParams
+    task_id: ClassVar[str] = "segmentation"
+    input_schema: ClassVar[tuple[str, ...]] = ("image",)
+    annotation_schema: ClassVar[tuple[str, ...]] = ("instance_masks", "polygons", "class_labels")
 
     def __init__(self, **params: object) -> None:
         super().__init__(**params)

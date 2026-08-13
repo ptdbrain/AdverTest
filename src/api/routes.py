@@ -12,9 +12,8 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, UnidentifiedImageError
-
 from fastapi import APIRouter, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
+from PIL import Image, UnidentifiedImageError
 
 from src.adapters import load_adapters
 from src.api.generated_dataset_service import GeneratedDatasetService
@@ -39,6 +38,7 @@ from src.api.schemas import (
     LineageGraphOut,
     ModelCatalogItem,
     ModelComparisonIn,
+    ModelFamilyOut,
     ModelVersionOut,
     PerceptionModeOut,
     PreflightOut,
@@ -61,13 +61,13 @@ from src.api.training_service import TrainingJobService
 from src.api.workflow_store import WorkflowJobStore
 from src.attacks import ATTACK_CATALOG, load_attacks
 from src.attacks.recipes import RecipeBuilder
-from src.config import get_settings
+from src.config import PROJECT_ROOT, get_settings
 from src.core.hashing import stable_digest
 from src.datasets import load_datasets
 from src.datasets.folder import FolderDataset
 from src.datasets.versioning import DatasetIngestor, IngestConfig
 from src.evaluation.export import export_comparison
-from src.models import list_known_versions, scan_model_artifacts
+from src.models import list_known_versions, scan_base_checkpoints, scan_model_artifacts
 from src.models.families import FAMILIES, adapter_request
 from src.pipeline import RunConfig, TestRunner
 from src.services.person_d import PersonDServices
@@ -114,6 +114,9 @@ def _validate_uploaded_image(payload: bytes) -> tuple[str, tuple[int, int]]:
 @router.post("/uploads/images", status_code=201)
 async def upload_image(request: Request) -> dict[str, Any]:
     """Store one user-supplied image; clients may send raw bytes, no multipart needed."""
+    task_id = request.headers.get("x-task-id", "detection2d")
+    if task_id != "detection2d":
+        raise HTTPException(status_code=422, detail={"code": "ANNOTATIONS_REQUIRED", "task_id": task_id, "message": "raw image upload is only a 2D detection quick-inference contract"})
     filename = request.headers.get("x-filename", "upload.bin")
     filename = Path(filename).name
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", filename):
@@ -162,6 +165,9 @@ async def upload_image(request: Request) -> dict[str, Any]:
             "root": str(target_dir),
             "input_format": "advertest",
         },
+        "task_id": task_id,
+        "input_schema": ["image"],
+        "annotation_schema": [],
     }
 
 
@@ -230,6 +236,8 @@ async def get_checkpoint(checkpoint_id: str) -> dict[str, Any]:
 async def import_dataset(body: DatasetImportIn) -> dict[str, Any]:
     """Version an explicitly supplied, annotated local folder without copying it."""
     root = Path(body.root).expanduser().resolve()
+    if body.task_id != "detection2d":
+        raise HTTPException(status_code=422, detail={"code": "TASK_DATASET_MISMATCH", "task_id": body.task_id, "dataset_task_id": "detection2d", "message": "folder import accepts only image plus 2D boxes"})
     if not root.is_dir():
         raise HTTPException(status_code=422, detail={"code": "DATASET_ROOT_MISSING", "message": "dataset root does not exist"})
     source = FolderDataset(
@@ -239,7 +247,7 @@ async def import_dataset(body: DatasetImportIn) -> dict[str, Any]:
     source.require_anonymized()
     version = DatasetIngestor(_dataset_root() / "versions").ingest(
         source, IngestConfig(name=body.name, logical_source_id=body.logical_source_id,
-                             metadata={"input_format": body.input_format}),
+                             metadata={"input_format": body.input_format, "task_id": body.task_id}),
     )
     payload = version.model_dump(mode="json")
     payload["generation_source"] = {
@@ -258,6 +266,9 @@ async def import_dataset(body: DatasetImportIn) -> dict[str, Any]:
             "max_samples": body.max_samples,
         },
         "anonymized": True,
+        "task_id": body.task_id,
+        "input_schema": ["image"],
+        "annotation_schema": ["boxes2d", "class_labels"],
         "annotation_status": "VALIDATED",
         "benchmark_ready": True,
     }
@@ -805,9 +816,18 @@ async def list_attacks(
     group: str | None = Query(default=None, min_length=1, max_length=1),
     cost_class: str | None = None,
     modality: str | None = None,
+    task_id: str | None = None,
+    threat_model: str | None = None,
+    attack_type: str | None = None,
+    scenario_kind: str | None = None,
 ) -> list[AttackCatalogItem]:
     items = [attack.describe() for attack in load_attacks().values()]
     for field, wanted in (("group", group), ("cost_class", cost_class), ("modality", modality)):
+        if wanted is not None:
+            items = [item for item in items if item[field] == wanted]
+    if task_id is not None:
+        items = [item for item in items if task_id in item["task_ids"]]
+    for field, wanted in (("threat_model", threat_model), ("attack_type", attack_type), ("scenario_kind", scenario_kind)):
         if wanted is not None:
             items = [item for item in items if item[field] == wanted]
     return [AttackCatalogItem(**item) for item in items]
@@ -823,6 +843,33 @@ async def list_model_versions() -> list[ModelVersionOut]:
     """Expose discovered local checkpoints with lineage and safety status."""
     versions = _registered_model_versions()
     return [ModelVersionOut.from_domain(version) for version in versions]
+
+
+@router.get("/model-families", response_model=list[ModelFamilyOut])
+async def list_model_families(task_id: str = Query(...)) -> list[ModelFamilyOut]:
+    """Families are filtered by perception task; weights are selected later."""
+    return [ModelFamilyOut(
+        id=family.id,
+        display_name=family.display_name,
+        supported_tasks=sorted(family.supported_tasks),
+        checkpoint_extensions=sorted(family.checkpoint_extensions),
+        runnable=family.runnable,
+        blocked_reason=family.blocked_reason,
+    ) for family in FAMILIES.values() if task_id in family.supported_tasks]
+
+
+@router.get("/base-checkpoints", response_model=list[ModelVersionOut])
+async def list_base_checkpoints(
+    task_id: str = Query(...), model_family_id: str = Query(...),
+) -> list[ModelVersionOut]:
+    return [ModelVersionOut.from_domain(version) for version in _registered_model_versions()
+            if version.task == task_id and version.model_family_id == model_family_id and version.checkpoint_role == "base"]
+
+
+@router.get("/defence-checkpoints", response_model=list[ModelVersionOut])
+async def list_defence_checkpoints(task_id: str = Query(...)) -> list[ModelVersionOut]:
+    return [ModelVersionOut.from_domain(version) for version in _registered_model_versions()
+            if version.task == task_id and version.checkpoint_role != "base"]
 
 
 @router.get("/model-versions/{version_id}", response_model=ModelVersionOut)
@@ -949,8 +996,11 @@ async def validate_recipe(body: RecipeValidationIn) -> RecipeValidationOut:
 
 
 @router.get("/catalog/datasets", response_model=list[DatasetCatalogItem])
-async def list_datasets() -> list[DatasetCatalogItem]:
-    return [DatasetCatalogItem(**dataset.describe()) for dataset in load_datasets().values()]
+async def list_datasets(task_id: str | None = Query(default=None)) -> list[DatasetCatalogItem]:
+    items = [dataset.describe() for dataset in load_datasets().values()]
+    if task_id is not None:
+        items = [item for item in items if item["task_id"] == task_id]
+    return [DatasetCatalogItem(**item) for item in items]
 
 
 @router.post("/runs/estimate", response_model=CostEstimateOut)
@@ -982,15 +1032,11 @@ async def create_inference_experiment(body: QuickInferenceIn) -> RunJobOut:
     uploads_root = _upload_root()
     if uploads_root not in batch_root.parents or not (batch_root / "images").is_dir():
         raise HTTPException(status_code=404, detail="UPLOAD_BATCH_UNKNOWN")
-    version = next(
-        (item for item in _registered_model_versions() if item.id == body.model_version_id),
-        None,
-    )
-    if version is None or not version.runnable or not version.checkpoint_path:
-        raise HTTPException(status_code=409, detail="WAITING_FOR_ARTIFACTS")
     config = RunConfig(
-        model_version_id=version.id,
-        task_id=body.task_id or version.task,
+        model_version_id=body.model_version_id,
+        model_family_id=body.model_family_id,
+        checkpoint_id=body.checkpoint_id,
+        task_id=body.task_id,
         dataset="folder_dataset",
         dataset_params={"root": str(batch_root), "input_format": "advertest"},
         recipe=body.recipe,
@@ -1019,6 +1065,15 @@ async def list_runs() -> list[RunJobOut]:
 @router.get("/runs/{run_id}", response_model=RunJobOut)
 async def get_run(run_id: str) -> RunJobOut:
     return _job_out(_require_run(run_id))
+
+
+@router.get("/runs/{run_id}/defence-candidates", response_model=list[ModelVersionOut])
+async def run_defence_candidates(run_id: str) -> list[ModelVersionOut]:
+    """Fine-tuned/repaired weights are visible only after an attack run."""
+    run = _require_run(run_id)
+    task_id = (run.get("config") or {}).get("task_id", "detection2d")
+    return [ModelVersionOut.from_domain(version) for version in _registered_model_versions()
+            if version.task == task_id and version.checkpoint_role != "base"]
 
 
 @router.get("/runs/{run_id}/report", response_model=RunReportOut)
@@ -1521,6 +1576,8 @@ def _registered_model_versions() -> list[Any]:
     placeholders = list_known_versions()
     by_role = {str(item.training_metadata.get("role", "")): item for item in placeholders}
     versions = {item.id: item for item in placeholders}
+    for base in scan_base_checkpoints(PROJECT_ROOT / "checkpoints"):
+        versions[base.id] = base
     for discovered in scan_model_artifacts(Path(get_settings().runs_root)):
         placeholder = by_role.get(str(discovered.training_metadata.get("role", "")))
         if placeholder:
@@ -1529,6 +1586,8 @@ def _registered_model_versions() -> list[Any]:
                 id=placeholder.id,
                 parent_id=placeholder.parent_id,
                 parent_lineage=placeholder.parent_lineage,
+                model_family_id=placeholder.model_family_id,
+                checkpoint_role=placeholder.checkpoint_role,
             )
         versions[discovered.id] = discovered
     return sorted(versions.values(), key=lambda item: item.id)
@@ -1548,14 +1607,17 @@ def _dataset_root() -> Path:
 
 def _resolve_run_config(config: RunConfig) -> RunConfig:
     """Resolve a product ModelVersion server-side; browsers never receive weight paths."""
-    if not config.model_version_id:
+    checkpoint_id = config.checkpoint_id or config.model_version_id
+    if not checkpoint_id:
         return config
     version = next(
-        (item for item in _registered_model_versions() if item.id == config.model_version_id),
+        (item for item in _registered_model_versions() if item.id == checkpoint_id),
         None,
     )
     if version is None:
-        raise HTTPException(status_code=404, detail={"code": "MODEL_VERSION_UNKNOWN", "model_version_id": config.model_version_id})
+        raise HTTPException(status_code=404, detail={"code": "CHECKPOINT_UNKNOWN", "checkpoint_id": checkpoint_id})
+    if config.model_family_id is not None and config.model_family_id != version.model_family_id:
+        raise HTTPException(status_code=422, detail={"code": "CHECKPOINT_FAMILY_MISMATCH", "model_family_id": config.model_family_id, "checkpoint_id": checkpoint_id})
     if config.task_id is not None and config.task_id != version.task:
         raise HTTPException(
             status_code=422,
@@ -1566,6 +1628,19 @@ def _resolve_run_config(config: RunConfig) -> RunConfig:
                 "model_task": version.task,
             },
         )
+    if version.checkpoint_role != "base":
+        raise HTTPException(status_code=422, detail={"code": "DEFENCE_CHECKPOINT_NOT_ALLOWED_IN_ATTACK", "checkpoint_id": checkpoint_id, "checkpoint_role": version.checkpoint_role})
+    try:
+        dataset_cls = load_datasets().get(config.dataset)
+    except KeyError:
+        dataset_cls = None
+    if dataset_cls is not None and config.task_id is not None and dataset_cls.task_id != config.task_id:
+        raise HTTPException(status_code=422, detail={"code": "TASK_DATASET_MISMATCH", "task_id": config.task_id, "dataset": config.dataset, "dataset_task_id": dataset_cls.task_id})
+    for attack_name in config.attacks:
+        attack = load_attacks().get(attack_name)
+        allowed = attack.required_tasks or frozenset({"detection2d", "segmentation"})
+        if version.task not in allowed:
+            raise HTTPException(status_code=422, detail={"code": "ATTACK_NOT_COMPATIBLE", "attack": attack_name, "task_id": version.task})
     if not version.runnable or not version.checkpoint_path:
         raise HTTPException(status_code=409, detail={"code": "MODEL_NOT_RUNNABLE", "model_version_id": config.model_version_id, "reason": version.blocked_reason})
     checkpoint = Path(version.checkpoint_path).resolve()
@@ -1578,7 +1653,7 @@ def _resolve_run_config(config: RunConfig) -> RunConfig:
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail={"code": str(exc), "model_version_id": config.model_version_id}) from exc
-    return config.model_copy(update={"model": adapter_name, "adapter_params": adapter_params, "task_id": version.task})
+    return config.model_copy(update={"model": adapter_name, "adapter_params": adapter_params, "task_id": version.task, "model_family_id": version.model_family_id, "checkpoint_id": version.id})
 
 
 def _comparison_signature(report: dict[str, Any]) -> dict[str, Any]:

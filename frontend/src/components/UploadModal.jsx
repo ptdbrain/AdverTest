@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { uploadImage, importFolderDataset } from "@/lib/api";
 
-export default function UploadModal({ isOpen, onClose, onDatasetCreated, datasets = [] }) {
+export default function UploadModal({ isOpen, onClose, onDatasetCreated, datasets = [], taskId = "detection2d" }) {
   const [activeTab, setActiveTab] = useState("files"); // "files" | "folder" | "catalog" | "url"
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [filePreviews, setFilePreviews] = useState([]);
@@ -65,7 +65,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
       const batchId = `batch-${Date.now()}`;
       const results = [];
       for (const file of selectedFiles) {
-        const uploaded = await uploadImage(file, batchId);
+        const uploaded = await uploadImage(file, batchId, taskId);
         results.push(uploaded);
       }
       setStatusMessage(`Successfully uploaded ${results.length} images!`);
@@ -109,6 +109,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
         logicalSourceId: logicalSourceId.trim() || `folder-${folderPath.trim().replace(/[^a-zA-Z0-9_-]+/g, "-")}`,
         inputFormat,
         maxSamples,
+        taskId,
       });
       const folderId = res.version_id || res.id;
       setStatusMessage(`Folder imported successfully as dataset '${folderId}'!`);
@@ -183,7 +184,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
             <h2 style={{ fontSize: "1.2rem", margin: 0, fontWeight: 700, color: "var(--text-primary)" }}>
               Data & Image Ingestion Manager
             </h2>
-            <p className="text-xs text-secondary mt-1">Select or upload images/datasets for robustness attack testing</p>
+            <p className="text-xs text-secondary mt-1">Task contract: {taskId === "detection2d" ? "image + 2D boxes" : taskId === "segmentation" ? "image + instance masks/polygons" : "calibration + LiDAR + 3D boxes"}</p>
           </div>
           <button
             type="button"
@@ -295,11 +296,11 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
             <button
               type="button"
               className="run-button"
-              disabled={isUploading || selectedFiles.length === 0}
+              disabled={isUploading || selectedFiles.length === 0 || taskId !== "detection2d"}
               onClick={handleUploadFiles}
               style={{ marginTop: "auto" }}
             >
-              {isUploading ? "Uploading..." : `Upload ${selectedFiles.length} Images`}
+              {isUploading ? "Uploading..." : taskId === "detection2d" ? `Upload ${selectedFiles.length} Images` : "Task-aware import required"}
             </button>
           </div>
         )}
@@ -367,7 +368,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
             <button
               type="button"
               className="run-button"
-              disabled={isUploading || !folderPath}
+              disabled={isUploading || !folderPath || taskId !== "detection2d"}
               onClick={handleImportFolder}
               style={{ marginTop: "auto" }}
             >

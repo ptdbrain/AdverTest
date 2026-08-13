@@ -16,19 +16,22 @@ class ModelFamilySpec:
     supported_tasks: frozenset[str]
     checkpoint_extensions: frozenset[str]
     adapter_name: str
+    runnable: bool = False
+    blocked_reason: str | None = None
 
 
 FAMILIES = {
-    "yolo11": ModelFamilySpec("yolo11", "YOLO11", frozenset({"detection2d"}), frozenset({".pt"}), "yolo11"),
-    "sam2": ModelFamilySpec("sam2", "SAM2.1", frozenset({"segmentation"}), frozenset({".pt"}), "sam2"),
-    "rtdetr": ModelFamilySpec("rtdetr", "RT-DETR", frozenset({"detection2d"}), frozenset({".pt"}), "rtdetr"),
-    "faster_rcnn": ModelFamilySpec("faster_rcnn", "Faster R-CNN", frozenset({"detection2d"}), frozenset({".pt", ".pth"}), "faster_rcnn"),
+    "yolo11": ModelFamilySpec("yolo11", "YOLO11", frozenset({"detection2d"}), frozenset({".pt"}), "yolo11", True),
+    "sam2": ModelFamilySpec("sam2", "SAM2.1", frozenset({"segmentation"}), frozenset({".pt"}), "sam2", False, "WAITING_FOR_ARTIFACTS"),
+    "rtdetr": ModelFamilySpec("rtdetr", "RT-DETR", frozenset({"detection2d"}), frozenset({".pt"}), "rtdetr", False, "BASE_CHECKPOINT_UNAVAILABLE"),
+    "faster_rcnn": ModelFamilySpec("faster_rcnn", "Faster R-CNN", frozenset({"detection2d"}), frozenset({".pt", ".pth"}), "faster_rcnn", False, "BASE_CHECKPOINT_UNAVAILABLE"),
+    "centerpoint3d": ModelFamilySpec("centerpoint3d", "CenterPoint", frozenset({"detection3d"}), frozenset({".pt", ".pth"}), "centerpoint3d", False, "WAITING_FOR_ARTIFACTS"),
 }
 
 
 def family_for_version(version: ModelVersion) -> ModelFamilySpec:
     model_name = version.model_name.lower()
-    family_id = "yolo11" if model_name.startswith("yolo") else "sam2" if model_name.startswith("sam") else model_name
+    family_id = version.model_family_id or ("yolo11" if model_name.startswith("yolo") else "sam2" if model_name.startswith("sam") else model_name)
     try:
         family = FAMILIES[family_id]
     except KeyError as exc:

@@ -33,6 +33,8 @@ class ModelVersion:
     checkpoint_validated: bool = False
     gate_outcome: str | None = None  # "PASSED" | "FAILED" | None
     evidence_tier: str | None = None  # "CPU_CONTRACT_VERIFIED" | "REAL_MODEL_VERIFIED" | ...
+    model_family_id: str | None = None
+    checkpoint_role: Literal["base", "defence_baseline", "fine_tuned", "repaired"] = "base"
 
 
 _ROLE_METADATA: dict[str, tuple[str, str | None]] = {
@@ -50,6 +52,13 @@ _PERSON_B_CANONICAL_LINEAGE = {
     "yolo_r1": "yolo11s-clean-b0",
     "yolo_r2_fog": "yolo11s-robust-r1",
     "yolo_r2_sensor": "yolo11s-robust-r1",
+}
+
+_ROLE_CHECKPOINT_KIND = {
+    "yolo_b0": "defence_baseline",
+    "yolo_r1": "fine_tuned",
+    "yolo_r2_fog": "repaired",
+    "yolo_r2_sensor": "repaired",
 }
 
 
@@ -92,6 +101,8 @@ def scan_yolo_training_runs(root: Path) -> list[ModelVersion]:
                     parent_id=parent_id,
                     training_metadata=metadata,
                     runnable=True,
+                    model_family_id="yolo11",
+                    checkpoint_role=_ROLE_CHECKPOINT_KIND[role],
                 )
             )
         else:
@@ -106,6 +117,8 @@ def scan_yolo_training_runs(root: Path) -> list[ModelVersion]:
                     training_metadata=metadata,
                     runnable=False,
                     blocked_reason="CHECKPOINT_MISSING",
+                    model_family_id="yolo11",
+                    checkpoint_role=_ROLE_CHECKPOINT_KIND[role],
                 )
             )
     return sorted(discovered, key=lambda version: version.id)
@@ -150,6 +163,8 @@ def _scan_person_b_summaries(root: Path) -> list[ModelVersion]:
             training_metadata=metadata,
             runnable=checkpoint.is_file(),
             blocked_reason=None if checkpoint.is_file() else "CHECKPOINT_MISSING",
+            model_family_id="yolo11",
+            checkpoint_role=_ROLE_CHECKPOINT_KIND.get(role, "fine_tuned"),
         ))
     return versions
 
@@ -170,6 +185,7 @@ def scan_model_artifacts(root: Path) -> list[ModelVersion]:
             checkpoint_path=str(checkpoint.resolve()), checkpoint_hash=_file_sha256(checkpoint),
             parent_id=None, training_metadata={"source_checkpoint": str(checkpoint)},
             runnable=False, blocked_reason="WAITING_FOR_ARTIFACTS",
+            model_family_id="sam2",
         ))
     return sorted(versions, key=lambda version: version.id)
 
@@ -258,6 +274,8 @@ def list_known_versions() -> list[ModelVersion]:
                 runnable=False,
                 blocked_reason="CHECKPOINT_NOT_SCANNED",
                 parent_lineage=tuple(lineage),
+                model_family_id="yolo11",
+                checkpoint_role=_ROLE_CHECKPOINT_KIND[role],
             )
         )
     # SAM2 placeholder — WAITING_FOR_ARTIFACTS
@@ -272,6 +290,26 @@ def list_known_versions() -> list[ModelVersion]:
             training_metadata={"role": "sam2_base"},
             runnable=False,
             blocked_reason="WAITING_FOR_ARTIFACTS",
+            model_family_id="sam2",
         )
     )
     return sorted(versions, key=lambda v: v.id)
+
+
+def scan_base_checkpoints(root: Path) -> list[ModelVersion]:
+    """Register only vendor/base weights kept outside training-run lineage."""
+    checkpoint = root / "surrogates" / "yolo11s.pt"
+    if not checkpoint.is_file():
+        return []
+    return [ModelVersion(
+        id="yolo11s-base",
+        model_name="yolo11s",
+        task="detection2d",
+        checkpoint_path=str(checkpoint.resolve()),
+        checkpoint_hash=_file_sha256(checkpoint),
+        parent_id=None,
+        training_metadata={"source": "vendor_base", "role": "base"},
+        runnable=True,
+        model_family_id="yolo11",
+        checkpoint_role="base",
+    )]

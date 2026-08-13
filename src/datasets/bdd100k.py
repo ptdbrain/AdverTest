@@ -29,6 +29,10 @@ class BDD100KSemanticDataset(DatasetSource):
     owner: ClassVar[str] = "group-c"
     loader_version: ClassVar[str] = "bdd100k-semantic-v1"
     params_model: ClassVar[type[DatasetParams]] = BDD100KParams
+    task_id: ClassVar[str] = "segmentation"
+    input_schema: ClassVar[tuple[str, ...]] = ("image",)
+    annotation_schema: ClassVar[tuple[str, ...]] = ("semantic_masks", "class_labels")
+    ground_truth_status: ClassVar[str] = "semantic_only"
 
     def __init__(self, **params: object) -> None:
         super().__init__(**params)

@@ -21,6 +21,51 @@ async def test_perception_modes_show_sam_handoff_as_waiting(client):
 
 
 @pytest.mark.asyncio
+async def test_attack_catalog_separates_task_families_base_and_defence_checkpoints(client):
+    families = (await client.get("/api/v1/model-families", params={"task_id": "detection2d"})).json()
+    assert {item["id"] for item in families} >= {"yolo11", "rtdetr", "faster_rcnn"}
+    assert "sam2" not in {item["id"] for item in families}
+
+    base = (await client.get(
+        "/api/v1/base-checkpoints",
+        params={"task_id": "detection2d", "model_family_id": "yolo11"},
+    )).json()
+    assert base and all(item["checkpoint_role"] == "base" for item in base)
+    assert all(item["model_family_id"] == "yolo11" for item in base)
+
+    defence = (await client.get("/api/v1/defence-checkpoints", params={"task_id": "detection2d"})).json()
+    assert defence and {item["checkpoint_role"] for item in defence} >= {"defence_baseline", "fine_tuned", "repaired"}
+    assert not {item["id"] for item in base} & {item["id"] for item in defence}
+
+
+@pytest.mark.asyncio
+async def test_task_catalogs_filter_datasets_and_attacks_by_declared_contract(client):
+    detection = (await client.get("/api/v1/catalog/datasets", params={"task_id": "detection2d"})).json()
+    segmentation = (await client.get("/api/v1/catalog/datasets", params={"task_id": "segmentation"})).json()
+    assert detection and all(item["task_id"] == "detection2d" for item in detection)
+    assert segmentation and all(item["task_id"] == "segmentation" for item in segmentation)
+    assert all("annotation_schema" in item and "input_schema" in item for item in detection + segmentation)
+
+    white_box = (await client.get("/api/v1/catalog/attacks", params={"task_id": "detection2d", "threat_model": "white_box"})).json()
+    assert white_box and all(item["threat_model"] == "white_box" for item in white_box)
+    assert all("attack_type" in item and "scenario_kind" in item and "task_ids" in item for item in white_box)
+
+
+@pytest.mark.asyncio
+async def test_attack_admission_rejects_a_defence_checkpoint(client):
+    response = await client.post("/api/v1/runs/preflight", json={
+        "checkpoint_id": "yolo11s-kitti-clean-b0",
+        "model_family_id": "yolo11",
+        "task_id": "detection2d",
+        "dataset": "synthetic_shapes",
+        "attacks": ["gaussian_noise"],
+    })
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "DEFENCE_CHECKPOINT_NOT_ALLOWED_IN_ATTACK"
+
+
+@pytest.mark.asyncio
 async def test_localhost_alias_is_allowed_for_frontend_catalog_requests(client):
     response = await client.options(
         "/api/v1/perception-modes",
@@ -75,6 +120,18 @@ async def test_upload_endpoint_accepts_a_declared_image_payload(client):
     assert response.status_code == 201
     assert response.json()["filename"] == "frame.jpg"
     assert "/data/uploads/" in response.json()["path"].replace("\\", "/")
+
+
+@pytest.mark.asyncio
+async def test_raw_image_upload_rejects_a_segmentation_contract_without_masks(client):
+    response = await client.post(
+        "/api/v1/uploads/images",
+        content=b"not-used",
+        headers={"x-filename": "frame.jpg", "x-task-id": "segmentation"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "ANNOTATIONS_REQUIRED"
 
 
 @pytest.mark.asyncio

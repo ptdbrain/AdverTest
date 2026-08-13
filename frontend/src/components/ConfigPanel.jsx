@@ -3,13 +3,21 @@ import UploadModal from "./UploadModal";
 
 const GROUP_LABELS = { A: "Corruption", B: "Weather", C: "Occlusion", D: "Adversarial", E: "Patch", F: "Blackbox" };
 
+function checkpointLabel(item) {
+  const path = item.checkpoint_path || "";
+  const filename = path.split(/[\\/]/).pop();
+  return filename ? `${item.id} — ${filename}` : item.id;
+}
+
 export default function ConfigPanel({
   datasets,
   attacks,
   modes = [],
-  modelVersions = [],
+  modelFamilies = [],
+  baseCheckpoints = [],
   recipePresets = [],
   mode,
+  selectedModelFamily,
   selectedModelVersion,
   selectedDataset,
   selectedAttacks,
@@ -22,6 +30,7 @@ export default function ConfigPanel({
     setSelectedDataset,
     addDataset,
     setMode,
+    setModelFamily,
     setSelectedModelVersion,
     toggleAttack,
     updateAttackSeverity,
@@ -40,9 +49,13 @@ export default function ConfigPanel({
   const [randomN, setRandomN] = useState(3);
   const [sweepAttack, setSweepAttack] = useState("gaussian_noise");
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [threatFilter, setThreatFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [scenarioFilter, setScenarioFilter] = useState("");
 
-  const versions = modelVersions.filter((item) => item.task === mode);
-  const blocked = !modelVersions.find((item) => item.id === selectedModelVersion)?.runnable;
+  const checkpoints = baseCheckpoints.filter((item) => item.task === mode && item.model_family_id === selectedModelFamily);
+  const blocked = !checkpoints.find((item) => item.id === selectedModelVersion)?.runnable;
+  const visibleAttacks = attacks.filter((item) => (!threatFilter || item.threat_model === threatFilter) && (!typeFilter || item.attack_type === typeFilter) && (!scenarioFilter || item.scenario_kind === scenarioFilter));
 
   const handlePreviewCost = async () => {
     setWarningMessage("");
@@ -173,29 +186,25 @@ export default function ConfigPanel({
         </div>
       </div>
 
-      {/* Checkpoint */}
+      {/* A perception task, its family, and a vendor/base weight are separate choices. */}
       <div className="config-panel__section">
-        <label className="config-panel__label" htmlFor="model-version">
-          Checkpoint
-        </label>
+        <label className="config-panel__label" htmlFor="model-family">Base Model Family</label>
         <div className="select-wrapper">
-          <select
-            id="model-version"
-            className="select-field"
-            value={selectedModelVersion || ""}
-            onChange={(e) => setSelectedModelVersion(e.target.value)}
-          >
-            {versions.map((item) => (
-              <option key={item.id} value={item.id} disabled={!item.runnable}>
-                {item.id}
-                {item.runnable ? "" : ` (${item.blocked_reason})`}
-              </option>
-            ))}
+          <select id="model-family" className="select-field" value={selectedModelFamily || ""} onChange={(e) => setModelFamily(e.target.value)}>
+            {modelFamilies.map((item) => <option key={item.id} value={item.id}>{item.display_name}{item.runnable ? "" : ` (${item.blocked_reason || "unavailable"})`}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="config-panel__section">
+        <label className="config-panel__label" htmlFor="model-version">Base Checkpoint</label>
+        <div className="select-wrapper">
+          <select id="model-version" className="select-field" value={selectedModelVersion || ""} onChange={(e) => setSelectedModelVersion(e.target.value)}>
+            {checkpoints.map((item) => <option key={item.id} value={item.id} disabled={!item.runnable}>{item.model_name} — {item.id}</option>)}
           </select>
         </div>
         {blocked && (
           <small style={{ color: "var(--warning)", marginTop: "4px", display: "block" }}>
-            Model/evaluation artifacts are waiting for handoff (WAITING_FOR_ARTIFACTS).
+            A validated base checkpoint is required for Attack. Fine-tuned and repaired checkpoints are available only in Defence.
           </small>
         )}
       </div>
@@ -221,7 +230,7 @@ export default function ConfigPanel({
           >
             {datasets.map((ds) => (
               <option key={ds.id || ds.name} value={ds.id || ds.name}>
-                {ds.title || ds.name || ds.id}
+                {ds.title || ds.name || ds.id} — {ds.annotation_schema?.join(", ") || "declared contract"}
                 {ds.benchmark_ready === false ? " (Quick inference only)" : ""}
               </option>
             ))}
@@ -242,13 +251,22 @@ export default function ConfigPanel({
           }
         }}
         datasets={datasets}
+        taskId={mode}
       />
 
       {/* Attacks Grid (Manual Selection) */}
       <div className="config-panel__section">
         <label className="config-panel__label">Selected Attacks ({selectedAttacks.length})</label>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px", marginBottom: "8px" }}>
+          {[[threatFilter, setThreatFilter, "Threat model", "threat_model"], [typeFilter, setTypeFilter, "Attack type", "attack_type"], [scenarioFilter, setScenarioFilter, "Scenario", "scenario_kind"]].map(([value, setter, label, field]) => (
+            <select key={field} aria-label={label} className="select-field" value={value} onChange={(event) => setter(event.target.value)}>
+              <option value="">{label}</option>
+              {[...new Set(attacks.map((attack) => attack[field]).filter(Boolean))].map((option) => <option key={option} value={option}>{option.replace(/_/g, " ")}</option>)}
+            </select>
+          ))}
+        </div>
         <div className="attack-grid">
-          {attacks.map((atk) => (
+          {visibleAttacks.map((atk) => (
             <button
               key={atk.name}
               type="button"
@@ -258,7 +276,7 @@ export default function ConfigPanel({
               title={atk.available === false ? atk.reason : undefined}
             >
               <span className="attack-card__name">{atk.name.replace(/_/g, " ")}</span>
-              <span className="attack-card__group">{GROUP_LABELS[atk.group] || atk.group}</span>
+              <span className="attack-card__group">{atk.attack_type?.replace(/_/g, " ") || GROUP_LABELS[atk.group] || atk.group}</span>
             </button>
           ))}
         </div>

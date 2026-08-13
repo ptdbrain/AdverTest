@@ -21,8 +21,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.adapters import get_adapter
 from src.adapters.base import ModelAdapter
 from src.attacks import get_attack, load_attacks
-from src.attacks.recipes import AttackRecipe
 from src.attacks.base import AttackContext, BaseAttack
+from src.attacks.recipes import AttackRecipe
 from src.core.hashing import clean_key, sample_digest, stable_digest, variant_key
 from src.core.types import COST_WEIGHT, ModelInfo, Prediction, Sample, Task
 from src.datasets import get_dataset
@@ -31,15 +31,15 @@ from src.evaluation.detection_metrics import (
     DEFAULT_IOU_THRESHOLD,
     average_precision,
     bootstrap_average_precision,
-    detection_metric_suite,
     detection_attack_success_rate,
+    detection_metric_suite,
     per_object_detection_comparison,
 )
 from src.evaluation.report import CellResult, RunReport, SampleResult, SkippedAttack
 from src.evaluation.robustness_metrics import summary
 from src.pipeline.cache import MemoryCache, PredictionCache
-from src.pipeline.evidence import EvidenceWriter, prediction_payload
 from src.pipeline.composition import CompositionContext, CompositionEngine
+from src.pipeline.evidence import EvidenceWriter, prediction_payload
 
 
 class RunConfig(BaseModel):
@@ -48,6 +48,8 @@ class RunConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: str = "blob_detector"
+    model_family_id: str | None = None
+    checkpoint_id: str | None = None
     model_version_id: str | None = None
     task_id: Task | None = None
     dataset_version_id: str | None = None

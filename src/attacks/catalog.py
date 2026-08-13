@@ -70,6 +70,10 @@ class AttackMetadata(_FrozenContract):
     supports_online: bool
     supports_offline: bool
     production_status: ProductionStatus
+    threat_model: str
+    attack_type: str
+    scenario_kind: str
+    task_ids: tuple[Task, ...]
 
 
 class AttackExclusion(_FrozenContract):
@@ -305,6 +309,8 @@ def metadata_for_attack(attack_cls: type[Any]) -> AttackMetadata:
         else "long"
     )
     labels = ("no-op", "very low", "low", "medium", "high", "critical")
+    threat_model, attack_type, scenario_kind = _taxonomy_for(attack_cls.name, attack_cls.group)
+    task_ids = tuple(sorted(attack_cls.required_tasks)) or ("detection2d", "segmentation")
     return AttackMetadata(
         catalog_version=AttackCatalog.version,
         name=attack_cls.name,
@@ -336,7 +342,28 @@ def metadata_for_attack(attack_cls: type[Any]) -> AttackMetadata:
         supports_online=entry.supports_online,
         supports_offline=entry.supports_offline,
         production_status=entry.production_status,
+        threat_model=threat_model,
+        attack_type=attack_type,
+        scenario_kind=scenario_kind,
+        task_ids=task_ids,
     )
+
+
+def _taxonomy_for(name: str, group: AttackGroup) -> tuple[str, str, str]:
+    """Product filters; group remains the research/reporting classification."""
+    if group == "D":
+        return "white_box", "optimization_based", "digital_adversarial"
+    if group == "E":
+        return "gray_box", "patch_localized", "physical"
+    if group == "F":
+        return "black_box", "query_based", "query_or_transfer"
+    if group == "B":
+        return "model_agnostic", "sensor_manipulation", "weather"
+    if group == "C":
+        scenario = "occlusion" if "occlusion" in name or "erasing" in name else "sensor_fault"
+        return "model_agnostic", "sensor_manipulation", scenario
+    attack_type = "noise_corruption" if "noise" in name or "blur" in name else "geometric_photometric"
+    return "model_agnostic", attack_type, "environmental_degradation"
 
 
 def _exclusion_reasons(

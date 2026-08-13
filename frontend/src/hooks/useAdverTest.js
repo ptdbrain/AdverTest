@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  getCatalogAttacks, getCatalogModels, getCatalogDatasets, getModelVersions, getPerceptionModes,
+  getCatalogAttacks, getCatalogModels, getCatalogDatasets, getModelVersions, getPerceptionModes, getModelFamilies, getBaseCheckpoints,
   createRun, createInferenceExperiment, getRun, getRunReport, getRunSamples, connectRunWebSocket, triggerAutoFlag, cancelRun,
   createRetrainingBacklog, addRetrainingBacklogItem, approveRetrainingBacklog,
   estimateRun, preflightRun, randomizeRecipe as randomizeRecipeRequest,
@@ -28,12 +28,15 @@ export function useAdverTest() {
   const [models, setModels] = useState([]);
   const [datasets, setDatasets] = useState([]);
   const [modelVersions, setModelVersions] = useState([]);
+  const [modelFamilies, setModelFamilies] = useState([]);
+  const [baseCheckpoints, setBaseCheckpoints] = useState([]);
   const [modes, setModes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDataset, setSelectedDataset] = useState("");
   const [selectedAttacks, setSelectedAttacks] = useState([]);
   const [mode, setModeState] = useState("detection2d");
   const [selectedModelVersion, setSelectedModelVersion] = useState("");
+  const [selectedModelFamily, setSelectedModelFamily] = useState("");
   const [runOptions, setRunOptionsState] = useState({ seed: 42, limit: 8, confidence: 0.25, iou: 0.5 });
   const [runId, setRunId] = useState(null);
   const [runStatus, setRunStatus] = useState(null);
@@ -61,22 +64,25 @@ export function useAdverTest() {
       while (!cancelled && attempts < 3) {
         attempts += 1;
         const results = await Promise.allSettled([
-          getCatalogAttacks(), getCatalogModels(), getCatalogDatasets(),
-          getModelVersions(), getPerceptionModes(), getRecipePresets(),
+          getCatalogAttacks({ task_id: "detection2d" }), getCatalogModels(), getCatalogDatasets({ task_id: "detection2d" }),
+          getModelVersions(), getPerceptionModes(), getRecipePresets(), getModelFamilies("detection2d"), getBaseCheckpoints("detection2d", "yolo11"),
         ]);
         if (cancelled) return;
         const value = (index, fallback) => results[index].status === "fulfilled" ? results[index].value : fallback;
-        const [a, m, d, versions, availableModes, presets] = [
-          value(0, null), value(1, null), value(2, null), value(3, null), value(4, null), value(5, null),
+        const [a, m, d, versions, availableModes, presets, families, checkpoints] = [
+          value(0, null), value(1, null), value(2, null), value(3, null), value(4, null), value(5, null), value(6, null), value(7, null),
         ];
         if (a) setAttacks(a);
         if (m) setModels(m);
         if (d) setDatasets(d);
         if (versions) {
           setModelVersions(versions);
-          const initial = versions.find((item) => item.task === "detection2d" && item.runnable);
-          if (initial) setSelectedModelVersion(initial.id);
         }
+        if (families) {
+          setModelFamilies(families);
+          setSelectedModelFamily(families[0]?.id || "");
+        }
+        if (checkpoints) { setBaseCheckpoints(checkpoints); setSelectedModelVersion(checkpoints[0]?.id || ""); }
         if (availableModes) setModes(availableModes);
         if (presets) setRecipePresets(presets);
         if (d?.length) {
@@ -99,14 +105,40 @@ export function useAdverTest() {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([getCatalogAttacks({ task_id: mode }), getCatalogDatasets({ task_id: mode }), getModelFamilies(mode)])
+      .then(([taskAttacks, taskDatasets, families]) => {
+        if (cancelled) return;
+        setAttacks(taskAttacks); setDatasets(taskDatasets); setModelFamilies(families);
+        setSelectedModelFamily((current) => families.some((item) => item.id === current) ? current : (families[0]?.id || ""));
+        setSelectedDataset(taskDatasets[0] ? (taskDatasets[0].id || taskDatasets[0].name) : "");
+        setSelectedAttacks([]); setRecipe({ name: "manual", steps: [] });
+      })
+      .catch((error) => console.warn("Task catalog unavailable:", error));
+    return () => { cancelled = true; };
+  }, [mode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedModelFamily) return undefined;
+    getBaseCheckpoints(mode, selectedModelFamily)
+      .then((checkpoints) => {
+        if (cancelled) return;
+        setBaseCheckpoints(checkpoints);
+        setSelectedModelVersion(checkpoints[0]?.id || "");
+      })
+      .catch((error) => { if (!cancelled) { console.warn("Base checkpoints unavailable:", error); setBaseCheckpoints([]); setSelectedModelVersion(""); } });
+    return () => { cancelled = true; };
+  }, [mode, selectedModelFamily]);
+
   const updateAttackSeverity = useCallback((position, severity) => {
     setRecipe((current) => ({ ...current, steps: current.steps.map((step) => step.position === position ? { ...step, severity } : step) }));
   }, []);
   const setMode = useCallback((nextMode) => {
     setModeState(nextMode);
-    const valid = modelVersions.find((item) => item.id === selectedModelVersion && item.task === nextMode && item.runnable);
-    if (!valid) setSelectedModelVersion(modelVersions.find((item) => item.task === nextMode && item.runnable)?.id ?? "");
-  }, [modelVersions, selectedModelVersion]);
+  }, []);
+  const setModelFamily = useCallback((familyId) => setSelectedModelFamily(familyId), []);
   const setRunOptions = useCallback((changes) => setRunOptionsState((current) => ({ ...current, ...changes })), []);
   const toggleAttack = useCallback((name) => {
     const metadata = attacks.find((item) => item.name === name);
@@ -133,7 +165,8 @@ export function useAdverTest() {
   const buildRunConfig = useCallback(() => {
     const dataset = datasets.find((item) => (item.id || item.name) === selectedDataset) || { name: selectedDataset };
     return {
-      model_version_id: selectedModelVersion,
+      model_family_id: selectedModelFamily,
+      checkpoint_id: selectedModelVersion,
       task_id: mode,
       dataset: dataset.dataset || dataset.name || selectedDataset,
       dataset_params: dataset.dataset_params || {},
@@ -143,7 +176,7 @@ export function useAdverTest() {
       iou_threshold: runOptions.iou,
       confidence_threshold: runOptions.confidence,
     };
-  }, [datasets, mode, recipe, runOptions, selectedDataset, selectedModelVersion]);
+  }, [datasets, mode, recipe, runOptions, selectedDataset, selectedModelFamily, selectedModelVersion]);
 
   const finalizeRun = useCallback(async (id, job = null) => {
     if (finalizedRef.current) return;
@@ -193,13 +226,13 @@ export function useAdverTest() {
   }, [finalizeRun]);
 
   const handleRun = useCallback(async () => {
-    const version = modelVersions.find((item) => item.id === selectedModelVersion);
+    const version = baseCheckpoints.find((item) => item.id === selectedModelVersion);
     if (!selectedDataset || !recipe.steps.length) {
       setProgressDetail(!selectedDataset ? "Select a dataset before running." : "Select at least one recipe step before running.");
       setRunStatus("BLOCKED"); return;
     }
-    if (mode !== "detection2d" || !version?.runnable) {
-      setProgressDetail(mode !== "detection2d" ? "This task needs a compatible, validated task runtime and checkpoint before it can be run." : version?.blocked_reason ? `Model version unavailable: ${version.blocked_reason}` : "YOLO checkpoint unavailable. Check /api/v1/model-versions and RUNS_ROOT.");
+    if (!version?.runnable) {
+      setProgressDetail(version?.blocked_reason ? `Base checkpoint unavailable: ${version.blocked_reason}` : "This task needs a compatible, validated base checkpoint before it can be run.");
       setRunStatus("BLOCKED"); return;
     }
     const dataset = datasets.find((item) => (item.id || item.name) === selectedDataset);
@@ -211,7 +244,9 @@ export function useAdverTest() {
       if (isQuickInference) {
         job = await createInferenceExperiment({
           upload_batch_id: dataset.id,
-          model_version_id: version.id,
+          checkpoint_id: version.id,
+          model_family_id: selectedModelFamily,
+          task_id: mode,
           recipe,
           attacks: [],
           severities: recipe.steps.map((step) => step.severity),
@@ -231,7 +266,7 @@ export function useAdverTest() {
     } catch (error) {
       setRunStatus("FAILED"); setProgressDetail(error.message || "Run failed due to an API error."); setIsRunning(false);
     }
-  }, [buildRunConfig, datasets, mode, modelVersions, monitorRun, recipe, runOptions, selectedDataset, selectedModelVersion]);
+  }, [baseCheckpoints, buildRunConfig, datasets, mode, monitorRun, recipe, runOptions, selectedDataset, selectedModelFamily, selectedModelVersion]);
 
   const createBacklog = useCallback(async () => {
     const failures = (report?.cells ?? []).filter((cell) => cell.degradation > 0);
@@ -270,6 +305,6 @@ export function useAdverTest() {
   const retryEvidence = useCallback(() => { if (!runId) return; finalizedRef.current = false; finalizeRun(runId, { status: "COMPLETED" }); }, [finalizeRun, runId]);
 
   useEffect(() => () => { wsRef.current?.close(); if (pollRef.current) clearInterval(pollRef.current); }, []);
-  const version = modelVersions.find((item) => item.id === selectedModelVersion);
-  return { state: { attacks, models, datasets, modelVersions, modes, recipePresets, recipe, loading, selectedDataset, selectedAttacks, mode, selectedModelVersion, runOptions, runId, runStatus, progress, progressDetail, resultLoadStatus, resultLoadError, report, samples, isRunning, backlog, backlogError, isCreatingBacklog, trainingBlockedReason: version?.runnable ? "" : "WAITING_FOR_ARTIFACTS", activeTab }, actions: { setSelectedDataset, addDataset, setMode, setSelectedModelVersion, setRunOptions, toggleAttack, updateAttackSeverity, handleRun, createBacklog, setActiveTab, loadPreset, randomizeRecipe, sweepRecipe, previewRecipe, retryEvidence, cancelRun: cancelRunAction } };
+  const version = baseCheckpoints.find((item) => item.id === selectedModelVersion);
+  return { state: { attacks, models, datasets, modelVersions, modelFamilies, baseCheckpoints, modes, recipePresets, recipe, loading, selectedDataset, selectedAttacks, mode, selectedModelFamily, selectedModelVersion, runOptions, runId, runStatus, progress, progressDetail, resultLoadStatus, resultLoadError, report, samples, isRunning, backlog, backlogError, isCreatingBacklog, trainingBlockedReason: version?.runnable ? "" : "WAITING_FOR_ARTIFACTS", activeTab }, actions: { setSelectedDataset, addDataset, setMode, setModelFamily, setSelectedModelVersion, setRunOptions, toggleAttack, updateAttackSeverity, handleRun, createBacklog, setActiveTab, loadPreset, randomizeRecipe, sweepRecipe, previewRecipe, retryEvidence, cancelRun: cancelRunAction } };
 }

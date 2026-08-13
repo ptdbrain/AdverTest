@@ -28,12 +28,15 @@ export function getCatalogModels() {
   return apiFetch("/api/v1/catalog/models");
 }
 
-export function getCatalogDatasets() {
-  return apiFetch("/api/v1/catalog/datasets");
+export function getCatalogDatasets(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return apiFetch(`/api/v1/catalog/datasets${qs ? `?${qs}` : ""}`);
 }
 
 export function getModelVersions() { return apiFetch("/api/v1/model-versions"); }
 export function getPerceptionModes() { return apiFetch("/api/v1/perception-modes"); }
+export function getModelFamilies(taskId) { return apiFetch(`/api/v1/model-families?task_id=${encodeURIComponent(taskId)}`); }
+export function getBaseCheckpoints(taskId, familyId) { return apiFetch(`/api/v1/base-checkpoints?task_id=${encodeURIComponent(taskId)}&model_family_id=${encodeURIComponent(familyId)}`); }
 
 export function estimateRun(config) {
   return apiFetch("/api/v1/runs/estimate", {
@@ -256,11 +259,12 @@ export function getStatusEvidence() {
 }
 
 /* ---- Upload & Dataset Import ---- */
-export async function uploadImage(file, batchId = null) {
+export async function uploadImage(file, batchId = null, taskId = "detection2d") {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const headers = {
     "Content-Type": "application/octet-stream",
     "x-filename": file.name,
+    "x-task-id": taskId,
   };
   if (batchId) {
     headers["x-upload-batch-id"] = batchId;
@@ -283,7 +287,7 @@ export async function uploadImage(file, batchId = null) {
   return res.json();
 }
 
-export function importFolderDataset({ root, name, logicalSourceId, inputFormat = "advertest", anonymizationManifest = "manifest.jsonl", maxSamples = 50 }) {
+export function importFolderDataset({ root, name, logicalSourceId, inputFormat = "advertest", anonymizationManifest = "manifest.jsonl", maxSamples = 50, taskId = "detection2d" }) {
   return apiFetch("/api/v1/datasets/import", {
     method: "POST",
     body: JSON.stringify({
@@ -293,6 +297,7 @@ export function importFolderDataset({ root, name, logicalSourceId, inputFormat =
       input_format: inputFormat,
       anonymization_manifest: anonymizationManifest,
       max_samples: maxSamples,
+      task_id: taskId,
     }),
   });
 }

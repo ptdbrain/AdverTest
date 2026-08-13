@@ -8,10 +8,11 @@ afterEach(() => {
 
 
 describe("ConfigPanel", () => {
-  it("binds the selected checkpoint while keeping a task selectable before its artifacts arrive", () => {
+  it("separates the base model family from its base checkpoint", () => {
     const actions = {
       setSelectedDataset: vi.fn(),
       setMode: vi.fn(),
+      setModelFamily: vi.fn(),
       setSelectedModelVersion: vi.fn(),
       toggleAttack: vi.fn(),
       updateAttackSeverity: vi.fn(),
@@ -25,10 +26,12 @@ describe("ConfigPanel", () => {
           { id: "detection2d", title: "2D Object Detection", runnable: true },
           { id: "segmentation", title: "Instance Segmentation", runnable: false, status: "ready", blocked_reason: "WAITING_FOR_ARTIFACTS" },
         ]}
-        modelVersions={[{ id: "yolo-b0", model_name: "yolo11s", task: "detection2d", runnable: true }]}
+        modelFamilies={[{ id: "yolo11", display_name: "YOLO11", runnable: true }]}
+        baseCheckpoints={[{ id: "yolo11s-base", model_name: "yolo11s", model_family_id: "yolo11", task: "detection2d", runnable: true }]}
         recipePresets={[{ preset_id: "weather_robustness", name: "Weather Robustness" }]}
         mode="detection2d"
-        selectedModelVersion="yolo-b0"
+        selectedModelFamily="yolo11"
+        selectedModelVersion="yolo11s-base"
         selectedDataset="synthetic_shapes"
         selectedAttacks={["gaussian_noise"]}
         recipe={{ steps: [{ position: 0, attack_name: "gaussian_noise", severity: 3 }] }}
@@ -37,15 +40,45 @@ describe("ConfigPanel", () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText("Checkpoint"), { target: { value: "yolo-b0" } });
-    expect(actions.setSelectedModelVersion).toHaveBeenCalledWith("yolo-b0");
+    fireEvent.change(screen.getByLabelText("Base Checkpoint"), { target: { value: "yolo11s-base" } });
+    expect(actions.setSelectedModelVersion).toHaveBeenCalledWith("yolo11s-base");
     expect(screen.getByRole("option", { name: "Instance Segmentation" })).not.toBeDisabled();
+  });
+
+  it("does not surface a defence checkpoint in the attack selector", () => {
+    render(
+      <ConfigPanel
+        datasets={[]}
+        attacks={[]}
+        modes={[]}
+        modelFamilies={[{ id: "yolo11", display_name: "YOLO11", runnable: true }]}
+        baseCheckpoints={[{
+          id: "yolo11s-base",
+          model_name: "yolo11s",
+          task: "detection2d",
+          model_family_id: "yolo11",
+          runnable: true,
+        }]}
+        mode="detection2d"
+        selectedModelFamily="yolo11"
+        selectedModelVersion="yolo11s-base"
+        selectedDataset=""
+        selectedAttacks={[]}
+        recipe={{ steps: [] }}
+        isRunning={false}
+        actions={{}}
+      />,
+    );
+
+    expect(screen.getByRole("option", { name: /yolo11s.*base/i })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /kitti.*b0/i })).toBeNull();
   });
 
   it("supports recipe strategy modes and cost preview button", () => {
     const actions = {
       setSelectedDataset: vi.fn(),
       setMode: vi.fn(),
+      setModelFamily: vi.fn(),
       setSelectedModelVersion: vi.fn(),
       toggleAttack: vi.fn(),
       updateAttackSeverity: vi.fn(),
@@ -61,10 +94,12 @@ describe("ConfigPanel", () => {
         datasets={[{ name: "synthetic_shapes", anonymized: true }]}
         attacks={[{ name: "gaussian_noise", group: "A", cost_class: "LIGHT" }]}
         modes={[{ id: "detection2d", title: "YOLO", runnable: true }]}
-        modelVersions={[{ id: "yolo-b0", model_name: "yolo11s", task: "detection2d", runnable: true }]}
+        modelFamilies={[{ id: "yolo11", display_name: "YOLO11", runnable: true }]}
+        baseCheckpoints={[{ id: "yolo11s-base", model_name: "yolo11s", model_family_id: "yolo11", task: "detection2d", runnable: true }]}
         recipePresets={[{ preset_id: "weather_robustness", name: "Weather Robustness" }]}
         mode="detection2d"
-        selectedModelVersion="yolo-b0"
+        selectedModelFamily="yolo11"
+        selectedModelVersion="yolo11s-base"
         selectedDataset="synthetic_shapes"
         selectedAttacks={["gaussian_noise"]}
         recipe={{ steps: [{ position: 0, attack_name: "gaussian_noise", severity: 3 }] }}
@@ -94,9 +129,11 @@ describe("ConfigPanel", () => {
         datasets={[{ name: "synthetic_shapes", anonymized: true }]}
         attacks={[]}
         modes={[{ id: "detection2d", title: "YOLO", runnable: true }]}
-        modelVersions={[{ id: "yolo-b0", runnable: true }]}
+        modelFamilies={[{ id: "yolo11", display_name: "YOLO11", runnable: true }]}
+        baseCheckpoints={[{ id: "yolo11s-base", model_name: "yolo11s", model_family_id: "yolo11", task: "detection2d", runnable: true }]}
         mode="detection2d"
-        selectedModelVersion="yolo-b0"
+        selectedModelFamily="yolo11"
+        selectedModelVersion="yolo11s-base"
         selectedDataset="synthetic_shapes"
         selectedAttacks={[]}
         recipe={{ steps: [] }}

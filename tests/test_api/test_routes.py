@@ -1,6 +1,5 @@
 import asyncio
 import io
-from pathlib import Path
 
 import pytest
 
@@ -123,7 +122,7 @@ async def test_upload_rejects_non_image_bytes(client):
 
 @pytest.mark.asyncio
 async def test_raw_upload_is_not_marked_anonymized(client):
-    import io
+
     from PIL import Image
 
     buf = io.BytesIO()
@@ -171,19 +170,21 @@ async def test_quick_inference_accepts_the_runnable_catalog_model_id(client, mon
     from src.models.versions import ModelVersion
     from src.pipeline import PreflightResult
 
-    actual_checkpoint = tmp_path / "yolo11s-clean-b0.pt"
+    actual_checkpoint = tmp_path / "yolo11s-base.pt"
     actual_checkpoint.write_bytes(b"checkpoint")
     discovered = ModelVersion(
-        id="yolo11s-clean-b0",
+        id="yolo11s-base-test",
         model_name="yolo11s",
         task="detection2d",
         checkpoint_path=str(actual_checkpoint),
         checkpoint_hash="test-checkpoint",
         parent_id=None,
-        training_metadata={"role": "yolo_b0"},
+        training_metadata={"role": "base"},
         runnable=True,
+        model_family_id="yolo11",
+        checkpoint_role="base",
     )
-    monkeypatch.setattr(routes, "scan_model_artifacts", lambda _root: [discovered])
+    monkeypatch.setattr(routes, "scan_base_checkpoints", lambda _root: [discovered])
     monkeypatch.setattr(
         routes._runner,
         "preflight",
@@ -210,7 +211,8 @@ async def test_quick_inference_accepts_the_runnable_catalog_model_id(client, mon
 
     response = await client.post("/api/v1/inference-experiments", json={
         "upload_batch_id": "batch-catalog-model",
-        "model_version_id": model_id,
+        "checkpoint_id": model_id,
+        "model_family_id": "yolo11",
         "task_id": "segmentation",
         "attacks": ["gaussian_noise"],
     })
@@ -219,13 +221,14 @@ async def test_quick_inference_accepts_the_runnable_catalog_model_id(client, mon
 
     response = await client.post("/api/v1/inference-experiments", json={
         "upload_batch_id": "batch-catalog-model",
-        "model_version_id": model_id,
+        "checkpoint_id": model_id,
+        "model_family_id": "yolo11",
         "task_id": "detection2d",
         "attacks": ["gaussian_noise"],
         "confidence_threshold": 0.61,
     })
     assert response.status_code == 202
-    assert enqueued[0].model_version_id == model_id
+    assert enqueued[0].checkpoint_id == model_id
     assert enqueued[0].model == "yolo11"
     assert enqueued[0].adapter_params["weights"] == str(actual_checkpoint.resolve())
     assert enqueued[0].adapter_params["score_threshold"] == 0.61

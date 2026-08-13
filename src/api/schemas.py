@@ -55,6 +55,10 @@ class AttackCatalogItem(BaseModel):
     supports_online: bool = True
     supports_offline: bool = True
     production_status: str = "production"
+    threat_model: str = "model_agnostic"
+    attack_type: str = "corruption"
+    scenario_kind: str = "environmental_degradation"
+    task_ids: list[str] = Field(default_factory=list)
 
 
 class ModelCatalogItem(BaseModel):
@@ -69,6 +73,15 @@ class ModelCatalogItem(BaseModel):
     runnable: bool = True
     owner: str
     docstring: str = ""
+
+
+class ModelFamilyOut(BaseModel):
+    id: str
+    display_name: str
+    supported_tasks: list[str]
+    checkpoint_extensions: list[str]
+    runnable: bool
+    blocked_reason: str | None = None
 
 
 class ModelVersionOut(BaseModel):
@@ -91,6 +104,8 @@ class ModelVersionOut(BaseModel):
     checkpoint_validated: bool = False
     gate_outcome: str | None = None
     evidence_tier: str | None = None
+    model_family_id: str | None = None
+    checkpoint_role: str = "base"
 
     @classmethod
     def from_domain(cls, version: ModelVersion) -> ModelVersionOut:
@@ -110,6 +125,8 @@ class ModelVersionOut(BaseModel):
             checkpoint_validated=version.checkpoint_validated,
             gate_outcome=version.gate_outcome,
             evidence_tier=version.evidence_tier,
+            model_family_id=version.model_family_id,
+            checkpoint_role=version.checkpoint_role,
         )
 
 
@@ -263,6 +280,7 @@ class DatasetImportIn(BaseModel):
     input_format: str = Field(default="advertest", pattern="^(advertest|kitti)$")
     anonymization_manifest: str | None = None
     max_samples: int | None = Field(default=None, ge=1)
+    task_id: Task = "detection2d"
 
 
 class ModelComparisonIn(BaseModel):
@@ -281,6 +299,12 @@ class DatasetCatalogItem(BaseModel):
     modality: str
     owner: str
     params_schema: dict[str, Any] = Field(default_factory=dict)
+    task_id: str
+    input_schema: list[str] = Field(default_factory=list)
+    annotation_schema: list[str] = Field(default_factory=list)
+    class_map: dict[str, str] = Field(default_factory=dict)
+    split_manifest: str | None = None
+    ground_truth_status: str = "available"
 
 
 class QuickInferenceIn(BaseModel):
@@ -289,7 +313,9 @@ class QuickInferenceIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     upload_batch_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
-    model_version_id: str = Field(min_length=1, max_length=256)
+    model_version_id: str | None = Field(default=None, min_length=1, max_length=256)
+    model_family_id: str | None = Field(default=None, min_length=1, max_length=128)
+    checkpoint_id: str | None = Field(default=None, min_length=1, max_length=256)
     task_id: Task | None = None
     recipe: AttackRecipe | None = None
     attacks: list[str] = Field(default_factory=list)
@@ -300,7 +326,9 @@ class QuickInferenceIn(BaseModel):
     confidence_threshold: float = Field(default=0.25, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
-    def require_recipe_or_attack(self) -> "QuickInferenceIn":
+    def require_recipe_or_attack(self) -> QuickInferenceIn:
+        if not (self.checkpoint_id or self.model_version_id):
+            raise ValueError("provide checkpoint_id")
         if self.recipe is None and not self.attacks:
             raise ValueError("provide an ordered recipe or at least one attack")
         return self

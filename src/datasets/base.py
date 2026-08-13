@@ -47,6 +47,11 @@ class DatasetSource(ABC):
     owner: ClassVar[str] = "unassigned"
     loader_version: ClassVar[str] = "1.0.0"
     params_model: ClassVar[type[DatasetParams]] = DatasetParams
+    # A catalog entry is a task contract, never a generic bucket of files.
+    task_id: ClassVar[str] = "detection2d"
+    input_schema: ClassVar[tuple[str, ...]] = ("image",)
+    annotation_schema: ClassVar[tuple[str, ...]] = ("boxes2d", "class_labels")
+    ground_truth_status: ClassVar[str] = "available"
 
     def __init__(self, **params: Any) -> None:
         self.params = self.params_model(**params)
@@ -75,4 +80,10 @@ class DatasetSource(ABC):
             "modality": cls.modality,
             "owner": cls.owner,
             "params_schema": cls.params_model.model_json_schema(),
+            "task_id": cls.task_id,
+            "input_schema": list(cls.input_schema),
+            "annotation_schema": list(cls.annotation_schema),
+            "class_map": {str(index): label for index, label in enumerate(CLASSES)},
+            "split_manifest": None,
+            "ground_truth_status": cls.ground_truth_status,
         }
