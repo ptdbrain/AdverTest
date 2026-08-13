@@ -581,28 +581,27 @@ body {
 }
 
 /* Two-region investigation workspace: configuration stays fixed, evidence scrolls. */
-.workspace { flex: 1 1 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "selector selector" "source attacked" "clean-pred attacked-pred" "metrics metrics" "objects objects" "provenance provenance"; grid-auto-rows: max-content; align-content: start; gap: 12px; padding: 12px; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; background: var(--border-subtle); }
-.evidence-stage, .workspace__metrics, .sam-waiting { min-height: 220px; padding: 24px; background: var(--bg-primary); }
+.workspace { flex: 1 1 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "selector selector" "source attacked" "clean-pred attacked-pred" "objects objects" "provenance provenance"; grid-auto-rows: max-content; align-content: start; gap: 12px; padding: 12px; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; background: var(--border-subtle); }
+.evidence-stage, .sam-waiting { min-height: 220px; padding: 24px; background: var(--bg-primary); }
 .evidence-stage header p, .sam-waiting > p:last-child { color: var(--text-tertiary); line-height: 1.55; }
-.evidence-stage h2, .workspace__metrics h2, .sam-waiting h2 { margin: 4px 0 8px; font-size: 1rem; color: var(--text-primary); }
+.evidence-stage h2, .sam-waiting h2 { margin: 4px 0 8px; font-size: 1rem; color: var(--text-primary); }
 .evidence-stage__eyebrow { margin: 0; color: var(--cyan); font-size: .65rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .evidence-stage { min-width: 0; min-height: 0; overflow: clip; isolation: isolate; contain: layout paint; }
 .evidence-stage__content { width: 100%; min-width: 0; overflow: hidden; display: grid; place-items: center; color: var(--text-muted); border-top: 1px solid var(--border-subtle); margin-top: 18px; }
-.evidence-media { position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: min(44vh, 520px); min-width: 0; overflow: hidden; border-radius: var(--radius-md); background: var(--bg-primary); }
+.evidence-media { position: relative; width: 100%; aspect-ratio: var(--evidence-aspect); min-width: 0; overflow: hidden; border-radius: var(--radius-md); background: var(--bg-primary); }
 .evidence-media__image { object-fit: contain; }
 .evidence-media__ground-truth { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .evidence-media__ground-truth rect { fill: none; stroke: #42e8a9; stroke-width: 3; vector-effect: non-scaling-stroke; }
 .evidence-media__ground-truth text { fill: #06120d; stroke: #42e8a9; stroke-width: 3; paint-order: stroke; font-size: 16px; font-weight: 700; vector-effect: non-scaling-stroke; }
 .evidence-media__empty { width: 100%; min-height: 180px; display: grid; place-items: center; gap: 8px; padding: 24px; text-align: center; color: var(--text-tertiary); }
 .evidence-media__empty strong { color: var(--text-secondary); }
-.workspace__evidence_selector, .workspace__per_object_failures, .workspace__provenance, .workspace__metrics { grid-column: 1 / -1; min-width: 0; overflow: hidden; padding: 24px; background: var(--bg-primary); }
+.workspace__evidence_selector, .workspace__per_object_failures, .workspace__provenance { grid-column: 1 / -1; min-width: 0; overflow: hidden; padding: 24px; background: var(--bg-primary); }
 .workspace__evidence_selector { display: flex; align-items: center; gap: 12px; padding-block: 12px; }
 .workspace__evidence_selector { grid-area: selector; }
 .evidence-stage--source { grid-area: source; }
 .evidence-stage--attacked { grid-area: attacked; }
 .evidence-stage--clean-pred { grid-area: clean-pred; }
 .evidence-stage--attacked-pred { grid-area: attacked-pred; }
-.workspace__metrics { grid-area: metrics; }
 .workspace__per_object_failures { grid-area: objects; }
 .workspace__provenance { grid-area: provenance; }
 .workspace__evidence_selector select { min-width: 0; flex: 1; }
@@ -611,18 +610,19 @@ body {
 .per-object-table-wrapper { overflow-x: auto; }
 .data-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
 .data-table th, .data-table td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border-subtle); }
-.five-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; background: var(--border-subtle); }
-.five-metrics__item { padding: 16px; background: var(--bg-elevated); }
-.five-metrics__item span, .five-metrics__item small { color: var(--text-muted); font-size: .65rem; }
-.five-metrics__item strong { display: block; margin-top: 18px; color: var(--text-primary); font-family: var(--font-mono); font-size: 1.05rem; }
-.five-metrics__item p { margin: 8px 0 2px; font-size: .72rem; color: var(--text-secondary); }
+.prediction-evidence { width: 100%; display: grid; gap: 12px; }
+.prediction-metrics { width: 100%; padding: 14px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); }
+.prediction-metrics h3 { margin: 4px 0 12px; color: var(--text-primary); font-size: .8rem; }
+.prediction-metrics__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--border-subtle); }
+.prediction-metrics__item { padding: 10px; background: var(--bg-primary); }
+.prediction-metrics__item strong { display: block; color: var(--text-primary); font-family: var(--font-mono); font-size: .95rem; }
+.prediction-metrics__item span, .prediction-metrics__unavailable { color: var(--text-muted); font-size: .68rem; }
 .sam-waiting { max-width: 720px; margin: 52px auto; border: 1px solid var(--border-subtle); }
 .closed-loop-panel { padding: 20px 24px; border-top: 1px solid var(--border-subtle); color: var(--text-secondary); }
 .closed-loop-panel h2 { margin: 4px 0 8px; color: var(--text-primary); font-size: 1rem; }
 .closed-loop-panel p { margin: 8px 0; line-height: 1.5; }
 .closed-loop-panel .action-button { width: auto; padding-inline: 14px; }
-@media (max-width: 1100px) { .workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: "selector" "source" "attacked" "clean-pred" "attacked-pred" "metrics" "objects" "provenance"; } .workspace__evidence_selector, .workspace__per_object_failures, .workspace__provenance, .workspace__metrics { grid-column: 1; } }
-@media (max-width: 900px) { .main-content { grid-template-columns: 1fr; } .config-panel { max-height: none; } .workspace, .five-metrics { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .main-content { grid-template-columns: 1fr; } .config-panel { max-height: none; } .prediction-metrics__grid { grid-template-columns: 1fr; } }
 
 /* ---- Tab Bar ---- */
 .tab-bar {

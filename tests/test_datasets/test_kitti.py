@@ -10,7 +10,7 @@ import pytest
 
 from src.datasets import get_dataset
 from src.datasets.base import AnonymizationRequiredError
-from src.datasets.kitti import Kitti
+from src.datasets.kitti import Kitti, KittiParams
 
 IMAGE_HEIGHT, IMAGE_WIDTH = 120, 200
 
@@ -64,6 +64,11 @@ def _mark_anonymized(root: Path) -> None:
 
 def test_catalog_does_not_claim_raw_kitti_is_anonymized() -> None:
     assert Kitti.describe()["anonymized"] is False
+
+
+def test_default_root_targets_the_local_anonymized_kitti_export(monkeypatch) -> None:
+    monkeypatch.delenv("ADVERTEST_KITTI_ROOT", raising=False)
+    assert KittiParams().root == "data/anonymized/kitti-de"
 
 
 def test_gate_rejects_raw_kitti(kitti_root: Path) -> None:

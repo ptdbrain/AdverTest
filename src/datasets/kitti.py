@@ -37,7 +37,7 @@ class KittiParams(DatasetParams):
 
     root: str = Field(
         default_factory=lambda: os.environ.get(
-            "ADVERTEST_KITTI_ROOT", "data/anonymized/kitti"
+            "ADVERTEST_KITTI_ROOT", "data/anonymized/kitti-de"
         )
     )
     split: Literal["train", "val", "all"] = "val"

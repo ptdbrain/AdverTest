@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 
 import EvidenceStage from "@/components/EvidenceStage";
-import FiveMetrics from "@/components/FiveMetrics";
+import BaseModelMetrics from "@/components/FiveMetrics";
 
 function GroundTruthOverlay({ groundTruth }) {
   if (groundTruth?.type !== "boxes" || !groundTruth.objects?.length) return null;
@@ -21,7 +21,7 @@ function GroundTruthOverlay({ groundTruth }) {
   );
 }
 
-function EvidenceImage({ src, alt, unavailableTitle, unavailableDetail, groundTruth }) {
+function EvidenceImage({ src, alt, unavailableTitle, unavailableDetail, groundTruth, aspectRatio }) {
   if (!src) {
     return (
       <div className="evidence-media__empty">
@@ -32,7 +32,7 @@ function EvidenceImage({ src, alt, unavailableTitle, unavailableDetail, groundTr
   }
 
   return (
-    <div className="evidence-media">
+    <div className="evidence-media" style={{ "--evidence-aspect": aspectRatio ?? "16 / 9" }}>
       <Image
         src={src}
         alt={alt}
@@ -50,6 +50,12 @@ function EvidenceUnavailable({ title, detail }) {
   return <div className="evidence-media__empty"><strong>{title}</strong><span>{detail}</span></div>;
 }
 
+function imageAspectRatio(sample) {
+  const width = Number(sample?.ground_truth?.image_width ?? sample?.image_width);
+  const height = Number(sample?.ground_truth?.image_height ?? sample?.image_height);
+  return width > 0 && height > 0 ? `${width} / ${height}` : null;
+}
+
 export default function Workspace({ report, samples, mode }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const normalizedSamples = samples ?? [];
@@ -61,6 +67,8 @@ export default function Workspace({ report, samples, mode }) {
   const artifacts = sample?.artifacts ?? {};
   const perObjectFailures = sample?.per_object_failures ?? sample?.object_evidence ?? [];
   const config = report?.provenance?.run_config ?? {};
+  const benchmarkAvailable = report?.benchmark_metrics_available !== false;
+  const aspectRatio = imageAspectRatio(sample);
 
   return (
     <div className="workspace">
@@ -77,16 +85,22 @@ export default function Workspace({ report, samples, mode }) {
         </div>
       )}
       <EvidenceStage className="evidence-stage--source" title="Input and ground truth" description="Source image and reviewed bounding-box labels.">
-        <EvidenceImage src={artifacts.clean_input_url} alt="Clean input" unavailableTitle="Source input unavailable" unavailableDetail="The backend did not return a source artifact for this sample." groundTruth={sample?.ground_truth} />
+        <EvidenceImage src={artifacts.clean_input_url} alt="Clean input" unavailableTitle="Source input unavailable" unavailableDetail="The backend did not return a source artifact for this sample." groundTruth={sample?.ground_truth} aspectRatio={aspectRatio} />
       </EvidenceStage>
       <EvidenceStage className="evidence-stage--attacked" title="Attacked input" description={attack ? `${attack.attack}, severity ${attack.severity}, paired with the same source sample.` : "Recipe evidence will appear after a completed run."}>
-        <EvidenceImage src={artifacts.attacked_input_url} alt="Attacked input" unavailableTitle="Attacked input unavailable" unavailableDetail="The backend did not return an attacked input artifact." />
+        <EvidenceImage src={artifacts.attacked_input_url} alt="Attacked input" unavailableTitle="Attacked input unavailable" unavailableDetail="The backend did not return an attacked input artifact." aspectRatio={aspectRatio} />
       </EvidenceStage>
       <EvidenceStage className="evidence-stage--clean-pred" title="Clean model prediction" description="Prediction before perturbation, evaluated against the locked ground truth.">
-        <EvidenceImage src={artifacts.clean_prediction_url} alt="Clean prediction" unavailableTitle="Clean prediction unavailable" unavailableDetail="The backend did not return a rendered clean prediction artifact." />
+        <div className="prediction-evidence">
+          <EvidenceImage src={artifacts.clean_prediction_url} alt="Clean prediction" unavailableTitle="Clean prediction unavailable" unavailableDetail="The backend did not return a rendered clean prediction artifact." aspectRatio={aspectRatio} />
+          <BaseModelMetrics ariaLabel="Base model metrics on clean input" title="Base model on clean input" metrics={report?.metrics?.clean} fallbackAp={report?.ap_clean} benchmarkAvailable={benchmarkAvailable} />
+        </div>
       </EvidenceStage>
       <EvidenceStage className="evidence-stage--attacked-pred" title="Attacked model prediction" description="Paired prediction after the final ordered recipe step.">
-        <EvidenceImage src={artifacts.attacked_prediction_url} alt="Attacked prediction" unavailableTitle="Attacked prediction unavailable" unavailableDetail="The backend did not return a rendered attacked prediction artifact." />
+        <div className="prediction-evidence">
+          <EvidenceImage src={artifacts.attacked_prediction_url} alt="Attacked prediction" unavailableTitle="Attacked prediction unavailable" unavailableDetail="The backend did not return a rendered attacked prediction artifact." aspectRatio={aspectRatio} />
+          <BaseModelMetrics ariaLabel="Base model metrics on attacked input" title="Base model on attacked input" metrics={attack?.metrics} fallbackAp={attack?.ap} benchmarkAvailable={benchmarkAvailable} />
+        </div>
       </EvidenceStage>
 
       <section className="workspace__per_object_failures" aria-label="Per-object failure evidence">
@@ -115,8 +129,6 @@ export default function Workspace({ report, samples, mode }) {
         <span>Seed: {config.seed ?? "unavailable"}</span>
         <span>Run ID: {report?.run_id || "unavailable"}</span>
       </section>
-
-      <section className="workspace__metrics" aria-label="Five key metrics"><header><p className="evidence-stage__eyebrow">Decision summary</p><h2>Five key metrics</h2></header><FiveMetrics report={report} selectedResult={attack} /></section>
     </div>
   );
 }

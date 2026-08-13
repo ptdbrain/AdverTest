@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import Workspace from "@/components/Workspace";
 
@@ -33,7 +33,8 @@ describe("Workspace", () => {
     expect(screen.getByRole("region", { name: "Clean model prediction" })).toBeVisible();
     expect(screen.getByRole("region", { name: "Attacked model prediction" })).toBeVisible();
     expect(screen.getByRole("region", { name: "Per-object failure evidence" })).toBeVisible();
-    expect(screen.getByRole("region", { name: "Five key metrics" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Base model metrics on clean input" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Base model metrics on attacked input" })).toBeVisible();
     expect(screen.getAllByText("person")).toHaveLength(2);
     expect(screen.getByText("obj-1")).toBeVisible();
     expect(screen.getByLabelText("Ground truth overlay")).toBeVisible();
@@ -60,14 +61,44 @@ describe("Workspace", () => {
     expect(screen.getByText("Attacked prediction unavailable")).toBeVisible();
   });
 
-  it("uses the selected final recipe result and nested robustness score", () => {
-    render(<Workspace report={{ ap_clean: 0.72, cells: [{ ap: 0.45, degradation_ratio: 0.375, metrics: { objects_broken: 7 } }], metrics: { robustness: { robust_score_normalized: 63.4 } } }} samples={[]} mode="detection2d" />);
+  it("uses the selected final recipe result for attacked-input metrics", () => {
+    render(<Workspace report={{ ap_clean: 0.72, cells: [{ ap: 0.45, metrics: { ap75: 0.31, map50_95: 0.28 } }], metrics: { clean: { ap75: 0.61, map50_95: 0.58 } } }} samples={[]} mode="detection2d" />);
 
     expect(screen.getAllByText("0.720")).toHaveLength(1);
     expect(screen.getByText("0.450")).toBeVisible();
-    expect(screen.getByText("37.5%")).toBeVisible();
-    expect(screen.getByText("7")).toBeVisible();
-    expect(screen.getByText("63.400")).toBeVisible();
+    expect(screen.getByText("0.610")).toBeVisible();
+    expect(screen.getByText("0.310")).toBeVisible();
+  });
+
+  it("separates base-model metrics for the clean and attacked inputs", () => {
+    render(<Workspace report={{
+      ap_clean: 0.72,
+      metrics: { clean: { ap50: 0.72, ap75: 0.61, map50_95: 0.58 } },
+      cells: [{ ap: 0.45, degradation_ratio: 0.375, metrics: { ap50: 0.45, ap75: 0.31, map50_95: 0.28 } }],
+    }} samples={[]} mode="detection2d" />);
+
+    const cleanMetrics = screen.getByRole("region", { name: "Base model metrics on clean input" });
+    const attackedMetrics = screen.getByRole("region", { name: "Base model metrics on attacked input" });
+    expect(within(cleanMetrics).getByText("0.720")).toBeVisible();
+    expect(within(cleanMetrics).getByText("0.610")).toBeVisible();
+    expect(within(attackedMetrics).getByText("0.450")).toBeVisible();
+    expect(within(attackedMetrics).getByText("0.310")).toBeVisible();
+  });
+
+  it("keeps all four evidence frames on the source image aspect ratio", () => {
+    const { container } = render(<Workspace report={{ cells: [] }} samples={[{
+      artifacts: {
+        clean_input_url: "http://localhost:8000/data/clean.jpg",
+        attacked_input_url: "http://localhost:8000/data/attacked.jpg",
+        clean_prediction_url: "http://localhost:8000/data/clean_prediction.jpg",
+        attacked_prediction_url: "http://localhost:8000/data/attacked_prediction.jpg",
+      },
+      ground_truth: { type: "boxes", image_width: 1242, image_height: 375, objects: [] },
+    }]} mode="detection2d" />);
+
+    const frames = [...container.querySelectorAll(".evidence-media")];
+    expect(frames).toHaveLength(4);
+    expect(frames.every((frame) => frame.style.getPropertyValue("--evidence-aspect") === "1242 / 375")).toBe(true);
   });
 
   it("lets the reviewer choose an evidence sample and keeps its report cell paired by attack and severity", () => {

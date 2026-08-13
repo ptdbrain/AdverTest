@@ -182,7 +182,13 @@ class TestRunner:
             fatal.append("dataset returned no samples")
         if config.gpu_budget_cap is not None and estimate.cost_units > config.gpu_budget_cap:
             fatal.append(f"estimated cost {estimate.cost_units:.2f} exceeds gpu_budget_cap {config.gpu_budget_cap:.2f}")
-        if config.recipe and config.recipe.steps and not selected:
+        if config.recipe:
+            skipped_by_name = {item.attack: item.reason for item in skipped}
+            for step in config.recipe.steps:
+                reason = skipped_by_name.get(step.attack_name)
+                if reason:
+                    fatal.append(f"INCOMPATIBLE_RECIPE: {step.attack_name}: {reason}")
+        if not config.recipe and config.attacks and not selected:
             fatal.append("NO_COMPATIBLE_ATTACKS")
         return PreflightResult(tuple(attack.name for attack in selected), tuple(skipped), tuple(fatal))
 
@@ -548,12 +554,12 @@ class TestRunner:
 def _incompatibility(attack: type[BaseAttack], dataset: DatasetSource, info: ModelInfo) -> str | None:
     """Reason this attack cannot run here, or ``None`` when it can."""
     if attack.needs_gradients and not info.supports_gradients:
-        return f"attack needs input gradients, adapter {info.name!r} does not expose them"
+        return "missing_model_capability:input_gradient"
     missing_capabilities = sorted(
         capability for capability in attack.required_capabilities if capability not in info.capabilities
     )
     if missing_capabilities:
-        return f"adapter {info.name!r} lacks required capabilities: {', '.join(missing_capabilities)}"
+        return f"missing_model_capability:{','.join(missing_capabilities)}"
     if attack.modality != "image" and attack.modality != dataset.modality:
         return f"attack modality {attack.modality!r} != dataset modality {dataset.modality!r}"
     if attack.required_tasks and info.task not in attack.required_tasks:

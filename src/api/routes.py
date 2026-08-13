@@ -15,10 +15,13 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from PIL import Image, UnidentifiedImageError
 
-from src.adapters import load_adapters
+from src.adapters import get_adapter, load_adapters
+from src.api.checkpoint_service import CheckpointValidationService
 from src.api.generated_dataset_service import GeneratedDatasetService
+from src.api.ingestion_validation import summarize_batch, validate_annotation
 from src.api.jobs import LocalRunWorker, SqliteRunStore
 from src.api.schemas import (
+    AnnotationDocument,
     AttackCatalogItem,
     ClosedLoopAdvanceIn,
     ClosedLoopSnapshotOut,
@@ -27,6 +30,7 @@ from src.api.schemas import (
     CreateReviewIn,
     DatasetCatalogItem,
     DatasetImportIn,
+    DefenceRunIn,
     EvidenceStatusOut,
     FailureClusterCreateIn,
     GeneratedDatasetCreateIn,
@@ -56,6 +60,7 @@ from src.api.schemas import (
     RunJobOut,
     RunReportOut,
     TrainingRunIn,
+    UploadBatchCreateIn,
 )
 from src.api.training_service import TrainingJobService
 from src.api.workflow_store import WorkflowJobStore
@@ -69,6 +74,7 @@ from src.datasets.versioning import DatasetIngestor, IngestConfig
 from src.evaluation.export import export_comparison
 from src.models import list_known_versions, scan_base_checkpoints, scan_model_artifacts
 from src.models.families import FAMILIES, adapter_request
+from src.models.versions import ModelVersion
 from src.pipeline import RunConfig, TestRunner
 from src.services.person_d import PersonDServices
 from src.training.contracts import DefenseProfile, TrainingRunConfig
@@ -89,10 +95,14 @@ _generated_datasets = GeneratedDatasetService(
     get_settings().artifact_root,
     max_workers=get_settings().worker_max_concurrency,
 )
+_checkpoint_validations = CheckpointValidationService(
+    _store, _workflow_store, max_workers=get_settings().worker_max_concurrency,
+)
 _generated_datasets.recover()
 for _run_id, _config in _store.recoverable():
     _worker.enqueue(_run_id, _config)
 _training_jobs.recover()
+_checkpoint_validations.recover()
 
 
 def _validate_uploaded_image(payload: bytes) -> tuple[str, tuple[int, int]]:
@@ -111,12 +121,125 @@ def _validate_uploaded_image(payload: bytes) -> tuple[str, tuple[int, int]]:
         ) from exc
 
 
+@router.post("/uploads/batches", status_code=201)
+async def create_upload_batch(body: UploadBatchCreateIn) -> dict[str, Any]:
+    """Create a resumable, task-bound upload batch before browser byte uploads."""
+    batch_id = f"batch-{uuid.uuid4().hex[:12]}"
+    payload: dict[str, Any] = {
+        "batch_id": batch_id,
+        "display_name": body.display_name,
+        "task_id": body.task_id,
+        "class_map": body.class_map,
+        "anonymized": body.anonymized,
+        "dataset_kind": body.dataset_kind,
+        "attacked_manifest": body.attacked_manifest.model_dump(mode="json") if body.attacked_manifest else None,
+        "samples": {},
+        "status": "DRAFT",
+    }
+    payload["validation"] = summarize_batch(payload).model_dump(mode="json")
+    return _store.put_record("upload_batch", batch_id, payload)
+
+
+@router.get("/uploads/batches/{batch_id}")
+async def get_upload_batch(batch_id: str) -> dict[str, Any]:
+    batch = _store.get_record("upload_batch", batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="UPLOAD_BATCH_UNKNOWN")
+    return batch
+
+
+@router.put("/uploads/batches/{batch_id}/annotations/{sample_id}")
+async def save_annotation(batch_id: str, sample_id: str, body: AnnotationDocument) -> dict[str, Any]:
+    """Persist canonical labels only after their perception-mode contract passes."""
+    batch = _store.get_record("upload_batch", batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="UPLOAD_BATCH_UNKNOWN")
+    samples = dict(batch.get("samples", {}))
+    sample = samples.get(sample_id)
+    if sample is None:
+        raise HTTPException(status_code=404, detail="UPLOAD_SAMPLE_UNKNOWN")
+    if body.task_id != batch["task_id"]:
+        raise HTTPException(status_code=422, detail={"code": "TASK_ANNOTATION_MISMATCH"})
+    issues = validate_annotation(body, sample_id=sample_id, sample=sample, class_map=dict(batch.get("class_map", {})))
+    if issues:
+        raise HTTPException(status_code=422, detail={"code": "ANNOTATION_INVALID", "issues": [issue.model_dump(mode="json") for issue in issues]})
+    sample["annotation"] = body.model_dump(mode="json")
+    sample["annotation_status"] = "VALID"
+    samples[sample_id] = sample
+    batch["samples"] = samples
+    _write_annotation_export(batch, sample_id, body)
+    batch["validation"] = summarize_batch(batch).model_dump(mode="json")
+    return _store.update_record("upload_batch", batch_id, batch)
+
+
+@router.post("/uploads/batches/{batch_id}/finalize", status_code=201)
+async def finalize_upload_batch(batch_id: str) -> dict[str, Any]:
+    """Lock a fully validated upload batch as a dataset version for benchmark use."""
+    batch = _store.get_record("upload_batch", batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="UPLOAD_BATCH_UNKNOWN")
+    validation = summarize_batch(batch)
+    batch["validation"] = validation.model_dump(mode="json")
+    if not validation.benchmark_ready:
+        _store.update_record("upload_batch", batch_id, batch)
+        raise HTTPException(status_code=422, detail={"code": "DATASET_NOT_BENCHMARK_READY", "validation": batch["validation"]})
+    batch["status"] = "FINALIZED"
+    stored = _store.update_record("upload_batch", batch_id, batch)
+    identity = {"batch_id": batch_id, "samples": batch["samples"]}
+    version_id = f"dataset-{stable_digest(identity, length=32)}"
+    dataset_record = _store.put_record("dataset_version", version_id, {
+        "version_id": version_id,
+        "source_batch_id": batch_id,
+        "name": batch["display_name"],
+        "title": batch["display_name"],
+        "dataset": "folder_dataset",
+        "dataset_params": {"root": str(_upload_root() / batch_id), "input_format": "advertest"},
+        "task_id": batch["task_id"],
+        "dataset_kind": batch["dataset_kind"],
+        "anonymized": batch["anonymized"],
+        "validation": batch["validation"],
+        "attacked_manifest": batch.get("attacked_manifest"),
+        "input_schema": validation.input_schema,
+        "annotation_schema": validation.annotation_schema,
+        "benchmark_ready": True,
+        "paired_comparison_ready": batch["dataset_kind"] == "attacked_paired",
+    })
+    return {**stored, "dataset_version": dataset_record, "benchmark_ready": True}
+
+
+def _write_annotation_export(batch: dict[str, Any], sample_id: str, document: AnnotationDocument) -> None:
+    """Write the existing folder adapter's canonical label shape without UI-specific data."""
+    root = _upload_root() / str(batch["batch_id"])
+    labels = root / "labels"
+    labels.mkdir(parents=True, exist_ok=True)
+    if document.task_id == "detection2d":
+        class_map = dict(batch.get("class_map", {}))
+        payload = {"boxes": [
+            {
+                "x1": annotation["bbox_xyxy"][0],
+                "y1": annotation["bbox_xyxy"][1],
+                "x2": annotation["bbox_xyxy"][2],
+                "y2": annotation["bbox_xyxy"][3],
+                "label": class_map[annotation["class_id"]],
+                "score": 1.0,
+            }
+            for annotation in document.annotations
+        ]}
+    else:
+        payload = document.model_dump(mode="json")
+    (labels / f"{sample_id}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
 @router.post("/uploads/images", status_code=201)
 async def upload_image(request: Request) -> dict[str, Any]:
     """Store one user-supplied image; clients may send raw bytes, no multipart needed."""
     task_id = request.headers.get("x-task-id", "detection2d")
-    if task_id != "detection2d":
-        raise HTTPException(status_code=422, detail={"code": "ANNOTATIONS_REQUIRED", "task_id": task_id, "message": "raw image upload is only a 2D detection quick-inference contract"})
+    batch_id = request.headers.get("x-upload-batch-id")
+    batch = _store.get_record("upload_batch", batch_id) if batch_id else None
+    if task_id not in {"detection2d", "segmentation", "detection3d"}:
+        raise HTTPException(status_code=422, detail={"code": "TASK_UNKNOWN", "task_id": task_id})
+    if task_id != "detection2d" and batch is None:
+        raise HTTPException(status_code=422, detail={"code": "ANNOTATIONS_REQUIRED", "task_id": task_id, "message": "Create a task-bound batch before uploading data that requires annotations."})
     filename = request.headers.get("x-filename", "upload.bin")
     filename = Path(filename).name
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", filename):
@@ -127,29 +250,69 @@ async def upload_image(request: Request) -> dict[str, Any]:
 
     image_format, (width, height) = _validate_uploaded_image(payload)
 
-    batch_id = request.headers.get("x-upload-batch-id")
     if not batch_id or not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", batch_id):
         batch_id = f"batch-{uuid.uuid4().hex[:12]}"
+    batch = _store.get_record("upload_batch", batch_id)
+    if batch is None:
+        batch = {
+            "batch_id": batch_id,
+            "display_name": batch_id,
+            "task_id": task_id,
+            "class_map": {},
+            "anonymized": False,
+            "dataset_kind": "clean",
+            "attacked_manifest": None,
+            "samples": {},
+            "status": "DRAFT",
+        }
+        batch["validation"] = summarize_batch(batch).model_dump(mode="json")
+        _store.put_record("upload_batch", batch_id, batch)
+    elif batch["task_id"] != task_id:
+        raise HTTPException(status_code=422, detail={"code": "TASK_UPLOAD_BATCH_MISMATCH"})
+
+    requested_sample_id = request.headers.get("x-sample-id")
+    if requested_sample_id and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", requested_sample_id):
+        raise HTTPException(status_code=422, detail={"code": "INVALID_SAMPLE_ID"})
+    sample_id = requested_sample_id or uuid.uuid4().hex[:12]
 
     target_dir = _upload_root() / batch_id
     images_dir = target_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
-    stored = images_dir / f"{uuid.uuid4().hex[:12]}-{filename}"
+    stored = images_dir / f"{sample_id}{Path(filename).suffix.lower()}"
+    if stored.exists() or sample_id in batch.get("samples", {}):
+        raise HTTPException(status_code=409, detail={"code": "DUPLICATE_SAMPLE_ID", "sample_id": sample_id})
     stored.write_bytes(payload)
 
     manifest = target_dir / "dataset.json"
     if not manifest.is_file():
         descriptor = {
-            "anonymized": False,
+            "anonymized": bool(batch["anonymized"]),
             "annotated": False,
             "benchmark_ready": False,
             "split": "upload",
         }
         manifest.write_text(json.dumps(descriptor), encoding="utf-8")
 
+    samples = dict(batch.get("samples", {}))
+    samples[sample_id] = {
+        "sample_id": sample_id,
+        "filename": filename,
+        "path": str(stored),
+        "bytes": len(payload),
+        "image_format": image_format,
+        "width": width,
+        "height": height,
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "annotation_status": "MISSING",
+    }
+    batch["samples"] = samples
+    batch["validation"] = summarize_batch(batch).model_dump(mode="json")
+    _store.update_record("upload_batch", batch_id, batch)
+
     return {
-        "upload_id": stored.stem,
+        "upload_id": sample_id,
         "batch_id": batch_id,
+        "sample_id": sample_id,
         "filename": filename,
         "path": str(stored),
         "bytes": len(payload),
@@ -158,7 +321,7 @@ async def upload_image(request: Request) -> dict[str, Any]:
         "height": height,
         "benchmark_ready": False,
         "status": "RAW",
-        "anonymized": False,
+        "anonymized": batch["anonymized"],
         "annotation_status": "MISSING",
         "dataset": "folder_dataset",
         "dataset_params": {
@@ -182,6 +345,14 @@ async def upload_checkpoint(request: Request) -> dict[str, Any]:
     task_id = request.headers.get("x-task-id", "")
     family_id = request.headers.get("x-model-family-id", "")
     display_name = request.headers.get("x-display-name", filename)
+    checkpoint_role = request.headers.get("x-checkpoint-role", "base")
+    parent_checkpoint_id = request.headers.get("x-parent-checkpoint-id")
+    if checkpoint_role not in {"base", "fine_tuned", "repaired"}:
+        raise HTTPException(status_code=422, detail={"code": "CHECKPOINT_ROLE_INVALID"})
+    if checkpoint_role != "base" and not parent_checkpoint_id:
+        raise HTTPException(status_code=422, detail={"code": "CHECKPOINT_PARENT_REQUIRED"})
+    if checkpoint_role == "base" and parent_checkpoint_id:
+        raise HTTPException(status_code=422, detail={"code": "BASE_CHECKPOINT_PARENT_FORBIDDEN"})
     family = FAMILIES.get(family_id)
     if family is None or task_id not in family.supported_tasks:
         raise HTTPException(status_code=422, detail={"code": "MODEL_FAMILY_TASK_MISMATCH"})
@@ -204,6 +375,13 @@ async def upload_checkpoint(request: Request) -> dict[str, Any]:
     if total == 0:
         target.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail={"code": "CHECKPOINT_EMPTY"})
+    duplicate = next(
+        (item for item in _store.list_records("checkpoint") if item.get("sha256") == digest.hexdigest()),
+        None,
+    )
+    if duplicate is not None:
+        target.unlink(missing_ok=True)
+        return duplicate
     payload = {
         "checkpoint_id": checkpoint_id,
         "display_name": display_name[:128],
@@ -213,10 +391,16 @@ async def upload_checkpoint(request: Request) -> dict[str, Any]:
         "sha256": digest.hexdigest(),
         "bytes": total,
         "status": "PENDING_VALIDATION",
-        "parent_checkpoint_id": request.headers.get("x-parent-checkpoint-id"),
+        "checkpoint_role": checkpoint_role,
+        "parent_checkpoint_id": parent_checkpoint_id,
+        "training_dataset_version_id": request.headers.get("x-training-dataset-version-id"),
         "validation": {"state": "PENDING", "reason": "Validation runs outside the API request process."},
     }
-    return _store.put_record("checkpoint", checkpoint_id, payload)
+    validation_job_id = _workflow_store.create_job("checkpoint_validation", {"checkpoint_id": checkpoint_id})
+    payload["validation_job_id"] = validation_job_id
+    stored = _store.put_record("checkpoint", checkpoint_id, payload)
+    _checkpoint_validations.start(checkpoint_id, validation_job_id)
+    return stored
 
 
 @router.get("/checkpoints")
@@ -230,6 +414,26 @@ async def get_checkpoint(checkpoint_id: str) -> dict[str, Any]:
     if checkpoint is None:
         raise HTTPException(status_code=404, detail="CHECKPOINT_UNKNOWN")
     return checkpoint
+
+
+@router.get("/checkpoints/{checkpoint_id}/validation-events")
+async def checkpoint_validation_events(checkpoint_id: str) -> list[dict[str, Any]]:
+    checkpoint = _store.get_record("checkpoint", checkpoint_id)
+    if checkpoint is None:
+        raise HTTPException(status_code=404, detail="CHECKPOINT_UNKNOWN")
+    job_id = checkpoint.get("validation_job_id")
+    return _workflow_store.events(str(job_id)) if job_id else []
+
+
+@router.post("/checkpoints/{checkpoint_id}/validation/cancel")
+async def cancel_checkpoint_validation(checkpoint_id: str) -> dict[str, Any]:
+    checkpoint = _store.get_record("checkpoint", checkpoint_id)
+    if checkpoint is None:
+        raise HTTPException(status_code=404, detail="CHECKPOINT_UNKNOWN")
+    job_id = checkpoint.get("validation_job_id")
+    if not job_id or not _workflow_store.request_cancel(str(job_id)):
+        raise HTTPException(status_code=409, detail="CHECKPOINT_VALIDATION_NOT_CANCELLABLE")
+    return {"checkpoint_id": checkpoint_id, "job_id": job_id, "state": "CANCEL_REQUESTED"}
 
 
 @router.post("/datasets/import", status_code=201)
@@ -425,21 +629,17 @@ async def create_model_comparison(body: ModelComparisonIn) -> dict[str, Any]:
     candidate_signature = _comparison_signature(right)
     paired = baseline_signature == candidate_signature
     comparison_id = f"comparison-{stable_digest(body.model_dump(mode='json'), length=20)}"
-    metric_deltas = (
-        {"clean_detection_score": {"value": right["ap_clean"] - left["ap_clean"], "unit": "ratio"}}
-        if paired
-        else {}
-    )
+    metric_deltas = _comparison_metric_deltas(left, right) if paired else {}
     baseline_attack_score = _mean_attack_score(left)
     candidate_attack_score = _mean_attack_score(right)
     lost_score = left["ap_clean"] - baseline_attack_score
     recovered_score = candidate_attack_score - baseline_attack_score
-    recovery_ratio = None if lost_score <= 0 else recovered_score / lost_score
+    recovery_ratio = None if not paired or lost_score <= 0 else recovered_score / lost_score
     payload = {
         "comparison_id": comparison_id, **body.model_dump(mode="json"), "paired": paired,
         "baseline_signature": baseline_signature,
         "candidate_signature": candidate_signature,
-        "incompatibilities": [] if paired else ["protocol_or_dataset_or_recipe_or_sample_set"],
+        "incompatibilities": [] if paired else [key for key in baseline_signature if baseline_signature.get(key) != candidate_signature.get(key)],
         "metric_deltas": metric_deltas,
         "recovery_report": {
             "baseline_clean": left["ap_clean"],
@@ -452,6 +652,45 @@ async def create_model_comparison(body: ModelComparisonIn) -> dict[str, Any]:
         },
     }
     return _store.put_record("model_comparison", comparison_id, payload)
+
+
+def _comparison_metric_deltas(left: dict[str, Any], right: dict[str, Any]) -> dict[str, dict[str, float | str]]:
+    """Keep base/candidate metric families explicit rather than one blended score."""
+    output: dict[str, dict[str, float | str]] = {
+        # Compatibility alias retained for one API cycle.  New consumers use
+        # clean_ap50 / clean_ap75 / clean_map50_95 below.
+        "clean_detection_score": {
+            "value": float(right.get("ap_clean", 0.0)) - float(left.get("ap_clean", 0.0)),
+            "unit": "ratio",
+        },
+    }
+    for input_name, payload in (("clean", left), ("attacked", right)):
+        # ``attacked`` here is intentionally filled below from each run's final
+        # attack cell; no clean/attacked result is silently combined.
+        if input_name == "attacked":
+            continue
+        for metric in ("ap50", "ap75", "map50_95"):
+            before = _metric_value(payload, metric, attacked=False)
+            after = _metric_value(right, metric, attacked=False)
+            output[f"clean_{metric}"] = {"value": after - before, "unit": "ratio"}
+    for metric in ("ap50", "ap75", "map50_95"):
+        before = _metric_value(left, metric, attacked=True)
+        after = _metric_value(right, metric, attacked=True)
+        output[f"attacked_{metric}"] = {"value": after - before, "unit": "ratio"}
+    return output
+
+
+def _metric_value(report: dict[str, Any], metric: str, *, attacked: bool) -> float:
+    if not attacked:
+        values = (report.get("metrics") or {}).get("clean") or {}
+        if metric == "ap50":
+            return float(values.get(metric, report.get("ap_clean", 0.0)))
+        return float(values.get(metric, report.get("ap_clean", 0.0)))
+    cells = report.get("cells") or []
+    if not cells:
+        return 0.0
+    values = cells[-1].get("metrics") or {}
+    return float(values.get(metric, cells[-1].get("ap", 0.0)))
 
 
 @router.get("/model-comparisons/{comparison_id}")
@@ -820,6 +1059,9 @@ async def list_attacks(
     threat_model: str | None = None,
     attack_type: str | None = None,
     scenario_kind: str | None = None,
+    model_family_id: str | None = None,
+    checkpoint_id: str | None = None,
+    dataset: str | None = None,
 ) -> list[AttackCatalogItem]:
     items = [attack.describe() for attack in load_attacks().values()]
     for field, wanted in (("group", group), ("cost_class", cost_class), ("modality", modality)):
@@ -830,6 +1072,18 @@ async def list_attacks(
     for field, wanted in (("threat_model", threat_model), ("attack_type", attack_type), ("scenario_kind", scenario_kind)):
         if wanted is not None:
             items = [item for item in items if item[field] == wanted]
+    availability = _attack_catalog_availability(
+        task_id=task_id,
+        model_family_id=model_family_id,
+        checkpoint_id=checkpoint_id,
+        dataset_name=dataset,
+    )
+    if availability is not None:
+        unavailable_reason, exclusions = availability
+        for item in items:
+            reasons = (unavailable_reason,) if unavailable_reason else exclusions.get(item["name"], ())
+            item["available"] = not reasons
+            item["reason"] = ", ".join(reasons) if reasons else None
     return [AttackCatalogItem(**item) for item in items]
 
 
@@ -1021,6 +1275,44 @@ async def create_run(config: RunConfig) -> RunJobOut:
     if preflight.fatal_errors:
         raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
     run_id = _store.create(config)
+    _worker.enqueue(run_id, config)
+    return _job_out(_store.get(run_id))
+
+
+@router.post("/defence-runs", status_code=202, response_model=RunJobOut)
+async def create_defence_run(body: DefenceRunIn) -> RunJobOut:
+    """Run a reviewed Defence candidate on the baseline's immutable protocol."""
+    baseline = _store.get(body.baseline_run_id)
+    if baseline is None:
+        raise HTTPException(status_code=404, detail={"code": "BASELINE_RUN_UNKNOWN"})
+    if baseline.get("status") != "COMPLETED" or baseline.get("report") is None:
+        raise HTTPException(status_code=409, detail={"code": "BASELINE_RUN_NOT_COMPLETED"})
+    candidate = next((item for item in _registered_model_versions() if item.id == body.checkpoint_id), None)
+    if candidate is None:
+        raise HTTPException(status_code=404, detail={"code": "CHECKPOINT_UNKNOWN"})
+    if candidate.checkpoint_role == "base":
+        raise HTTPException(status_code=422, detail={"code": "DEFENCE_CANDIDATE_ROLE_REQUIRED"})
+    baseline_config = RunConfig.model_validate(baseline["config"])
+    if candidate.task != baseline_config.task_id or candidate.model_family_id != baseline_config.model_family_id:
+        raise HTTPException(status_code=422, detail={"code": "DEFENCE_PROTOCOL_TASK_OR_FAMILY_MISMATCH"})
+    config = baseline_config.model_copy(update={
+        "checkpoint_id": candidate.id,
+        "model_version_id": candidate.id,
+        "model": candidate.model_name,
+        "adapter_params": {},
+        "execution_mode": "benchmark",
+    })
+    config = _resolve_run_config(config, allow_defence=True)
+    preflight = _runner.preflight(config)
+    if preflight.fatal_errors:
+        raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
+    run_id = _store.create(config)
+    _store.put_record("defence_evaluation", run_id, {
+        "run_id": run_id,
+        "baseline_run_id": body.baseline_run_id,
+        "checkpoint_id": candidate.id,
+        "protocol_config": baseline_config.model_dump(mode="json"),
+    })
     _worker.enqueue(run_id, config)
     return _job_out(_store.get(run_id))
 
@@ -1590,7 +1882,116 @@ def _registered_model_versions() -> list[Any]:
                 checkpoint_role=placeholder.checkpoint_role,
             )
         versions[discovered.id] = discovered
+    for record in _store.list_records("checkpoint"):
+        if record.get("status") != "READY":
+            continue
+        task_id = str(record.get("task_id", ""))
+        family_id = str(record.get("family_id", ""))
+        path = Path(str(record.get("storage_path", ""))).expanduser().resolve()
+        family = FAMILIES.get(family_id)
+        if family is None or task_id not in family.supported_tasks or not path.is_file():
+            continue
+        role = str(record.get("checkpoint_role", "base"))
+        versions[str(record["checkpoint_id"])] = ModelVersion(
+            id=str(record["checkpoint_id"]),
+            model_name=str(record.get("display_name", record["checkpoint_id"])),
+            task=task_id,  # type: ignore[arg-type]
+            checkpoint_path=str(path),
+            checkpoint_hash=str(record.get("sha256")),
+            parent_id=record.get("parent_checkpoint_id"),
+            training_metadata={
+                "source": "user_upload",
+                "validation": record.get("validation", {}),
+                "training_dataset_version_id": record.get("training_dataset_version_id"),
+            },
+            runnable=family.runnable,
+            blocked_reason=family.blocked_reason,
+            checkpoint_validated=True,
+            gate_outcome="PASSED",
+            evidence_tier="QUARANTINE_VALIDATED",
+            model_family_id=family_id,
+            checkpoint_role=role,  # type: ignore[arg-type]
+        )
     return sorted(versions.values(), key=lambda item: item.id)
+
+
+def _attack_catalog_availability(
+    *,
+    task_id: str | None,
+    model_family_id: str | None,
+    checkpoint_id: str | None,
+    dataset_name: str | None,
+) -> tuple[str | None, dict[str, tuple[str, ...]]] | None:
+    """Evaluate attack cards against the selected product contracts.
+
+    The catalog remains descriptive until a model family or checkpoint is
+    selected.  Once selected, these decisions use the same adapter metadata
+    and attack-catalog compatibility contract that governs a real run.
+    """
+    if model_family_id is None and checkpoint_id is None:
+        return None
+
+    version = None
+    if checkpoint_id:
+        version = next((item for item in _registered_model_versions() if item.id == checkpoint_id), None)
+        if version is None:
+            return "CHECKPOINT_UNKNOWN", {}
+        if model_family_id is not None and version.model_family_id != model_family_id:
+            return "CHECKPOINT_FAMILY_MISMATCH", {}
+        if task_id is not None and version.task != task_id:
+            return "MODEL_FAMILY_TASK_MISMATCH", {}
+        if version.checkpoint_role != "base":
+            return "DEFENCE_CHECKPOINT_NOT_ALLOWED_IN_ATTACK", {}
+        if not version.runnable or not version.checkpoint_path:
+            return f"MODEL_NOT_RUNNABLE:{version.blocked_reason or 'CHECKPOINT_MISSING'}", {}
+        checkpoint = Path(version.checkpoint_path).resolve()
+        if not checkpoint.is_file():
+            return "CHECKPOINT_MISSING", {}
+        try:
+            adapter_name, adapter_params = adapter_request(
+                version, checkpoint=str(checkpoint), config=RunConfig(), settings=get_settings()
+            )
+            info = get_adapter(adapter_name, **adapter_params).metadata()
+        except ValueError as exc:
+            return str(exc), {}
+        effective_task = info.task
+        capabilities = info.capabilities
+    else:
+        family = FAMILIES.get(model_family_id or "")
+        if family is None:
+            return "MODEL_FAMILY_UNKNOWN", {}
+        if task_id is not None and task_id not in family.supported_tasks:
+            return "MODEL_FAMILY_TASK_MISMATCH", {}
+        if not family.runnable:
+            return f"MODEL_FAMILY_NOT_RUNNABLE:{family.blocked_reason or family.id}", {}
+        return "BASE_CHECKPOINT_REQUIRED", {}
+
+    if dataset_name is None:
+        return "DATASET_REQUIRED", {}
+    try:
+        dataset_cls = load_datasets().get(dataset_name)
+    except KeyError:
+        return "DATASET_UNKNOWN", {}
+    if dataset_cls.task_id != effective_task:
+        return "TASK_DATASET_MISMATCH", {}
+
+    annotation_types = frozenset(
+        annotation
+        for annotation in (
+            "boxes" if any(value.startswith("boxes") for value in dataset_cls.annotation_schema) else None,
+            "mask" if any("mask" in value for value in dataset_cls.annotation_schema) else None,
+        )
+        if annotation is not None
+    )
+    result = ATTACK_CATALOG.list(
+        task=effective_task,
+        model_capabilities=capabilities,
+        annotation_types=annotation_types,
+        modality=dataset_cls.modality,
+        online=False,
+    )
+    exclusions = {item.name: item.reasons for item in result.exclusions}
+    return None, exclusions
 
 
 def _upload_root() -> Path:
@@ -1605,7 +2006,7 @@ def _dataset_root() -> Path:
     return root
 
 
-def _resolve_run_config(config: RunConfig) -> RunConfig:
+def _resolve_run_config(config: RunConfig, *, allow_defence: bool = False) -> RunConfig:
     """Resolve a product ModelVersion server-side; browsers never receive weight paths."""
     checkpoint_id = config.checkpoint_id or config.model_version_id
     if not checkpoint_id:
@@ -1628,7 +2029,7 @@ def _resolve_run_config(config: RunConfig) -> RunConfig:
                 "model_task": version.task,
             },
         )
-    if version.checkpoint_role != "base":
+    if version.checkpoint_role != "base" and not allow_defence:
         raise HTTPException(status_code=422, detail={"code": "DEFENCE_CHECKPOINT_NOT_ALLOWED_IN_ATTACK", "checkpoint_id": checkpoint_id, "checkpoint_role": version.checkpoint_role})
     try:
         dataset_cls = load_datasets().get(config.dataset)
@@ -1666,6 +2067,12 @@ def _comparison_signature(report: dict[str, Any]) -> dict[str, Any]:
         "benchmark_protocol_id": provenance.get("benchmark_protocol_id") or run_config.get("benchmark_protocol_id"),
         "recipe_hash": (provenance.get("recipe") or {}).get("recipe_hash"),
         "sample_ids": sorted(str(item.get("sample_id")) for item in samples if item.get("sample_id")),
+        "seed": run_config.get("seed"),
+        "limit": run_config.get("limit"),
+        "iou_threshold": run_config.get("iou_threshold"),
+        "confidence_threshold": run_config.get("confidence_threshold"),
+        "preprocessing": run_config.get("preprocessing_version"),
+        "image_size": run_config.get("image_size"),
     }
 
 def _is_failure_case(payload: dict[str, Any]) -> bool:

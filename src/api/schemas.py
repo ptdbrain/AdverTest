@@ -6,7 +6,7 @@ models exist so the API contract can change without touching the pipeline.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -15,6 +15,83 @@ from src.core.objectives import RequiredAnnotation, SurrogateCapability
 from src.core.types import Modality, Task
 from src.models.versions import ModelVersion
 from src.pipeline.generator import SurrogateConfig
+
+DatasetKind = Literal["clean", "attacked_standalone", "attacked_paired"]
+
+
+class ValidationIssue(BaseModel):
+    """One actionable input/annotation contract violation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    field: str
+    sample_id: str | None = None
+    severity: Literal["error", "warning"] = "error"
+    message: str
+
+
+class ValidationSummary(BaseModel):
+    """Mode-specific readiness status shared by every ingestion entry point."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    state: Literal["VALID", "INVALID", "PENDING"]
+    issues: list[ValidationIssue] = Field(default_factory=list)
+    task_id: Task
+    input_schema: list[str] = Field(default_factory=list)
+    annotation_schema: list[str] = Field(default_factory=list)
+    benchmark_ready: bool = False
+
+
+class AnnotationDocument(BaseModel):
+    """Canonical user annotation; adapters export their task-specific format later."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: Task
+    annotations: list[dict[str, Any]] = Field(default_factory=list)
+    calibration: dict[str, Any] | None = None
+    lidar_path: str | None = None
+
+
+class AttackedDatasetManifest(BaseModel):
+    """Provenance required before a clean-versus-attacked comparison is allowed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    clean_dataset_version_id: str | None = None
+    pairs: list[dict[str, str]] = Field(default_factory=list)
+    attack_name: str | None = None
+    attack_version: str | None = None
+    severity: int | None = Field(default=None, ge=0, le=5)
+    seed: int | None = Field(default=None, ge=0)
+    source_hash: str | None = None
+    ground_truth_hash: str | None = None
+
+
+class UploadBatchCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str = Field(min_length=1, max_length=200)
+    task_id: Task
+    class_map: dict[str, str] = Field(default_factory=dict)
+    anonymized: bool = False
+    dataset_kind: DatasetKind = "clean"
+    attacked_manifest: AttackedDatasetManifest | None = None
+
+
+class UploadBatchOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    batch_id: str
+    display_name: str
+    task_id: Task
+    dataset_kind: DatasetKind
+    class_map: dict[str, str] = Field(default_factory=dict)
+    anonymized: bool
+    samples: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    validation: ValidationSummary
 
 
 class AttackCatalogItem(BaseModel):
@@ -59,6 +136,10 @@ class AttackCatalogItem(BaseModel):
     attack_type: str = "corruption"
     scenario_kind: str = "environmental_degradation"
     task_ids: list[str] = Field(default_factory=list)
+    # Availability is evaluated against the concrete task/model/dataset
+    # selection when those query parameters are supplied to the catalog API.
+    available: bool = True
+    reason: str | None = None
 
 
 class ModelCatalogItem(BaseModel):
@@ -288,6 +369,15 @@ class ModelComparisonIn(BaseModel):
 
     baseline_run_id: str = Field(min_length=1)
     candidate_run_id: str = Field(min_length=1)
+
+
+class DefenceRunIn(BaseModel):
+    """Evaluate a fine-tuned/repaired candidate against one locked attack run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    baseline_run_id: str = Field(min_length=1)
+    checkpoint_id: str = Field(min_length=1, max_length=256)
 
 
 class DatasetCatalogItem(BaseModel):

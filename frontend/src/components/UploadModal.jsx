@@ -1,19 +1,26 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { uploadImage, importFolderDataset } from "@/lib/api";
+import { createUploadBatch, uploadImage, importFolderDataset } from "@/lib/api";
+import ManualAnnotationPanel from "@/components/ManualAnnotationPanel.jsx";
 
 export default function UploadModal({ isOpen, onClose, onDatasetCreated, datasets = [], taskId = "detection2d" }) {
-  const [activeTab, setActiveTab] = useState("files"); // "files" | "folder" | "catalog" | "url"
+  const [activeTab, setActiveTab] = useState("files");
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [filePreviews, setFilePreviews] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [batchClassMap, setBatchClassMap] = useState("car:Car");
+  const [batchAnonymized, setBatchAnonymized] = useState(false);
+  const [uploadedBatch, setUploadedBatch] = useState(null);
+  const [datasetKind, setDatasetKind] = useState("clean");
+  const [pairedManifest, setPairedManifest] = useState('{"clean_dataset_version_id":"","pairs":[],"attack_name":"","attack_version":"","severity":3,"seed":42,"source_hash":"","ground_truth_hash":""}');
   const previewUrls = useRef(new Set());
 
   // Folder Import State
-  const [folderPath, setFolderPath] = useState("data/anonymized/kitti");
+  const [folderPath, setFolderPath] = useState("data/anonymized/kitti-de");
   const [datasetName, setDatasetName] = useState("Custom Folder Import");
   const [logicalSourceId, setLogicalSourceId] = useState("folder-import");
   const [inputFormat, setInputFormat] = useState("advertest");
@@ -59,16 +66,43 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
     }
     setIsUploading(true);
     setErrorMessage("");
-    setStatusMessage("Uploading images to server...");
+    setStatusMessage("Creating task-bound upload batch...");
+    setUploadProgress(0);
 
     try {
-      const batchId = `batch-${Date.now()}`;
-      const results = [];
-      for (const file of selectedFiles) {
-        const uploaded = await uploadImage(file, batchId, taskId);
-        results.push(uploaded);
+      const classMap = Object.fromEntries(batchClassMap.split(/[\n,]+/).map((value) => value.trim()).filter(Boolean).map((value) => {
+        const [id, label] = value.split(":", 2).map((part) => part.trim());
+        return [id, label || id];
+      }));
+      let attackedManifest = null;
+      if (datasetKind === "attacked_paired") {
+        try { attackedManifest = JSON.parse(pairedManifest); }
+        catch { throw new Error("Paired manifest must be valid JSON."); }
       }
-      setStatusMessage(`Successfully uploaded ${results.length} images!`);
+      const batch = await createUploadBatch({
+        display_name: datasetName || "Browser upload",
+        task_id: taskId,
+        class_map: classMap,
+        anonymized: batchAnonymized,
+        dataset_kind: datasetKind,
+        attacked_manifest: attackedManifest,
+      });
+      const batchId = batch.batch_id;
+      setStatusMessage("Uploading images to server...");
+      const results = [];
+      const totalBytes = selectedFiles.reduce((sum, file) => sum + file.size, 0);
+      let completedBytes = 0;
+      for (const [index, file] of selectedFiles.entries()) {
+        const sampleId = `sample-${String(index + 1).padStart(4, "0")}`;
+        const uploaded = await uploadImage(file, batchId, taskId, sampleId, (ratio) => {
+          setUploadProgress(Math.round(((completedBytes + file.size * ratio) / totalBytes) * 100));
+        });
+        results.push(uploaded);
+        completedBytes += file.size;
+        setUploadProgress(Math.round((completedBytes / totalBytes) * 100));
+      }
+      setUploadedBatch({ ...batch, samples: Object.fromEntries(results.map((item) => [item.sample_id, item])) });
+      setStatusMessage(`Uploaded ${results.length} image${results.length === 1 ? "" : "s"}. Add labels to enable a benchmark.`);
       const upload = results[0];
       const customDataset = {
         id: upload.batch_id,
@@ -83,10 +117,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
         benchmark_ready: upload.benchmark_ready,
       };
       onDatasetCreated(customDataset);
-      setTimeout(() => {
-        setIsUploading(false);
-        onClose();
-      }, 1000);
+      setIsUploading(false);
     } catch (err) {
       setIsUploading(false);
       setErrorMessage(err.message || "Failed to upload image files.");
@@ -200,6 +231,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
         <div className="tab-bar" style={{ marginBottom: "16px", gap: "6px" }}>
           {[
             { id: "files", label: "📁 Batch Image Upload" },
+            { id: "attacked", label: "🛡️ Attacked Dataset" },
             { id: "folder", label: "📂 Folder Path Import" },
             { id: "catalog", label: "📊 Preset Catalog" },
           ].map((tab) => (
@@ -230,10 +262,20 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
             <span className="text-xs text-success">{statusMessage}</span>
           </div>
         )}
+        {isUploading && <progress aria-label="Upload progress" max="100" value={uploadProgress} style={{ width: "100%", marginBottom: "12px" }} />}
 
         {/* TAB 1: Batch Image File Upload */}
         {activeTab === "files" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "10px", alignItems: "end" }}>
+              <label className="config-panel__label">Classes (id:display name)
+                <input aria-label="Class map" className="select-field" value={batchClassMap} onChange={(event) => setBatchClassMap(event.target.value)} />
+              </label>
+              <label className="text-xs text-secondary" style={{ display: "flex", gap: "6px", alignItems: "center", paddingBottom: "8px" }}>
+                <input type="checkbox" checked={batchAnonymized} onChange={(event) => setBatchAnonymized(event.target.checked)} />
+                Anonymised
+              </label>
+            </div>
             <label
               htmlFor="batch-file-input"
               style={{
@@ -296,12 +338,55 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
             <button
               type="button"
               className="run-button"
-              disabled={isUploading || selectedFiles.length === 0 || taskId !== "detection2d"}
+              disabled={isUploading || selectedFiles.length === 0}
               onClick={handleUploadFiles}
               style={{ marginTop: "auto" }}
             >
-              {isUploading ? "Uploading..." : taskId === "detection2d" ? `Upload ${selectedFiles.length} Images` : "Task-aware import required"}
+              {isUploading ? `Uploading ${uploadProgress}%` : `Upload ${selectedFiles.length} Files`}
             </button>
+            {uploadedBatch && <p className="text-xs text-secondary" role="status">
+              {taskId === "detection3d" ? "3D labels must be supplied with calibration and LiDAR; a cuboid editor is intentionally unavailable." : "Uploaded without labels remains quick-inference only. Choose Label manually to enable benchmark finalization."}
+            </p>}
+            {uploadedBatch && taskId !== "detection3d" && <ManualAnnotationPanel
+              batch={uploadedBatch}
+              previews={Object.fromEntries(Object.keys(uploadedBatch.samples).map((sampleId, current) => [sampleId, filePreviews[current]]))}
+              onFinalized={(result) => {
+                const version = result.dataset_version;
+                onDatasetCreated({
+                  id: version.version_id,
+                  name: version.name,
+                  dataset: "folder_dataset",
+                  title: version.name,
+                  dataset_params: version.dataset_params,
+                  benchmark_ready: true,
+                  anonymized: version.anonymized,
+                  task_id: version.task_id,
+                  dataset_kind: version.dataset_kind,
+                });
+                setStatusMessage("Dataset finalized and benchmark-ready.");
+              }}
+            />}
+          </div>
+        )}
+
+        {activeTab === "attacked" && (
+          <div style={{ flex: 1, display: "grid", gap: "12px", overflowY: "auto" }}>
+            <p className="text-xs text-secondary">Choose a browser directory or individual files; no path on the API server is required for this flow.</p>
+            <label className="attack-card" style={{ cursor: "pointer" }}>
+              Choose attacked-data directory
+              <input type="file" multiple webkitdirectory="" directory="" style={{ display: "none" }} onChange={(event) => { handleFileChange(event); setActiveTab("files"); }} />
+            </label>
+            <label className="config-panel__label">Attack dataset kind
+              <select aria-label="Attack dataset kind" className="select-field" value={datasetKind} onChange={(event) => setDatasetKind(event.target.value)}>
+                <option value="attacked_standalone">Standalone — inference/training only</option>
+                <option value="attacked_paired">Paired — clean versus attacked comparison</option>
+              </select>
+            </label>
+            {datasetKind === "attacked_paired" && <label className="config-panel__label">Paired manifest JSON
+              <textarea aria-label="Paired manifest" className="select-field" rows="9" value={pairedManifest} onChange={(event) => setPairedManifest(event.target.value)} />
+              <span className="text-xs text-tertiary">Include clean dataset version, clean/attacked sample mapping, attack provenance, source hash and ground-truth hash.</span>
+            </label>}
+            <button type="button" className="run-button" onClick={() => setActiveTab("files")}>Continue to upload files</button>
           </div>
         )}
 
@@ -337,7 +422,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
                 className="select-field"
                 value={folderPath}
                 onChange={(e) => setFolderPath(e.target.value)}
-                placeholder="e.g. data/anonymized/kitti or C:\Dataset\KITTI"
+                placeholder="e.g. data/anonymized/kitti-de or C:\Dataset\KITTI"
               />
               <span className="text-xs text-tertiary mt-1 block">Specify the local workspace relative or absolute directory path</span>
             </div>

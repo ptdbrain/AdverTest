@@ -66,6 +66,62 @@ async def test_attack_admission_rejects_a_defence_checkpoint(client):
 
 
 @pytest.mark.asyncio
+async def test_yolo_catalog_marks_proposal_only_dag_unavailable_and_preflight_blocks_recipe(client):
+    attacks = (await client.get("/api/v1/catalog/attacks", params={
+        "task_id": "detection2d",
+        "model_family_id": "yolo11",
+        "checkpoint_id": "yolo11s-base",
+        "dataset": "synthetic_shapes",
+    })).json()
+    dag = next(item for item in attacks if item["name"] == "dag")
+
+    assert dag["available"] is False
+    assert dag["reason"] == "missing_model_capability:dense_proposals"
+
+    response = await client.post("/api/v1/runs/preflight", json={
+        "checkpoint_id": "yolo11s-base",
+        "model_family_id": "yolo11",
+        "task_id": "detection2d",
+        "dataset": "synthetic_shapes",
+        "recipe": {
+            "name": "proposal-only",
+            "steps": [{
+                "position": 0,
+                "attack_name": "dag",
+                "implementation_version": dag["implementation_version"],
+                "severity": 3,
+                "seed": 195,
+                "expected_cost": 1.0,
+            }],
+        },
+    })
+
+    assert response.status_code == 200
+    assert response.json()["fatal_errors"] == ["INCOMPATIBLE_RECIPE: dag: missing_model_capability:dense_proposals"]
+
+
+@pytest.mark.asyncio
+async def test_unrunnable_sam_and_3d_model_families_disable_their_attacks(client):
+    sam = await client.get("/api/v1/catalog/attacks", params={
+        "task_id": "segmentation",
+        "model_family_id": "sam2",
+        "dataset": "bdd100k",
+    })
+    assert sam.status_code == 200
+    assert sam.json()
+    assert {item["available"] for item in sam.json()} == {False}
+    assert {item["reason"] for item in sam.json()} == {"MODEL_FAMILY_NOT_RUNNABLE:WAITING_FOR_ARTIFACTS"}
+
+    three_d = await client.get("/api/v1/catalog/attacks", params={
+        "task_id": "detection3d",
+        "model_family_id": "centerpoint3d",
+        "dataset": "nuscenes",
+    })
+    assert three_d.status_code == 200
+    assert three_d.json() == []  # No registered 3D attack can be selected.
+
+
+@pytest.mark.asyncio
 async def test_localhost_alias_is_allowed_for_frontend_catalog_requests(client):
     response = await client.options(
         "/api/v1/perception-modes",

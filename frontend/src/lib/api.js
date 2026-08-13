@@ -37,6 +37,10 @@ export function getModelVersions() { return apiFetch("/api/v1/model-versions"); 
 export function getPerceptionModes() { return apiFetch("/api/v1/perception-modes"); }
 export function getModelFamilies(taskId) { return apiFetch(`/api/v1/model-families?task_id=${encodeURIComponent(taskId)}`); }
 export function getBaseCheckpoints(taskId, familyId) { return apiFetch(`/api/v1/base-checkpoints?task_id=${encodeURIComponent(taskId)}&model_family_id=${encodeURIComponent(familyId)}`); }
+export function getDefenceCheckpoints(taskId) { return apiFetch(`/api/v1/defence-checkpoints?task_id=${encodeURIComponent(taskId)}`); }
+export function createDefenceRun(baselineRunId, checkpointId) {
+  return apiFetch("/api/v1/defence-runs", { method: "POST", body: JSON.stringify({ baseline_run_id: baselineRunId, checkpoint_id: checkpointId }) });
+}
 
 export function estimateRun(config) {
   return apiFetch("/api/v1/runs/estimate", {
@@ -259,33 +263,71 @@ export function getStatusEvidence() {
 }
 
 /* ---- Upload & Dataset Import ---- */
-export async function uploadImage(file, batchId = null, taskId = "detection2d") {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const headers = {
-    "Content-Type": "application/octet-stream",
-    "x-filename": file.name,
-    "x-task-id": taskId,
-  };
-  if (batchId) {
-    headers["x-upload-batch-id"] = batchId;
-  }
-  const res = await fetch(`${API_BASE}/api/v1/uploads/images`, {
-    method: "POST",
-    headers,
-    body: bytes,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const detail =
-      typeof err.detail === "string"
-        ? err.detail
-        : err.detail
-          ? JSON.stringify(err.detail)
-          : `Upload failed with status ${res.status}`;
-    throw new Error(detail);
-  }
-  return res.json();
+export function createUploadBatch(payload) {
+  return apiFetch("/api/v1/uploads/batches", { method: "POST", body: JSON.stringify(payload) });
 }
+
+export function getUploadBatch(batchId) { return apiFetch(`/api/v1/uploads/batches/${encodeURIComponent(batchId)}`); }
+
+export function saveBatchAnnotation(batchId, sampleId, payload) {
+  return apiFetch(`/api/v1/uploads/batches/${encodeURIComponent(batchId)}/annotations/${encodeURIComponent(sampleId)}`, {
+    method: "PUT", body: JSON.stringify(payload),
+  });
+}
+
+export function finalizeUploadBatch(batchId) {
+  return apiFetch(`/api/v1/uploads/batches/${encodeURIComponent(batchId)}/finalize`, { method: "POST" });
+}
+
+export function uploadImage(file, batchId = null, taskId = "detection2d", sampleId = null, onProgress = null) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${API_BASE}/api/v1/uploads/images`);
+    request.setRequestHeader("Content-Type", "application/octet-stream");
+    request.setRequestHeader("x-filename", file.name);
+    request.setRequestHeader("x-task-id", taskId);
+    if (batchId) request.setRequestHeader("x-upload-batch-id", batchId);
+    if (sampleId) request.setRequestHeader("x-sample-id", sampleId);
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+    };
+    request.onerror = () => reject(new Error("Network error while uploading image."));
+    request.onload = () => {
+      let payload = {};
+      try { payload = JSON.parse(request.responseText || "{}"); } catch {}
+      if (request.status >= 200 && request.status < 300) resolve(payload);
+      else reject(new Error(typeof payload.detail === "string" ? payload.detail : JSON.stringify(payload.detail || `Upload failed with status ${request.status}`)));
+    };
+    request.send(file);
+  });
+}
+
+export function uploadCheckpoint(file, { taskId, familyId, displayName, role = "base", parentCheckpointId = null, trainingDatasetVersionId = null } = {}, onProgress = null) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${API_BASE}/api/v1/checkpoints/uploads`);
+    request.setRequestHeader("Content-Type", "application/octet-stream");
+    request.setRequestHeader("x-filename", file.name);
+    request.setRequestHeader("x-task-id", taskId || "");
+    request.setRequestHeader("x-model-family-id", familyId || "");
+    request.setRequestHeader("x-display-name", displayName || file.name);
+    request.setRequestHeader("x-checkpoint-role", role);
+    if (parentCheckpointId) request.setRequestHeader("x-parent-checkpoint-id", parentCheckpointId);
+    if (trainingDatasetVersionId) request.setRequestHeader("x-training-dataset-version-id", trainingDatasetVersionId);
+    request.upload.onprogress = (event) => { if (event.lengthComputable) onProgress?.(event.loaded / event.total); };
+    request.onerror = () => reject(new Error("Network error while uploading checkpoint."));
+    request.onload = () => {
+      let payload = {};
+      try { payload = JSON.parse(request.responseText || "{}"); } catch {}
+      if (request.status >= 200 && request.status < 300) resolve(payload);
+      else reject(new Error(typeof payload.detail === "string" ? payload.detail : JSON.stringify(payload.detail || `Upload failed with status ${request.status}`)));
+    };
+    request.send(file);
+  });
+}
+
+export function getCheckpoint(checkpointId) { return apiFetch(`/api/v1/checkpoints/${encodeURIComponent(checkpointId)}`); }
+export function getCheckpointValidationEvents(checkpointId) { return apiFetch(`/api/v1/checkpoints/${encodeURIComponent(checkpointId)}/validation-events`); }
 
 export function importFolderDataset({ root, name, logicalSourceId, inputFormat = "advertest", anonymizationManifest = "manifest.jsonl", maxSamples = 50, taskId = "detection2d" }) {
   return apiFetch("/api/v1/datasets/import", {

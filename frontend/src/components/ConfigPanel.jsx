@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import UploadModal from "./UploadModal";
+import { getCheckpoint, uploadCheckpoint } from "@/lib/api";
 
 const GROUP_LABELS = { A: "Corruption", B: "Weather", C: "Occlusion", D: "Adversarial", E: "Patch", F: "Blackbox" };
 
@@ -40,6 +41,7 @@ export default function ConfigPanel({
     sweepRecipe,
     previewRecipe,
     setRunOptions,
+    refreshBaseCheckpoints,
   } = actions;
 
   const [recipeMode, setRecipeMode] = useState("manual"); // "manual" | "preset" | "random_n" | "sweep"
@@ -52,6 +54,8 @@ export default function ConfigPanel({
   const [threatFilter, setThreatFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [scenarioFilter, setScenarioFilter] = useState("");
+  const [checkpointUpload, setCheckpointUpload] = useState("");
+  const checkpointInputRef = useRef(null);
 
   const checkpoints = baseCheckpoints.filter((item) => item.task === mode && item.model_family_id === selectedModelFamily);
   const blocked = !checkpoints.find((item) => item.id === selectedModelVersion)?.runnable;
@@ -74,6 +78,36 @@ export default function ConfigPanel({
     } catch (err) {
       setWarningMessage(err.message || "Failed to preview resource cost");
     }
+  };
+
+  const handleCheckpointFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setCheckpointUpload("Uploading checkpoint: 0%");
+    try {
+      const created = await uploadCheckpoint(file, {
+        taskId: mode,
+        familyId: selectedModelFamily,
+        displayName: file.name,
+        role: "base",
+      }, (ratio) => setCheckpointUpload(`Uploading checkpoint: ${Math.round(ratio * 100)}%`));
+      setCheckpointUpload("Validating checkpoint…");
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        const status = await getCheckpoint(created.checkpoint_id);
+        if (status.status === "READY") {
+          setCheckpointUpload("Checkpoint ready.");
+          await refreshBaseCheckpoints?.();
+          return;
+        }
+        if (status.status === "REJECTED") {
+          setCheckpointUpload(`Checkpoint rejected: ${status.validation_reason || "validation failed"}`);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      setCheckpointUpload("Checkpoint is still validating; it will appear when READY.");
+    } catch (error) { setCheckpointUpload(error.message || "Checkpoint upload failed."); }
+    finally { event.target.value = ""; }
   };
 
   return (
@@ -196,7 +230,11 @@ export default function ConfigPanel({
         </div>
       </div>
       <div className="config-panel__section">
-        <label className="config-panel__label" htmlFor="model-version">Base Checkpoint</label>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <label className="config-panel__label" htmlFor="model-version">Base Checkpoint</label>
+          <button type="button" className="tab-bar__item" onClick={() => checkpointInputRef.current?.click()} disabled={!selectedModelFamily || isRunning}>Upload checkpoint</button>
+          <input ref={checkpointInputRef} aria-label="Upload base checkpoint" type="file" accept={modelFamilies.find((item) => item.id === selectedModelFamily)?.checkpoint_extensions?.join(",") || ".pt,.pth"} style={{ display: "none" }} onChange={handleCheckpointFile} />
+        </div>
         <div className="select-wrapper">
           <select id="model-version" className="select-field" value={selectedModelVersion || ""} onChange={(e) => setSelectedModelVersion(e.target.value)}>
             {checkpoints.map((item) => <option key={item.id} value={item.id} disabled={!item.runnable}>{item.model_name} — {item.id}</option>)}
@@ -207,6 +245,7 @@ export default function ConfigPanel({
             A validated base checkpoint is required for Attack. Fine-tuned and repaired checkpoints are available only in Defence.
           </small>
         )}
+        {checkpointUpload && <small role="status" style={{ display: "block", marginTop: 6 }}>{checkpointUpload}</small>}
       </div>
 
       {/* Dataset & Ingestion Selector */}
@@ -277,6 +316,7 @@ export default function ConfigPanel({
             >
               <span className="attack-card__name">{atk.name.replace(/_/g, " ")}</span>
               <span className="attack-card__group">{atk.attack_type?.replace(/_/g, " ") || GROUP_LABELS[atk.group] || atk.group}</span>
+              {atk.available === false && <span className="attack-card__group">Unavailable: {atk.reason}</span>}
             </button>
           ))}
         </div>

@@ -74,6 +74,30 @@ describe("ConfigPanel", () => {
     expect(screen.queryByRole("option", { name: /kitti.*b0/i })).toBeNull();
   });
 
+  it("marks attacks incompatible with the selected model as unavailable", () => {
+    render(
+      <ConfigPanel
+        datasets={[{ name: "synthetic_shapes", anonymized: true }]}
+        attacks={[{ name: "dag", group: "D", cost_class: "HEAVY", available: false, reason: "missing_model_capability:dense_proposals" }]}
+        modes={[{ id: "detection2d", title: "2D Object Detection", runnable: true }]}
+        modelFamilies={[{ id: "yolo11", display_name: "YOLO11", runnable: true }]}
+        baseCheckpoints={[{ id: "yolo11s-base", model_name: "yolo11s", model_family_id: "yolo11", task: "detection2d", runnable: true }]}
+        mode="detection2d"
+        selectedModelFamily="yolo11"
+        selectedModelVersion="yolo11s-base"
+        selectedDataset="synthetic_shapes"
+        selectedAttacks={[]}
+        recipe={{ steps: [] }}
+        isRunning={false}
+        actions={{}}
+      />,
+    );
+
+    const dag = screen.getByRole("button", { name: /dag/i });
+    expect(dag).toBeDisabled();
+    expect(dag).toHaveAttribute("title", "missing_model_capability:dense_proposals");
+  });
+
   it("supports recipe strategy modes and cost preview button", () => {
     const actions = {
       setSelectedDataset: vi.fn(),

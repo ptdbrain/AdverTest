@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  getCatalogAttacks, getCatalogModels, getCatalogDatasets, getModelVersions, getPerceptionModes, getModelFamilies, getBaseCheckpoints,
+  getCatalogAttacks, getCatalogModels, getCatalogDatasets, getModelVersions, getPerceptionModes, getModelFamilies, getBaseCheckpoints, getDefenceCheckpoints, createDefenceRun,
   createRun, createInferenceExperiment, getRun, getRunReport, getRunSamples, connectRunWebSocket, triggerAutoFlag, cancelRun,
-  createRetrainingBacklog, addRetrainingBacklogItem, approveRetrainingBacklog,
+  createRetrainingBacklog, addRetrainingBacklogItem,
   estimateRun, preflightRun, randomizeRecipe as randomizeRecipeRequest,
   sweepRecipe as sweepRecipeRequest, previewRecipe as previewRecipeRequest, getRecipePresets,
 } from "@/lib/api";
@@ -30,6 +30,7 @@ export function useAdverTest() {
   const [modelVersions, setModelVersions] = useState([]);
   const [modelFamilies, setModelFamilies] = useState([]);
   const [baseCheckpoints, setBaseCheckpoints] = useState([]);
+  const [defenceCheckpoints, setDefenceCheckpoints] = useState([]);
   const [modes, setModes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDataset, setSelectedDataset] = useState("");
@@ -51,6 +52,7 @@ export function useAdverTest() {
   const [backlogError, setBacklogError] = useState("");
   const [isCreatingBacklog, setIsCreatingBacklog] = useState(false);
   const [activeTab, setActiveTab] = useState("evidence");
+  const [defenceBaselineRunId, setDefenceBaselineRunId] = useState(null);
   const [recipe, setRecipe] = useState({ name: "manual", steps: [] });
   const [recipePresets, setRecipePresets] = useState([]);
   const wsRef = useRef(null);
@@ -107,10 +109,10 @@ export function useAdverTest() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getCatalogAttacks({ task_id: mode }), getCatalogDatasets({ task_id: mode }), getModelFamilies(mode)])
-      .then(([taskAttacks, taskDatasets, families]) => {
+    Promise.all([getCatalogDatasets({ task_id: mode }), getModelFamilies(mode)])
+      .then(([taskDatasets, families]) => {
         if (cancelled) return;
-        setAttacks(taskAttacks); setDatasets(taskDatasets); setModelFamilies(families);
+        setDatasets(taskDatasets); setModelFamilies(families);
         setSelectedModelFamily((current) => families.some((item) => item.id === current) ? current : (families[0]?.id || ""));
         setSelectedDataset(taskDatasets[0] ? (taskDatasets[0].id || taskDatasets[0].name) : "");
         setSelectedAttacks([]); setRecipe({ name: "manual", steps: [] });
@@ -132,6 +134,42 @@ export function useAdverTest() {
     return () => { cancelled = true; };
   }, [mode, selectedModelFamily]);
 
+  useEffect(() => {
+    let cancelled = false;
+    getDefenceCheckpoints(mode).then((items) => { if (!cancelled) setDefenceCheckpoints(items); })
+      .catch((error) => { if (!cancelled) console.warn("Defence checkpoints unavailable:", error); });
+    return () => { cancelled = true; };
+  }, [mode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedModelFamily) return undefined;
+    const dataset = datasets.find((item) => (item.id || item.name) === selectedDataset);
+    const params = {
+      task_id: mode,
+      model_family_id: selectedModelFamily,
+      ...(selectedModelVersion ? { checkpoint_id: selectedModelVersion } : {}),
+      ...(dataset ? { dataset: dataset.dataset || dataset.name } : {}),
+    };
+    getCatalogAttacks(params)
+      .then((taskAttacks) => { if (!cancelled) setAttacks(taskAttacks); })
+      .catch((error) => { if (!cancelled) console.warn("Attack availability unavailable:", error); });
+    return () => { cancelled = true; };
+  }, [datasets, mode, selectedDataset, selectedModelFamily, selectedModelVersion]);
+
+  useEffect(() => {
+    const unavailable = new Set(attacks.filter((item) => item.available === false).map((item) => item.name));
+    if (!unavailable.size) return;
+    const timer = setTimeout(() => {
+      setRecipe((current) => {
+        const steps = current.steps.filter((step) => !unavailable.has(step.attack_name));
+        return steps.length === current.steps.length ? current : { ...current, steps: steps.map((step, position) => ({ ...step, position })) };
+      });
+      setSelectedAttacks((current) => current.filter((name) => !unavailable.has(name)));
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [attacks]);
+
   const updateAttackSeverity = useCallback((position, severity) => {
     setRecipe((current) => ({ ...current, steps: current.steps.map((step) => step.position === position ? { ...step, severity } : step) }));
   }, []);
@@ -139,9 +177,16 @@ export function useAdverTest() {
     setModeState(nextMode);
   }, []);
   const setModelFamily = useCallback((familyId) => setSelectedModelFamily(familyId), []);
+  const refreshBaseCheckpoints = useCallback(async () => {
+    if (!selectedModelFamily) return;
+    const checkpoints = await getBaseCheckpoints(mode, selectedModelFamily);
+    setBaseCheckpoints(checkpoints);
+    setSelectedModelVersion((current) => checkpoints.some((item) => item.id === current) ? current : (checkpoints[0]?.id || ""));
+  }, [mode, selectedModelFamily]);
   const setRunOptions = useCallback((changes) => setRunOptionsState((current) => ({ ...current, ...changes })), []);
   const toggleAttack = useCallback((name) => {
     const metadata = attacks.find((item) => item.name === name);
+    if (metadata?.available === false) return;
     setRecipe((current) => {
       const remaining = current.steps.filter((step) => step.attack_name !== name);
       const steps = remaining.length === current.steps.length
@@ -268,6 +313,18 @@ export function useAdverTest() {
     }
   }, [baseCheckpoints, buildRunConfig, datasets, mode, monitorRun, recipe, runOptions, selectedDataset, selectedModelFamily, selectedModelVersion]);
 
+  const runDefence = useCallback(async (checkpointId) => {
+    if (!runId || !checkpointId) return;
+    setDefenceBaselineRunId(runId);
+    setIsRunning(true); setRunStatus("PREFLIGHT"); setProgress(0); setProgressDetail("Locking the base-run protocol for Defence...");
+    try {
+      const job = await createDefenceRun(runId, checkpointId);
+      setRunId(job.run_id); setRunStatus(job.status); monitorRun(job.run_id);
+    } catch (error) {
+      setRunStatus("FAILED"); setProgressDetail(error.message || "Defence evaluation could not be started."); setIsRunning(false);
+    }
+  }, [monitorRun, runId]);
+
   const createBacklog = useCallback(async () => {
     const failures = (report?.cells ?? []).filter((cell) => cell.degradation > 0);
     if (!runId || !failures.length || isCreatingBacklog || backlog) return;
@@ -276,13 +333,18 @@ export function useAdverTest() {
       const created = await createRetrainingBacklog(`Measured failures from ${runId}`);
       let updated = created;
       for (const cell of failures) updated = await addRetrainingBacklogItem(created.id, `${runId}:${cell.attack}:severity-${cell.severity}`);
-      setBacklog(await approveRetrainingBacklog(updated.id));
+      // Draft is intentionally preserved.  A reviewer must approve it through
+      // the Defence workflow before any training request can be submitted.
+      setBacklog(updated);
     } catch (error) { setBacklogError(error.message || "Could not create the retraining backlog."); }
     finally { setIsCreatingBacklog(false); }
   }, [backlog, isCreatingBacklog, report, runId]);
 
   const setCanonicalRecipe = useCallback((source) => {
-    const steps = (source.steps || []).map((step, position) => {
+    const steps = (source.steps || []).filter((step) => {
+      const attackName = step.attack_name || step.attack_id || step.attack;
+      return attacks.find((item) => item.name === attackName)?.available !== false;
+    }).map((step, position) => {
       const attackName = step.attack_name || step.attack_id || step.attack;
       const metadata = attacks.find((item) => item.name === attackName);
       return { position, attack_name: attackName, implementation_version: step.implementation_version || metadata?.version || "1.0.0", severity: step.severity, parameters: step.parameters || {}, seed: step.seed ?? runOptions.seed, expected_cost: step.expected_cost ?? 1 };
@@ -306,5 +368,5 @@ export function useAdverTest() {
 
   useEffect(() => () => { wsRef.current?.close(); if (pollRef.current) clearInterval(pollRef.current); }, []);
   const version = baseCheckpoints.find((item) => item.id === selectedModelVersion);
-  return { state: { attacks, models, datasets, modelVersions, modelFamilies, baseCheckpoints, modes, recipePresets, recipe, loading, selectedDataset, selectedAttacks, mode, selectedModelFamily, selectedModelVersion, runOptions, runId, runStatus, progress, progressDetail, resultLoadStatus, resultLoadError, report, samples, isRunning, backlog, backlogError, isCreatingBacklog, trainingBlockedReason: version?.runnable ? "" : "WAITING_FOR_ARTIFACTS", activeTab }, actions: { setSelectedDataset, addDataset, setMode, setModelFamily, setSelectedModelVersion, setRunOptions, toggleAttack, updateAttackSeverity, handleRun, createBacklog, setActiveTab, loadPreset, randomizeRecipe, sweepRecipe, previewRecipe, retryEvidence, cancelRun: cancelRunAction } };
+  return { state: { attacks, models, datasets, modelVersions, modelFamilies, baseCheckpoints, defenceCheckpoints, modes, recipePresets, recipe, loading, selectedDataset, selectedAttacks, mode, selectedModelFamily, selectedModelVersion, runOptions, runId, runStatus, progress, progressDetail, resultLoadStatus, resultLoadError, report, samples, isRunning, backlog, backlogError, isCreatingBacklog, trainingBlockedReason: version?.runnable ? "" : "WAITING_FOR_ARTIFACTS", activeTab, defenceBaselineRunId }, actions: { setSelectedDataset, addDataset, setMode, setModelFamily, setSelectedModelVersion, setRunOptions, refreshBaseCheckpoints, toggleAttack, updateAttackSeverity, handleRun, runDefence, createBacklog, setActiveTab, loadPreset, randomizeRecipe, sweepRecipe, previewRecipe, retryEvidence, cancelRun: cancelRunAction } };
 }
