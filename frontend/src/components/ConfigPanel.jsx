@@ -3,6 +3,19 @@ import UploadModal from "./UploadModal";
 import { getCheckpoint, uploadCheckpoint } from "@/lib/api";
 
 const GROUP_LABELS = { A: "Corruption", B: "Weather", C: "Occlusion", D: "Adversarial", E: "Patch", F: "Blackbox" };
+const ATTACK_SECTIONS = [
+  ["white", "White-box"],
+  ["gray", "Gray-box / physical / transfer"],
+  ["black", "Black-box / query"],
+  ["real", "Real-world / corruption / weather / sensor"],
+];
+
+function attackSection(attack) {
+  if (attack.threat_model === "white_box") return "white";
+  if (attack.threat_model === "black_box" || attack.attack_type === "query") return "black";
+  if (attack.threat_model === "gray_box" || /physical|transfer|patch/.test(`${attack.attack_type} ${attack.scenario_kind}`)) return "gray";
+  return "real";
+}
 
 function checkpointLabel(item) {
   const path = item.checkpoint_path || "";
@@ -304,22 +317,30 @@ export default function ConfigPanel({
             </select>
           ))}
         </div>
-        <div className="attack-grid">
-          {visibleAttacks.map((atk) => (
-            <button
-              key={atk.name}
-              type="button"
-              className={`attack-card ${selectedAttacks.includes(atk.name) ? "attack-card--selected" : ""}`}
-              onClick={() => toggleAttack(atk.name)}
-              disabled={atk.available === false}
-              title={atk.available === false ? atk.reason : undefined}
-            >
-              <span className="attack-card__name">{atk.name.replace(/_/g, " ")}</span>
-              <span className="attack-card__group">{atk.attack_type?.replace(/_/g, " ") || GROUP_LABELS[atk.group] || atk.group}</span>
-              {atk.available === false && <span className="attack-card__group">Unavailable: {atk.reason}</span>}
-            </button>
-          ))}
-        </div>
+        {ATTACK_SECTIONS.map(([sectionId, title]) => {
+          const sectionAttacks = visibleAttacks.filter((attack) => attackSection(attack) === sectionId);
+          if (!sectionAttacks.length) return null;
+          return <section key={sectionId} aria-label={title} style={{ marginTop: "10px" }}>
+            <strong className="text-xs text-secondary">{title}</strong>
+            <div className="attack-grid" style={{ marginTop: "6px" }}>
+              {sectionAttacks.map((atk) => (
+                <button
+                  key={atk.name}
+                  type="button"
+                  className={`attack-card ${selectedAttacks.includes(atk.name) ? "attack-card--selected" : ""}`}
+                  onClick={() => toggleAttack(atk.name)}
+                  disabled={atk.available === false}
+                  title={atk.available === false ? atk.reason : undefined}
+                >
+                  <span className="attack-card__name">{atk.name.replace(/_/g, " ")}</span>
+                  <span className="attack-card__group">{atk.attack_type?.replace(/_/g, " ") || GROUP_LABELS[atk.group] || atk.group}</span>
+                  <span className="attack-card__group">{atk.threat_model?.replace(/_/g, " ")}</span>
+                  {atk.available === false && <span className="attack-card__group">Unavailable: {atk.reason}</span>}
+                </button>
+              ))}
+            </div>
+          </section>;
+        })}
       </div>
 
       {/* Every ordered recipe step owns its severity. */}

@@ -98,6 +98,23 @@ describe("ConfigPanel", () => {
     expect(dag).toHaveAttribute("title", "missing_model_capability:dense_proposals");
   });
 
+  it("separates attack cards by threat-model class without hiding incompatible methods", () => {
+    render(<ConfigPanel
+      datasets={[]}
+      attacks={[
+        { name: "fgsm", threat_model: "white_box", attack_type: "gradient", available: true },
+        { name: "square", threat_model: "black_box", attack_type: "query", available: false, reason: "missing capability" },
+        { name: "fog", threat_model: "model_agnostic", attack_type: "corruption", available: true },
+      ]}
+      modes={[]} modelFamilies={[]} baseCheckpoints={[]} mode="detection2d" selectedModelFamily="" selectedModelVersion="" selectedDataset="" selectedAttacks={[]} recipe={{ steps: [] }} isRunning={false} actions={{}}
+    />);
+
+    expect(screen.getByText("White-box")).toBeVisible();
+    expect(screen.getByText("Black-box / query")).toBeVisible();
+    expect(screen.getByText("Real-world / corruption / weather / sensor")).toBeVisible();
+    expect(screen.getByRole("button", { name: /square/i })).toBeDisabled();
+  });
+
   it("supports recipe strategy modes and cost preview button", () => {
     const actions = {
       setSelectedDataset: vi.fn(),
