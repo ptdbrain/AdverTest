@@ -12,15 +12,15 @@ function number(value, unit) {
   return Number(value).toFixed(unit === "count" ? 0 : 3);
 }
 
-export default function FiveMetrics({ report }) {
-  const firstCell = report?.cells?.[0];
+export default function FiveMetrics({ report, selectedResult }) {
+  const finalRecipeResult = selectedResult ?? report?.cells?.at(-1) ?? null;
   const benchmarkAvailable = report?.benchmark_metrics_available !== false;
   const values = {
     ap_clean: benchmarkAvailable ? report?.ap_clean : null,
-    attacked: benchmarkAvailable ? firstCell?.ap : null,
-    degradation: benchmarkAvailable ? firstCell?.degradation : null,
-    broken: benchmarkAvailable ? firstCell?.metrics?.objects_broken : null,
-    robust_score_normalized: benchmarkAvailable ? report?.metrics?.robust_score_normalized : null,
+    attacked: benchmarkAvailable ? finalRecipeResult?.ap : null,
+    degradation: benchmarkAvailable ? finalRecipeResult?.degradation_ratio : null,
+    broken: benchmarkAvailable ? finalRecipeResult?.metrics?.objects_broken : null,
+    robust_score_normalized: benchmarkAvailable ? report?.metrics?.robustness?.robust_score_normalized : null,
   };
 
   return (

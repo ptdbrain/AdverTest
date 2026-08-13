@@ -68,6 +68,8 @@ class SampleResult:
     attack_version: str = ""
     attack_params: dict[str, Any] = field(default_factory=dict)
     model_checkpoint_hash: str | None = None
+    recipe_hash: str | None = None
+    recipe_steps: list[dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -85,6 +87,8 @@ class SampleResult:
             "attack_version": self.attack_version,
             "attack_params": self.attack_params,
             "model_checkpoint_hash": self.model_checkpoint_hash,
+            "recipe_hash": self.recipe_hash,
+            "recipe_steps": self.recipe_steps,
         }
 
 

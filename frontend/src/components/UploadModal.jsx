@@ -15,6 +15,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
   // Folder Import State
   const [folderPath, setFolderPath] = useState("data/anonymized/kitti");
   const [datasetName, setDatasetName] = useState("Custom Folder Import");
+  const [logicalSourceId, setLogicalSourceId] = useState("folder-import");
   const [inputFormat, setInputFormat] = useState("advertest");
   const [maxSamples, setMaxSamples] = useState(50);
 
@@ -25,6 +26,13 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
+    const supported = new Set(["image/jpeg", "image/png", "image/webp", "image/bmp"]);
+    const invalid = files.find((file) => !supported.has(file.type) || file.size > 25 * 1024 * 1024);
+    if (invalid) {
+      setErrorMessage(`${invalid.name} must be a JPG, PNG, WEBP, or BMP no larger than 25 MB.`);
+      return;
+    }
+    setErrorMessage("");
     setSelectedFiles((prev) => [...prev, ...files]);
 
     const newPreviews = files.map((file) => {
@@ -98,6 +106,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
       const res = await importFolderDataset({
         root: folderPath,
         name: datasetName || "Custom Import",
+        logicalSourceId: logicalSourceId.trim() || `folder-${folderPath.trim().replace(/[^a-zA-Z0-9_-]+/g, "-")}`,
         inputFormat,
         maxSamples,
       });
@@ -243,7 +252,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
                 id="batch-file-input"
                 type="file"
                 multiple
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp,image/bmp"
                 onChange={handleFileChange}
                 style={{ display: "none" }}
               />
@@ -306,6 +315,17 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
                 value={datasetName}
                 onChange={(e) => setDatasetName(e.target.value)}
                 placeholder="e.g. KITTI Local Import v1"
+              />
+            </div>
+
+            <div>
+              <label className="config-panel__label">Logical Source ID</label>
+              <input
+                type="text"
+                className="select-field"
+                value={logicalSourceId}
+                onChange={(e) => setLogicalSourceId(e.target.value)}
+                placeholder="Keep this stable when importing a revision"
               />
             </div>
 

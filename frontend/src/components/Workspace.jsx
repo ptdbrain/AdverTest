@@ -40,7 +40,9 @@ export default function Workspace({ report, samples, mode }) {
   const normalizedSamples = samples ?? [];
   const activeIndex = Math.min(selectedIndex, Math.max(0, normalizedSamples.length - 1));
   const sample = normalizedSamples[activeIndex];
-  const attack = report?.cells?.find((cell) => cell.attack === sample?.attack && cell.severity === sample?.severity) ?? null;
+  const attack = report?.cells?.find((cell) => cell.attack === sample?.attack && cell.severity === sample?.severity)
+    ?? report?.cells?.at(-1)
+    ?? null;
   const artifacts = sample?.artifacts ?? {};
   const perObjectFailures = sample?.per_object_failures ?? sample?.object_evidence ?? [];
   const config = report?.provenance?.run_config ?? {};
@@ -101,7 +103,7 @@ export default function Workspace({ report, samples, mode }) {
         <span>Run ID: {report?.run_id || "unavailable"}</span>
       </section>
 
-      <section className="workspace__metrics" aria-label="Five key metrics"><header><p className="evidence-stage__eyebrow">Decision summary</p><h2>Five key metrics</h2></header><FiveMetrics report={report} /></section>
+      <section className="workspace__metrics" aria-label="Five key metrics"><header><p className="evidence-stage__eyebrow">Decision summary</p><h2>Five key metrics</h2></header><FiveMetrics report={report} selectedResult={attack} /></section>
     </div>
   );
 }

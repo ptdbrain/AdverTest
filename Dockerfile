@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /bin/
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev
+RUN uv sync --locked --no-dev --extra models-cpu
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Security: run as non-root user

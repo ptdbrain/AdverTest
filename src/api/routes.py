@@ -347,7 +347,9 @@ async def create_model_comparison(body: ModelComparisonIn) -> dict[str, Any]:
     if baseline["report"] is None or candidate["report"] is None:
         raise HTTPException(status_code=409, detail="both runs must complete before comparison")
     left, right = baseline["report"], candidate["report"]
-    paired = left["dataset"] == right["dataset"] and left["n_samples"] == right["n_samples"]
+    baseline_signature = _comparison_signature(left)
+    candidate_signature = _comparison_signature(right)
+    paired = baseline_signature == candidate_signature
     comparison_id = f"comparison-{stable_digest(body.model_dump(mode='json'), length=20)}"
     metric_deltas = (
         {"clean_detection_score": {"value": right["ap_clean"] - left["ap_clean"], "unit": "ratio"}}
@@ -361,7 +363,9 @@ async def create_model_comparison(body: ModelComparisonIn) -> dict[str, Any]:
     recovery_ratio = None if lost_score <= 0 else recovered_score / lost_score
     payload = {
         "comparison_id": comparison_id, **body.model_dump(mode="json"), "paired": paired,
-        "incompatibilities": [] if paired else ["dataset_or_sample_count"],
+        "baseline_signature": baseline_signature,
+        "candidate_signature": candidate_signature,
+        "incompatibilities": [] if paired else ["protocol_or_dataset_or_recipe_or_sample_set"],
         "metric_deltas": metric_deltas,
         "recovery_report": {
             "baseline_clean": left["ap_clean"],
@@ -681,6 +685,7 @@ async def create_benchmark_run(config: RunConfig, protocol_id: str = Query(...))
                 "state": protocol.get("state"),
             },
         )
+    config = _resolve_run_config(config).model_copy(update={"benchmark_protocol_id": protocol_id})
     preflight = _runner.preflight(config)
     if preflight.fatal_errors:
         raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
@@ -879,17 +884,18 @@ async def list_datasets() -> list[DatasetCatalogItem]:
 
 @router.post("/runs/estimate", response_model=CostEstimateOut)
 async def estimate_run(config: RunConfig) -> CostEstimateOut:
-    return CostEstimateOut(**_runner.estimate(config).as_dict())
+    return CostEstimateOut(**_runner.estimate(_resolve_run_config(config)).as_dict())
 
 
 @router.post("/runs/preflight", response_model=PreflightOut)
 async def preflight_run(config: RunConfig) -> PreflightOut:
-    return PreflightOut(**_runner.preflight(config).as_dict())
+    return PreflightOut(**_runner.preflight(_resolve_run_config(config)).as_dict())
 
 
 @router.post("/runs", status_code=202, response_model=RunJobOut)
 async def create_run(config: RunConfig) -> RunJobOut:
     """Persist and enqueue a run. Heavy model work never runs in the request."""
+    config = _resolve_run_config(config)
     preflight = _runner.preflight(config)
     if preflight.fatal_errors:
         raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
@@ -912,10 +918,10 @@ async def create_inference_experiment(body: QuickInferenceIn) -> RunJobOut:
     if version is None or not version.runnable or not version.checkpoint_path:
         raise HTTPException(status_code=409, detail="WAITING_FOR_ARTIFACTS")
     config = RunConfig(
-        model="yolo11",
-        adapter_params={"weights": version.checkpoint_path},
+        model_version_id=version.id,
         dataset="folder_dataset",
         dataset_params={"root": str(batch_root), "input_format": "advertest"},
+        recipe=body.recipe,
         attacks=body.attacks,
         severities=body.severities,
         seed=body.seed,
@@ -924,6 +930,7 @@ async def create_inference_experiment(body: QuickInferenceIn) -> RunJobOut:
         confidence_threshold=body.confidence_threshold,
         execution_mode="quick_inference",
     )
+    config = _resolve_run_config(config)
     preflight = _runner.preflight(config)
     if preflight.fatal_errors:
         raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
@@ -1453,6 +1460,46 @@ def _registered_model_versions() -> list[Any]:
             )
         versions[discovered.id] = discovered
     return sorted(versions.values(), key=lambda item: item.id)
+
+
+def _resolve_run_config(config: RunConfig) -> RunConfig:
+    """Resolve a product ModelVersion server-side; browsers never receive weight paths."""
+    if not config.model_version_id:
+        return config
+    version = next(
+        (item for item in _registered_model_versions() if item.id == config.model_version_id),
+        None,
+    )
+    if version is None:
+        raise HTTPException(status_code=404, detail={"code": "MODEL_VERSION_UNKNOWN", "model_version_id": config.model_version_id})
+    if not version.runnable or not version.checkpoint_path:
+        raise HTTPException(status_code=409, detail={"code": "MODEL_NOT_RUNNABLE", "model_version_id": config.model_version_id, "reason": version.blocked_reason})
+    checkpoint = Path(version.checkpoint_path).resolve()
+    if not checkpoint.is_file():
+        raise HTTPException(status_code=409, detail={"code": "CHECKPOINT_MISSING", "model_version_id": config.model_version_id})
+    settings = get_settings()
+    return config.model_copy(update={
+        "model": "yolo11" if version.model_name.startswith("yolo") else version.model_name,
+        "adapter_params": {
+            "weights": str(checkpoint),
+            "device": settings.model_device,
+            "batch_size": settings.model_batch_size,
+            "half": settings.model_half_precision and settings.model_device.startswith("cuda"),
+        },
+    })
+
+
+def _comparison_signature(report: dict[str, Any]) -> dict[str, Any]:
+    """Identity needed for a paired recovery claim; model identity is deliberately excluded."""
+    provenance = report.get("provenance") or {}
+    run_config = provenance.get("run_config") or {}
+    samples = report.get("sample_results") or []
+    return {
+        "dataset_version_id": provenance.get("dataset_version_id") or run_config.get("dataset_version_id") or report.get("dataset"),
+        "benchmark_protocol_id": provenance.get("benchmark_protocol_id") or run_config.get("benchmark_protocol_id"),
+        "recipe_hash": (provenance.get("recipe") or {}).get("recipe_hash"),
+        "sample_ids": sorted(str(item.get("sample_id")) for item in samples if item.get("sample_id")),
+    }
 
 def _is_failure_case(payload: dict[str, Any]) -> bool:
     """Accept only benchmark samples carrying an explicit failure signal."""

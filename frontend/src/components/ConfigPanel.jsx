@@ -8,6 +8,7 @@ export default function ConfigPanel({
   attacks,
   modes = [],
   modelVersions = [],
+  recipePresets = [],
   mode,
   selectedModelVersion,
   selectedDataset,
@@ -49,11 +50,10 @@ export default function ConfigPanel({
     try {
       const est = await previewRecipe({
           recipe: {
-            id: `recipe-preview-${Date.now()}`,
-            task: mode,
-            steps: selectedAttacks.map((atk) => ({ attack_id: atk, severity })),
+            name: "preview",
+            steps: selectedAttacks.map((atk, position) => ({ position, attack_name: atk, implementation_version: attacks.find((item) => item.name === atk)?.version || "1.0.0", severity, seed: runOptions?.seed ?? 42, expected_cost: 1 })),
           },
-          n_samples: 8,
+          dataset_version_id: selectedDataset,
         });
         setEstimatedCost(est);
       if (est.estimated_seconds > 30) {
@@ -89,22 +89,11 @@ export default function ConfigPanel({
         <div className="config-panel__section">
           <label className="config-panel__label">Load Preset Suite</label>
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="attack-card"
-              onClick={() => loadPreset && loadPreset("weather_robustness")}
-              style={{ flex: 1, minWidth: "120px" }}
-            >
-              Weather Robustness
-            </button>
-            <button
-              type="button"
-              className="attack-card"
-              onClick={() => loadPreset && loadPreset("sensor_fault_suite")}
-              style={{ flex: 1, minWidth: "120px" }}
-            >
-              Sensor Fault Suite
-            </button>
+            {recipePresets.map((preset) => (
+              <button key={preset.preset_id} type="button" className="attack-card" onClick={() => loadPreset?.(preset.preset_id)} style={{ flex: 1, minWidth: "120px" }}>
+                {preset.name}
+              </button>
+            ))}
           </div>
         </div>
       )}
@@ -305,7 +294,7 @@ export default function ConfigPanel({
         {estimatedCost && (
           <div className="glass-panel" style={{ padding: "8px 12px", fontSize: "0.8rem" }}>
             <div>Est. Duration: <strong>{estimatedCost.estimated_seconds || estimatedCost.total_cost_class || 1.5}s</strong></div>
-            <div>Total Samples: <strong>{estimatedCost.total_samples || (8 * selectedAttacks.length)}</strong></div>
+            <div>Recipe steps: <strong>{estimatedCost.step_count ?? selectedAttacks.length}</strong></div>
           </div>
         )}
 

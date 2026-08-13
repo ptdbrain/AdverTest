@@ -4,7 +4,7 @@ import {
   createRun, createInferenceExperiment, getRun, getRunReport, getRunSamples, connectRunWebSocket, triggerAutoFlag, cancelRun,
   createRetrainingBacklog, addRetrainingBacklogItem, approveRetrainingBacklog,
   estimateRun, preflightRun, randomizeRecipe as randomizeRecipeRequest,
-  sweepRecipe as sweepRecipeRequest, previewRecipe as previewRecipeRequest,
+  sweepRecipe as sweepRecipeRequest, previewRecipe as previewRecipeRequest, getRecipePresets,
 } from "@/lib/api";
 
 const TERMINAL_STATES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
@@ -48,14 +48,16 @@ export function useAdverTest() {
   const [backlogError, setBacklogError] = useState("");
   const [isCreatingBacklog, setIsCreatingBacklog] = useState(false);
   const [activeTab, setActiveTab] = useState("evidence");
+  const [recipe, setRecipe] = useState({ name: "manual", steps: [] });
+  const [recipePresets, setRecipePresets] = useState([]);
   const wsRef = useRef(null);
   const pollRef = useRef(null);
   const finalizedRef = useRef(false);
 
   useEffect(() => {
-    Promise.all([getCatalogAttacks(), getCatalogModels(), getCatalogDatasets(), getModelVersions(), getPerceptionModes()])
-      .then(([a, m, d, versions, availableModes]) => {
-        setAttacks(a); setModels(m); setDatasets(d); setModelVersions(versions); setModes(availableModes);
+    Promise.all([getCatalogAttacks(), getCatalogModels(), getCatalogDatasets(), getModelVersions(), getPerceptionModes(), getRecipePresets()])
+      .then(([a, m, d, versions, availableModes, presets]) => {
+        setAttacks(a); setModels(m); setDatasets(d); setModelVersions(versions); setModes(availableModes); setRecipePresets(presets);
         const initial = versions.find((item) => item.task === "detection2d" && item.runnable);
         if (initial) setSelectedModelVersion(initial.id);
         if (d.length) {
@@ -70,6 +72,7 @@ export function useAdverTest() {
   const setSeverity = useCallback((value) => {
     setSeverityState(value);
     setSelectedSeverities([value]);
+    setRecipe((current) => ({ ...current, steps: current.steps.map((step) => ({ ...step, severity: value })) }));
   }, []);
   const setMode = useCallback((nextMode) => {
     setModeState(nextMode);
@@ -77,7 +80,17 @@ export function useAdverTest() {
     if (!valid) setSelectedModelVersion(modelVersions.find((item) => item.task === nextMode && item.runnable)?.id ?? "");
   }, [modelVersions, selectedModelVersion]);
   const setRunOptions = useCallback((changes) => setRunOptionsState((current) => ({ ...current, ...changes })), []);
-  const toggleAttack = useCallback((name) => setSelectedAttacks((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]), []);
+  const toggleAttack = useCallback((name) => {
+    const metadata = attacks.find((item) => item.name === name);
+    setRecipe((current) => {
+      const remaining = current.steps.filter((step) => step.attack_name !== name);
+      const steps = remaining.length === current.steps.length
+        ? [...remaining, { position: remaining.length, attack_name: name, implementation_version: metadata?.version || "1.0.0", severity, parameters: {}, seed: runOptions.seed, expected_cost: 1 }]
+        : remaining;
+      return { ...current, steps: steps.map((step, position) => ({ ...step, position })) };
+    });
+    setSelectedAttacks((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]);
+  }, [attacks, runOptions.seed, severity]);
   const addDataset = useCallback((dataset) => {
     if (!dataset) return;
     setDatasets((current) => {
@@ -90,21 +103,18 @@ export function useAdverTest() {
   }, []);
 
   const buildRunConfig = useCallback(() => {
-    const version = modelVersions.find((item) => item.id === selectedModelVersion);
     const dataset = datasets.find((item) => (item.id || item.name) === selectedDataset) || { name: selectedDataset };
     return {
-      model: "yolo11",
-      adapter_params: { weights: version?.checkpoint_path },
+      model_version_id: selectedModelVersion,
       dataset: dataset.dataset || dataset.name || selectedDataset,
       dataset_params: dataset.dataset_params || {},
-      attacks: selectedAttacks,
-      severities: selectedSeverities,
+      recipe,
       limit: runOptions.limit,
       seed: runOptions.seed,
       iou_threshold: runOptions.iou,
       confidence_threshold: runOptions.confidence,
     };
-  }, [datasets, modelVersions, runOptions, selectedAttacks, selectedDataset, selectedModelVersion, selectedSeverities]);
+  }, [datasets, recipe, runOptions, selectedDataset, selectedModelVersion]);
 
   const finalizeRun = useCallback(async (id, job = null) => {
     if (finalizedRef.current) return;
@@ -136,6 +146,7 @@ export function useAdverTest() {
       if (job.status === "COMPLETED") finalizeRun(id, job);
       if (job.status && job.status !== "COMPLETED" && TERMINAL_STATES.has(job.status)) {
         if (pollRef.current) clearInterval(pollRef.current);
+        wsRef.current?.close();
         setProgressDetail(job.error || "Run did not complete.");
         setIsRunning(false);
       }
@@ -148,11 +159,11 @@ export function useAdverTest() {
 
   const handleRun = useCallback(async () => {
     const version = modelVersions.find((item) => item.id === selectedModelVersion);
-    if (!selectedDataset || !selectedAttacks.length) {
-      setProgressDetail(!selectedDataset ? "Select a dataset before running." : "Select at least one attack before running.");
+    if (!selectedDataset || !recipe.steps.length) {
+      setProgressDetail(!selectedDataset ? "Select a dataset before running." : "Select at least one recipe step before running.");
       setRunStatus("BLOCKED"); return;
     }
-    if (mode !== "detection2d" || !version?.runnable || !version.checkpoint_path) {
+    if (mode !== "detection2d" || !version?.runnable) {
       setProgressDetail(mode !== "detection2d" ? "Segmentation is not yet runnable from this workflow." : version?.blocked_reason ? `Model version unavailable: ${version.blocked_reason}` : "YOLO checkpoint unavailable. Check /api/v1/model-versions and RUNS_ROOT.");
       setRunStatus("BLOCKED"); return;
     }
@@ -166,7 +177,8 @@ export function useAdverTest() {
         job = await createInferenceExperiment({
           upload_batch_id: dataset.id,
           model_version_id: version.id,
-          attacks: selectedAttacks,
+          recipe,
+          attacks: [],
           severities: selectedSeverities,
           seed: runOptions.seed,
           limit: runOptions.limit,
@@ -184,7 +196,7 @@ export function useAdverTest() {
     } catch (error) {
       setRunStatus("FAILED"); setProgressDetail(error.message || "Run failed due to an API error."); setIsRunning(false);
     }
-  }, [buildRunConfig, datasets, mode, modelVersions, monitorRun, runOptions, selectedAttacks, selectedDataset, selectedModelVersion, selectedSeverities]);
+  }, [buildRunConfig, datasets, mode, modelVersions, monitorRun, recipe, runOptions, selectedDataset, selectedModelVersion, selectedSeverities]);
 
   const createBacklog = useCallback(async () => {
     const failures = (report?.cells ?? []).filter((cell) => cell.degradation > 0);
@@ -199,23 +211,30 @@ export function useAdverTest() {
     finally { setIsCreatingBacklog(false); }
   }, [backlog, isCreatingBacklog, report, runId]);
 
+  const setCanonicalRecipe = useCallback((source) => {
+    const steps = (source.steps || []).map((step, position) => {
+      const attackName = step.attack_name || step.attack_id || step.attack;
+      const metadata = attacks.find((item) => item.name === attackName);
+      return { position, attack_name: attackName, implementation_version: step.implementation_version || metadata?.version || "1.0.0", severity: step.severity, parameters: step.parameters || {}, seed: step.seed ?? runOptions.seed, expected_cost: step.expected_cost ?? 1 };
+    });
+    setRecipe({ name: source.name || "recipe", steps });
+    setSelectedAttacks(steps.map((step) => step.attack_name));
+    if (steps.length) { setSeverityState(steps.at(-1).severity); setSelectedSeverities([...new Set(steps.map((step) => step.severity))]); }
+  }, [attacks, runOptions.seed]);
   const loadPreset = useCallback((presetId) => {
-    const recipes = { weather_robustness: ["fog", "rain", "snow", "brightness"], sensor_fault_suite: ["gaussian_noise", "shot_noise", "impulse_noise"] };
-    if (recipes[presetId]) { setSelectedAttacks(recipes[presetId]); setSeverity(3); }
-  }, [setSeverity]);
+    const preset = recipePresets.find((item) => item.preset_id === presetId);
+    if (preset) setCanonicalRecipe(preset);
+  }, [recipePresets, setCanonicalRecipe]);
   const randomizeRecipe = useCallback(async (nSteps = 3) => {
-    const recipe = await randomizeRecipeRequest(nSteps, null, runOptions.seed);
-    setSelectedAttacks(recipe.steps.map((step) => step.attack_id));
-    setSelectedSeverities([...new Set(recipe.steps.map((step) => step.severity))]);
-  }, [runOptions.seed]);
+    setCanonicalRecipe(await randomizeRecipeRequest(nSteps, null, runOptions.seed));
+  }, [runOptions.seed, setCanonicalRecipe]);
   const sweepRecipe = useCallback(async (attack) => {
-    const recipe = await sweepRecipeRequest(attack);
-    setSelectedAttacks([attack]); setSelectedSeverities(recipe.steps.map((step) => step.severity));
-  }, []);
-  const previewRecipe = useCallback(async () => estimateRun(buildRunConfig()), [buildRunConfig]);
+    setCanonicalRecipe(await sweepRecipeRequest(attack));
+  }, [setCanonicalRecipe]);
+  const previewRecipe = useCallback(async (payload) => previewRecipeRequest(payload), []);
   const cancelRunAction = useCallback(async () => { if (!runId) return; setRunStatus("CANCEL_REQUESTED"); setProgressDetail("Cancelling job..."); const job = await cancelRun(runId); setRunStatus(job.status); }, [runId]);
 
   useEffect(() => () => { wsRef.current?.close(); if (pollRef.current) clearInterval(pollRef.current); }, []);
   const version = modelVersions.find((item) => item.id === selectedModelVersion);
-  return { state: { attacks, models, datasets, modelVersions, modes, loading, selectedDataset, selectedAttacks, severity, selectedSeverities, mode, selectedModelVersion, runOptions, runId, runStatus, progress, progressDetail, report, samples, isRunning, backlog, backlogError, isCreatingBacklog, trainingBlockedReason: version?.runnable ? "" : "WAITING_FOR_ARTIFACTS", activeTab }, actions: { setSelectedDataset, addDataset, setSeverity, setMode, setSelectedModelVersion, setRunOptions, toggleAttack, handleRun, createBacklog, setActiveTab, loadPreset, randomizeRecipe, sweepRecipe, previewRecipe, cancelRun: cancelRunAction } };
+  return { state: { attacks, models, datasets, modelVersions, modes, recipePresets, recipe, loading, selectedDataset, selectedAttacks, severity, selectedSeverities, mode, selectedModelVersion, runOptions, runId, runStatus, progress, progressDetail, report, samples, isRunning, backlog, backlogError, isCreatingBacklog, trainingBlockedReason: version?.runnable ? "" : "WAITING_FOR_ARTIFACTS", activeTab }, actions: { setSelectedDataset, addDataset, setSeverity, setMode, setSelectedModelVersion, setRunOptions, toggleAttack, handleRun, createBacklog, setActiveTab, loadPreset, randomizeRecipe, sweepRecipe, previewRecipe, cancelRun: cancelRunAction } };
 }

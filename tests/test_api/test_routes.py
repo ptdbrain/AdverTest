@@ -154,6 +154,15 @@ async def test_quick_inference_fails_fast_without_a_runnable_checkpoint(client):
 
 
 @pytest.mark.asyncio
+async def test_quick_inference_requires_a_recipe_or_attack(client):
+    response = await client.post("/api/v1/inference-experiments", json={
+        "upload_batch_id": "batch-missing-123",
+        "model_version_id": "yolo_b0",
+    })
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_quick_inference_accepts_the_runnable_catalog_model_id(client, monkeypatch, tmp_path):
     """The model ID returned by the catalog must be accepted by quick inference."""
     from PIL import Image
@@ -180,7 +189,12 @@ async def test_quick_inference_accepts_the_runnable_catalog_model_id(client, mon
         "preflight",
         lambda _config: PreflightResult(compatible=("gaussian_noise",), skipped=()),
     )
-    monkeypatch.setattr(routes._worker, "enqueue", lambda _run_id, _config: None)
+    enqueued = []
+    monkeypatch.setattr(
+        routes._worker,
+        "enqueue",
+        lambda _run_id, config: enqueued.append(config),
+    )
 
     catalog = await client.get("/api/v1/model-versions")
     model_id = next(item["id"] for item in catalog.json() if item["runnable"])
@@ -200,6 +214,9 @@ async def test_quick_inference_accepts_the_runnable_catalog_model_id(client, mon
         "attacks": ["gaussian_noise"],
     })
     assert response.status_code == 202
+    assert enqueued[0].model_version_id == model_id
+    assert enqueued[0].model == "yolo11"
+    assert enqueued[0].adapter_params["weights"] == str(actual_checkpoint.resolve())
 
 
 @pytest.mark.asyncio

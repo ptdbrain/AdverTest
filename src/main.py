@@ -8,6 +8,7 @@ decides (plan §7).
 
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -93,4 +94,11 @@ async def handle_plugin_params(request: Request, exc: ValidationError) -> JSONRe
 
 @app.get("/health")
 async def health() -> dict[str, str | bool]:
-    return {"status": "ok", "env": settings.app_env, "simulation_only": True, "banner": SIMULATION_BANNER}
+    return {
+        "status": "ok",
+        "env": settings.app_env,
+        "simulation_only": True,
+        "banner": SIMULATION_BANNER,
+        "build_sha": os.getenv("BUILD_SHA", "unknown"),
+        "execution_profile": "gpu" if settings.model_device.startswith("cuda") else "cpu",
+    }

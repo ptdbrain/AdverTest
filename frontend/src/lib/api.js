@@ -283,12 +283,13 @@ export async function uploadImage(file, batchId = null) {
   return res.json();
 }
 
-export function importFolderDataset({ root, name, inputFormat = "advertest", anonymizationManifest = "manifest.jsonl", maxSamples = 50 }) {
+export function importFolderDataset({ root, name, logicalSourceId, inputFormat = "advertest", anonymizationManifest = "manifest.jsonl", maxSamples = 50 }) {
   return apiFetch("/api/v1/datasets/import", {
     method: "POST",
     body: JSON.stringify({
       root,
       name,
+      logical_source_id: logicalSourceId,
       input_format: inputFormat,
       anonymization_manifest: anonymizationManifest,
       max_samples: maxSamples,

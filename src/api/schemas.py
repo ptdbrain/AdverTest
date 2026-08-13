@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.attacks.recipes import AttackRecipe
 from src.core.objectives import RequiredAnnotation, SurrogateCapability
@@ -289,12 +289,19 @@ class QuickInferenceIn(BaseModel):
 
     upload_batch_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     model_version_id: str = Field(min_length=1, max_length=256)
-    attacks: list[str] = Field(min_length=1)
+    recipe: AttackRecipe | None = None
+    attacks: list[str] = Field(default_factory=list)
     severities: list[int] = Field(default_factory=lambda: [3])
     seed: int = Field(default=42, ge=0)
     limit: int | None = Field(default=8, ge=1)
     iou_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
     confidence_threshold: float = Field(default=0.25, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def require_recipe_or_attack(self) -> "QuickInferenceIn":
+        if self.recipe is None and not self.attacks:
+            raise ValueError("provide an ordered recipe or at least one attack")
+        return self
 
 
 class CostEstimateOut(BaseModel):

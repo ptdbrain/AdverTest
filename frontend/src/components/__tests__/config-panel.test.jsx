@@ -26,6 +26,7 @@ describe("ConfigPanel", () => {
           { id: "segmentation", title: "SAM2", runnable: false, blocked_reason: "WAITING_FOR_ARTIFACTS" },
         ]}
         modelVersions={[{ id: "yolo-b0", model_name: "yolo11s", task: "detection2d", runnable: true }]}
+        recipePresets={[{ preset_id: "weather_robustness", name: "Weather Robustness" }]}
         mode="detection2d"
         selectedModelVersion="yolo-b0"
         selectedDataset="synthetic_shapes"
@@ -61,6 +62,7 @@ describe("ConfigPanel", () => {
         attacks={[{ name: "gaussian_noise", group: "A", cost_class: "LIGHT" }]}
         modes={[{ id: "detection2d", title: "YOLO", runnable: true }]}
         modelVersions={[{ id: "yolo-b0", model_name: "yolo11s", task: "detection2d", runnable: true }]}
+        recipePresets={[{ preset_id: "weather_robustness", name: "Weather Robustness" }]}
         mode="detection2d"
         selectedModelVersion="yolo-b0"
         selectedDataset="synthetic_shapes"

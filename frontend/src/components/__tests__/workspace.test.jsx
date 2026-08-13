@@ -51,6 +51,16 @@ describe("Workspace", () => {
     expect(screen.getByText("Attacked prediction unavailable")).toBeVisible();
   });
 
+  it("uses the selected final recipe result and nested robustness score", () => {
+    render(<Workspace report={{ ap_clean: 0.72, cells: [{ ap: 0.45, degradation_ratio: 0.375, metrics: { objects_broken: 7 } }], metrics: { robustness: { robust_score_normalized: 63.4 } } }} samples={[]} mode="detection2d" />);
+
+    expect(screen.getAllByText("0.720")).toHaveLength(2);
+    expect(screen.getByText("0.450")).toBeVisible();
+    expect(screen.getByText("37.5%")).toBeVisible();
+    expect(screen.getByText("7")).toBeVisible();
+    expect(screen.getByText("63.400")).toBeVisible();
+  });
+
   it("lets the reviewer choose an evidence sample and keeps its report cell paired by attack and severity", () => {
     const samples = [
       { sample_id: "first", attack: "fog", severity: 1, clean_image: "/data/one.jpg" },

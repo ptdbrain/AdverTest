@@ -14,11 +14,6 @@ function degradationColor(d) {
 export default function ComparisonView({ report, samples, severity }) {
   const [selectedSampleIdx, setSelectedSampleIdx] = useState(0);
 
-  /* ---- Overlay state ---- */
-  const [showBbox, setShowBbox] = useState(true);
-  const [showMasks, setShowMasks] = useState(false);
-  const [showGT, setShowGT] = useState(true);
-
   if (!report) {
     return (
       <div className="placeholder-view">
@@ -39,14 +34,14 @@ export default function ComparisonView({ report, samples, severity }) {
       <div className="comparison-container tesla-grid-bg">
         <div className="comparison-container__side comparison-container__side--clean">
           <span className="comparison-container__label comparison-container__label--clean">
-            Clean — Original
+            Clean model prediction
           </span>
-          {currentSample?.artifacts?.clean_input_url ? (
-            <Image className="comparison-image" src={currentSample.artifacts.clean_input_url} alt="Clean" width={1280} height={720} unoptimized />
+          {currentSample?.artifacts?.clean_prediction_url ? (
+            <Image className="comparison-image" src={currentSample.artifacts.clean_prediction_url} alt="Clean model prediction" width={1280} height={720} unoptimized />
           ) : (
             <div className="flex-center" style={{ flex: 1, color: "var(--text-muted)" }}>
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "0.75rem" }}>Clean image</div>
+                <div style={{ fontSize: "0.75rem" }}>Clean model prediction unavailable</div>
                 <div style={{ fontSize: "0.6rem", marginTop: "4px", fontFamily: "var(--font-mono)", color: "var(--text-tertiary)" }}>
                   AP = {report.ap_clean?.toFixed(3) || "\u2014"}
                 </div>
@@ -59,14 +54,14 @@ export default function ComparisonView({ report, samples, severity }) {
 
         <div className="comparison-container__side">
           <span className="comparison-container__label comparison-container__label--attacked">
-            Attacked — {currentSample?.attack || "N/A"} (Sev.{currentSample?.severity || severity})
+            Final recipe prediction — {currentSample?.attack || "N/A"} (Sev.{currentSample?.severity || severity})
           </span>
-          {currentSample?.artifacts?.attacked_input_url ? (
-            <Image className="comparison-image" src={currentSample.artifacts.attacked_input_url} alt="Attacked" width={1280} height={720} unoptimized />
+          {currentSample?.artifacts?.attacked_prediction_url ? (
+            <Image className="comparison-image" src={currentSample.artifacts.attacked_prediction_url} alt="Final recipe prediction" width={1280} height={720} unoptimized />
           ) : (
             <div className="flex-center" style={{ flex: 1, color: "var(--text-muted)" }}>
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "0.75rem" }}>Attacked image</div>
+                <div style={{ fontSize: "0.75rem" }}>Final recipe prediction unavailable</div>
                 {currentSample && (
                   <div style={{ fontSize: "0.6rem", marginTop: "4px", fontFamily: "var(--font-mono)", color: "var(--text-tertiary)" }}>
                     AP = {currentSample.ap?.toFixed(3) || "\u2014"} | D = {currentSample.degradation?.toFixed(1)}%
@@ -77,27 +72,6 @@ export default function ComparisonView({ report, samples, severity }) {
           )}
         </div>
 
-        {/* Floating Toolbar */}
-        <div className="floating-toolbar">
-          <button
-            className={`floating-toolbar__btn ${showBbox ? "floating-toolbar__btn--active" : ""}`}
-            onClick={() => setShowBbox(!showBbox)}
-          >
-            <span className="floating-toolbar__checkbox" /> Boxes
-          </button>
-          <button
-            className={`floating-toolbar__btn ${showMasks ? "floating-toolbar__btn--active" : ""}`}
-            onClick={() => setShowMasks(!showMasks)}
-          >
-            <span className="floating-toolbar__checkbox" /> Masks
-          </button>
-          <button
-            className={`floating-toolbar__btn ${showGT ? "floating-toolbar__btn--active" : ""}`}
-            onClick={() => setShowGT(!showGT)}
-          >
-            <span className="floating-toolbar__checkbox" /> GT
-          </button>
-        </div>
       </div>
 
       {/* Sample navigation */}

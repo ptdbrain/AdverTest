@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     # Execution hardware defaults
     model_device: str = "cpu"
     model_half_precision: bool = False
+    model_batch_size: int = Field(default=1, ge=1)
 
     @property
     def severity_list(self) -> list[int]:
