@@ -343,3 +343,20 @@ export function importFolderDataset({ root, name, logicalSourceId, inputFormat =
     }),
   });
 }
+
+export function startFolderDatasetImport({ root, name, logicalSourceId, inputFormat = "advertest", anonymizationManifest = "manifest.jsonl", maxSamples = 50, taskId = "detection2d" }) {
+  return apiFetch("/api/v1/datasets/import-jobs", {
+    method: "POST",
+    body: JSON.stringify({
+      root,
+      name,
+      logical_source_id: logicalSourceId,
+      input_format: inputFormat,
+      anonymization_manifest: anonymizationManifest,
+      max_samples: maxSamples,
+      task_id: taskId,
+    }),
+  });
+}
+
+export function getFolderDatasetImportJob(jobId) { return apiFetch(`/api/v1/datasets/import-jobs/${encodeURIComponent(jobId)}`); }

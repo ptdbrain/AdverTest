@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { createUploadBatch, uploadImage, importFolderDataset } from "@/lib/api";
+import { createUploadBatch, uploadImage, startFolderDatasetImport, getFolderDatasetImportJob } from "@/lib/api";
 import ManualAnnotationPanel from "@/components/ManualAnnotationPanel.jsx";
 
 export default function UploadModal({ isOpen, onClose, onDatasetCreated, datasets = [], taskId = "detection2d" }) {
@@ -132,9 +132,10 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
     setIsUploading(true);
     setErrorMessage("");
     setStatusMessage("Validating & importing local folder...");
+    setUploadProgress(0);
 
     try {
-      const res = await importFolderDataset({
+      const queued = await startFolderDatasetImport({
         root: folderPath,
         name: datasetName || "Custom Import",
         logicalSourceId: logicalSourceId.trim() || `folder-${folderPath.trim().replace(/[^a-zA-Z0-9_-]+/g, "-")}`,
@@ -142,6 +143,16 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
         maxSamples,
         taskId,
       });
+      let res;
+      for (let attempt = 0; attempt < 240; attempt += 1) {
+        const job = await getFolderDatasetImportJob(queued.job_id);
+        setUploadProgress(Math.round((job.progress_ratio || 0) * 100));
+        setStatusMessage(job.detail || `Importing dataset: ${Math.round((job.progress_ratio || 0) * 100)}%`);
+        if (job.state === "COMPLETED") { res = job.result; break; }
+        if (job.state === "FAILED" || job.state === "CANCELLED") throw new Error(job.error || "Dataset import did not complete.");
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      if (!res) throw new Error("Dataset import is still running. Reopen this upload manager to reconnect to its job.");
       const folderId = res.version_id || res.id;
       setStatusMessage(`Folder imported successfully as dataset '${folderId}'!`);
       const customDataset = {

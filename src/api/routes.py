@@ -7,6 +7,7 @@ import hashlib
 import json
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
@@ -97,6 +98,9 @@ _generated_datasets = GeneratedDatasetService(
 )
 _checkpoint_validations = CheckpointValidationService(
     _store, _workflow_store, max_workers=get_settings().worker_max_concurrency,
+)
+_dataset_import_workers = ThreadPoolExecutor(
+    max_workers=get_settings().worker_max_concurrency, thread_name_prefix="dataset-import",
 )
 _generated_datasets.recover()
 for _run_id, _config in _store.recoverable():
@@ -439,16 +443,79 @@ async def cancel_checkpoint_validation(checkpoint_id: str) -> dict[str, Any]:
 @router.post("/datasets/import", status_code=201)
 async def import_dataset(body: DatasetImportIn) -> dict[str, Any]:
     """Version an explicitly supplied, annotated local folder without copying it."""
+    try:
+        return _perform_dataset_import(body)
+    except _DatasetImportError as exc:
+        raise HTTPException(status_code=422, detail={"code": exc.code, "message": exc.message}) from exc
+
+
+@router.post("/datasets/import-jobs", status_code=202)
+async def create_dataset_import_job(body: DatasetImportIn) -> dict[str, Any]:
+    """New asynchronous import path; the synchronous endpoint remains compatible."""
+    job_id = _workflow_store.create_job("dataset_import", body.model_dump(mode="json"))
+    _dataset_import_workers.submit(_run_dataset_import_job, job_id, body)
+    return _workflow_job_out(job_id)
+
+
+@router.get("/datasets/import-jobs/{job_id}")
+async def get_dataset_import_job(job_id: str) -> dict[str, Any]:
+    job = _workflow_store.get_job(job_id)
+    if job is None or job["job_type"] != "dataset_import":
+        raise HTTPException(status_code=404, detail="DATASET_IMPORT_JOB_UNKNOWN")
+    return _workflow_job_out(job_id)
+
+
+@router.post("/datasets/import-jobs/{job_id}/cancel")
+async def cancel_dataset_import_job(job_id: str) -> dict[str, Any]:
+    job = _workflow_store.get_job(job_id)
+    if job is None or job["job_type"] != "dataset_import":
+        raise HTTPException(status_code=404, detail="DATASET_IMPORT_JOB_UNKNOWN")
+    _workflow_store.request_cancel(job_id)
+    return _workflow_job_out(job_id)
+
+
+def _run_dataset_import_job(job_id: str, body: DatasetImportIn) -> None:
+    if _workflow_store.cancel_requested(job_id):
+        _workflow_store.fail_job(job_id, "CANCELLED_BY_USER", cancelled=True)
+        return
+    _workflow_store.append_event(job_id, "VALIDATING", {"progress_ratio": 0.1, "detail": "Validating source contract"})
+    try:
+        dataset = _perform_dataset_import(body, job_id=job_id)
+    except _DatasetImportError as exc:
+        _workflow_store.fail_job(job_id, exc.code)
+        return
+    except Exception as exc:  # keep user-facing failure durable without exposing internals
+        _workflow_store.fail_job(job_id, f"DATASET_IMPORT_FAILED:{type(exc).__name__}")
+        return
+    _workflow_store.complete_job(job_id, dataset)
+
+
+class _DatasetImportError(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        self.code, self.message = code, message
+        super().__init__(message)
+
+
+def _perform_dataset_import(body: DatasetImportIn, *, job_id: str | None = None) -> dict[str, Any]:
+    """Shared worker/request implementation; worker emits only monotonic progress."""
     root = Path(body.root).expanduser().resolve()
     if body.task_id != "detection2d":
-        raise HTTPException(status_code=422, detail={"code": "TASK_DATASET_MISMATCH", "task_id": body.task_id, "dataset_task_id": "detection2d", "message": "folder import accepts only image plus 2D boxes"})
+        raise _DatasetImportError("TASK_DATASET_MISMATCH", "folder import accepts only image plus 2D boxes")
     if not root.is_dir():
-        raise HTTPException(status_code=422, detail={"code": "DATASET_ROOT_MISSING", "message": "dataset root does not exist"})
+        raise _DatasetImportError("DATASET_ROOT_MISSING", "dataset root does not exist")
     source = FolderDataset(
         root=str(root), input_format=body.input_format,
         anonymization_manifest=body.anonymization_manifest, max_samples=body.max_samples,
     )
-    source.require_anonymized()
+    try:
+        source.require_anonymized()
+    except Exception as exc:
+        raise _DatasetImportError("ANONYMISATION_REQUIRED", str(exc)) from exc
+    if job_id:
+        if _workflow_store.cancel_requested(job_id):
+            _workflow_store.fail_job(job_id, "CANCELLED_BY_USER", cancelled=True)
+            raise _DatasetImportError("CANCELLED_BY_USER", "dataset import cancelled")
+        _workflow_store.append_event(job_id, "IMPORTING", {"progress_ratio": 0.45, "detail": "Creating immutable dataset manifest"})
     version = DatasetIngestor(_dataset_root() / "versions").ingest(
         source, IngestConfig(name=body.name, logical_source_id=body.logical_source_id,
                              metadata={"input_format": body.input_format, "task_id": body.task_id}),
@@ -460,7 +527,7 @@ async def import_dataset(body: DatasetImportIn) -> dict[str, Any]:
         "anonymization_manifest": body.anonymization_manifest,
     }
     stored = _store.put_record("dataset_version", version.version_id, payload)
-    return {
+    result = {
         **stored,
         "dataset": "folder_dataset",
         "dataset_params": {
@@ -476,6 +543,50 @@ async def import_dataset(body: DatasetImportIn) -> dict[str, Any]:
         "annotation_status": "VALIDATED",
         "benchmark_ready": True,
     }
+    if job_id:
+        _workflow_store.append_event(job_id, "FINALIZING", {"progress_ratio": 0.9, "detail": "Registering dataset version"})
+    return result
+
+
+def _workflow_job_out(job_id: str) -> dict[str, Any]:
+    job = _workflow_store.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="WORKFLOW_JOB_UNKNOWN")
+    events = _workflow_store.events(job_id)
+    progress = max((float(event["payload"].get("progress_ratio", 0.0)) for event in events), default=0.0)
+    return {
+        "job_id": job_id,
+        "job_type": job["job_type"],
+        "state": job["status"],
+        "progress_ratio": progress,
+        "detail": (events[-1]["payload"].get("detail") if events else None),
+        "can_cancel": job["status"] not in {"COMPLETED", "FAILED", "CANCELLED"},
+        "error": job["error"],
+        "result": job["result"],
+    }
+
+
+@router.websocket("/jobs/{job_id}/events/ws")
+async def workflow_job_events(job_id: str, websocket: WebSocket) -> None:
+    """Shared WebSocket feed for import/validation/generation/training jobs."""
+    await websocket.accept()
+    if _workflow_store.get_job(job_id) is None:
+        await websocket.send_json({"error": "WORKFLOW_JOB_UNKNOWN"})
+        await websocket.close(code=4404)
+        return
+    cursor = 0
+    try:
+        while True:
+            events = _workflow_store.events(job_id)
+            for event in events[cursor:]:
+                cursor += 1
+                await websocket.send_json(event)
+            job = _workflow_store.get_job(job_id)
+            if job and job["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
+                return
+            await asyncio.sleep(0.25)
+    except WebSocketDisconnect:
+        return
 
 
 @router.post("/defense-profiles", status_code=201)

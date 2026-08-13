@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import UploadModal from "@/components/UploadModal.jsx";
 
 vi.mock("@/lib/api", () => ({
-  createUploadBatch: vi.fn(), uploadImage: vi.fn(), importFolderDataset: vi.fn(),
+  createUploadBatch: vi.fn(), uploadImage: vi.fn(), startFolderDatasetImport: vi.fn(), getFolderDatasetImportJob: vi.fn(),
   finalizeUploadBatch: vi.fn(), saveBatchAnnotation: vi.fn(),
 }));
 

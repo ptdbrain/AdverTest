@@ -217,3 +217,22 @@ async def test_paired_attacked_batch_rejects_manifest_with_an_unknown_attacked_s
 
     assert validation["state"] == "INVALID"
     assert {issue["code"] for issue in validation["issues"]} >= {"PAIRED_SAMPLE_UNMAPPED"}
+
+
+@pytest.mark.asyncio
+async def test_dataset_import_job_persists_progress_and_failure_reason(client):
+    queued = await client.post("/api/v1/datasets/import-jobs", json={
+        "root": "missing-folder", "name": "missing", "logical_source_id": "missing-source",
+    })
+    assert queued.status_code == 202
+    job_id = queued.json()["job_id"]
+
+    for _ in range(20):
+        job = (await client.get(f"/api/v1/datasets/import-jobs/{job_id}")).json()
+        if job["state"] in {"COMPLETED", "FAILED", "CANCELLED"}:
+            break
+        await asyncio.sleep(0.02)
+
+    assert job["state"] == "FAILED"
+    assert job["error"] == "DATASET_ROOT_MISSING"
+    assert 0.0 < job["progress_ratio"] < 1.0
