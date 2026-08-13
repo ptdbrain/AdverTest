@@ -17,10 +17,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.config import get_settings
 from src.pipeline import RunConfig, TestRunner
 from src.pipeline.cache import SqliteCache
 from src.pipeline.runner import RunCancelledError
-from src.config import get_settings
 
 TERMINAL_STATES = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
 RUN_STATES = frozenset({"QUEUED", "PREPARING", "GENERATING", "INFERENCING", "EVALUATING", *TERMINAL_STATES})

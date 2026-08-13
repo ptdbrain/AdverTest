@@ -6,9 +6,9 @@ RobustScore never blocks or approves anything automatically — a human Reviewer
 decides (plan §7).
 """
 
+import os
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
