@@ -254,6 +254,7 @@ class ModelInfo:
     checkpoint_hash: str | None = None
     preprocessing_version: str = "default"
     runnable: bool = True
+    is_local: bool = True
 
 
 def validate_image(image: np.ndarray, *, like: np.ndarray | None = None) -> None:

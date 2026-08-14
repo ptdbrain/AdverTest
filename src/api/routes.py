@@ -62,6 +62,7 @@ from src.api.schemas import (
     RunReportOut,
     TrainingRunIn,
     UploadBatchCreateIn,
+    ValidationSummary,
 )
 from src.api.training_service import TrainingJobService
 from src.api.workflow_store import WorkflowJobStore
@@ -123,219 +124,6 @@ def _validate_uploaded_image(payload: bytes) -> tuple[str, tuple[int, int]]:
                 "message": "Payload is not a decodable image.",
             },
         ) from exc
-
-
-@router.post("/uploads/batches", status_code=201)
-async def create_upload_batch(body: UploadBatchCreateIn) -> dict[str, Any]:
-    """Create a resumable, task-bound upload batch before browser byte uploads."""
-    batch_id = f"batch-{uuid.uuid4().hex[:12]}"
-    payload: dict[str, Any] = {
-        "batch_id": batch_id,
-        "display_name": body.display_name,
-        "task_id": body.task_id,
-        "class_map": body.class_map,
-        "anonymized": body.anonymized,
-        "dataset_kind": body.dataset_kind,
-        "attacked_manifest": body.attacked_manifest.model_dump(mode="json") if body.attacked_manifest else None,
-        "samples": {},
-        "status": "DRAFT",
-    }
-    payload["validation"] = summarize_batch(payload).model_dump(mode="json")
-    return _store.put_record("upload_batch", batch_id, payload)
-
-
-@router.get("/uploads/batches/{batch_id}")
-async def get_upload_batch(batch_id: str) -> dict[str, Any]:
-    batch = _store.get_record("upload_batch", batch_id)
-    if batch is None:
-        raise HTTPException(status_code=404, detail="UPLOAD_BATCH_UNKNOWN")
-    return batch
-
-
-@router.put("/uploads/batches/{batch_id}/annotations/{sample_id}")
-async def save_annotation(batch_id: str, sample_id: str, body: AnnotationDocument) -> dict[str, Any]:
-    """Persist canonical labels only after their perception-mode contract passes."""
-    batch = _store.get_record("upload_batch", batch_id)
-    if batch is None:
-        raise HTTPException(status_code=404, detail="UPLOAD_BATCH_UNKNOWN")
-    samples = dict(batch.get("samples", {}))
-    sample = samples.get(sample_id)
-    if sample is None:
-        raise HTTPException(status_code=404, detail="UPLOAD_SAMPLE_UNKNOWN")
-    if body.task_id != batch["task_id"]:
-        raise HTTPException(status_code=422, detail={"code": "TASK_ANNOTATION_MISMATCH"})
-    issues = validate_annotation(body, sample_id=sample_id, sample=sample, class_map=dict(batch.get("class_map", {})))
-    if issues:
-        raise HTTPException(status_code=422, detail={"code": "ANNOTATION_INVALID", "issues": [issue.model_dump(mode="json") for issue in issues]})
-    sample["annotation"] = body.model_dump(mode="json")
-    sample["annotation_status"] = "VALID"
-    samples[sample_id] = sample
-    batch["samples"] = samples
-    _write_annotation_export(batch, sample_id, body)
-    batch["validation"] = summarize_batch(batch).model_dump(mode="json")
-    return _store.update_record("upload_batch", batch_id, batch)
-
-
-@router.post("/uploads/batches/{batch_id}/finalize", status_code=201)
-async def finalize_upload_batch(batch_id: str) -> dict[str, Any]:
-    """Lock a fully validated upload batch as a dataset version for benchmark use."""
-    batch = _store.get_record("upload_batch", batch_id)
-    if batch is None:
-        raise HTTPException(status_code=404, detail="UPLOAD_BATCH_UNKNOWN")
-    validation = summarize_batch(batch)
-    batch["validation"] = validation.model_dump(mode="json")
-    if not validation.benchmark_ready:
-        _store.update_record("upload_batch", batch_id, batch)
-        raise HTTPException(status_code=422, detail={"code": "DATASET_NOT_BENCHMARK_READY", "validation": batch["validation"]})
-    batch["status"] = "FINALIZED"
-    stored = _store.update_record("upload_batch", batch_id, batch)
-    identity = {"batch_id": batch_id, "samples": batch["samples"]}
-    version_id = f"dataset-{stable_digest(identity, length=32)}"
-    dataset_record = _store.put_record("dataset_version", version_id, {
-        "version_id": version_id,
-        "source_batch_id": batch_id,
-        "name": batch["display_name"],
-        "title": batch["display_name"],
-        "dataset": "folder_dataset",
-        "dataset_params": {"root": str(_upload_root() / batch_id), "input_format": "advertest"},
-        "task_id": batch["task_id"],
-        "dataset_kind": batch["dataset_kind"],
-        "anonymized": batch["anonymized"],
-        "validation": batch["validation"],
-        "attacked_manifest": batch.get("attacked_manifest"),
-        "input_schema": validation.input_schema,
-        "annotation_schema": validation.annotation_schema,
-        "benchmark_ready": True,
-        "paired_comparison_ready": batch["dataset_kind"] == "attacked_paired",
-    })
-    return {**stored, "dataset_version": dataset_record, "benchmark_ready": True}
-
-
-def _write_annotation_export(batch: dict[str, Any], sample_id: str, document: AnnotationDocument) -> None:
-    """Write the existing folder adapter's canonical label shape without UI-specific data."""
-    root = _upload_root() / str(batch["batch_id"])
-    labels = root / "labels"
-    labels.mkdir(parents=True, exist_ok=True)
-    if document.task_id == "detection2d":
-        class_map = dict(batch.get("class_map", {}))
-        payload = {"boxes": [
-            {
-                "x1": annotation["bbox_xyxy"][0],
-                "y1": annotation["bbox_xyxy"][1],
-                "x2": annotation["bbox_xyxy"][2],
-                "y2": annotation["bbox_xyxy"][3],
-                "label": class_map[annotation["class_id"]],
-                "score": 1.0,
-            }
-            for annotation in document.annotations
-        ]}
-    else:
-        payload = document.model_dump(mode="json")
-    (labels / f"{sample_id}.json").write_text(json.dumps(payload), encoding="utf-8")
-
-
-@router.post("/uploads/images", status_code=201)
-async def upload_image(request: Request) -> dict[str, Any]:
-    """Store one user-supplied image; clients may send raw bytes, no multipart needed."""
-    task_id = request.headers.get("x-task-id", "detection2d")
-    batch_id = request.headers.get("x-upload-batch-id")
-    batch = _store.get_record("upload_batch", batch_id) if batch_id else None
-    if task_id not in {"detection2d", "segmentation", "detection3d"}:
-        raise HTTPException(status_code=422, detail={"code": "TASK_UNKNOWN", "task_id": task_id})
-    if task_id != "detection2d" and batch is None:
-        raise HTTPException(status_code=422, detail={"code": "ANNOTATIONS_REQUIRED", "task_id": task_id, "message": "Create a task-bound batch before uploading data that requires annotations."})
-    filename = request.headers.get("x-filename", "upload.bin")
-    filename = Path(filename).name
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", filename):
-        raise HTTPException(status_code=422, detail="invalid x-filename")
-    payload = await request.body()
-    if not payload or len(payload) > 25 * 1024 * 1024:
-        raise HTTPException(status_code=422, detail="image payload must be between 1 byte and 25 MiB")
-
-    image_format, (width, height) = _validate_uploaded_image(payload)
-
-    if not batch_id or not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", batch_id):
-        batch_id = f"batch-{uuid.uuid4().hex[:12]}"
-    batch = _store.get_record("upload_batch", batch_id)
-    if batch is None:
-        batch = {
-            "batch_id": batch_id,
-            "display_name": batch_id,
-            "task_id": task_id,
-            "class_map": {},
-            "anonymized": False,
-            "dataset_kind": "clean",
-            "attacked_manifest": None,
-            "samples": {},
-            "status": "DRAFT",
-        }
-        batch["validation"] = summarize_batch(batch).model_dump(mode="json")
-        _store.put_record("upload_batch", batch_id, batch)
-    elif batch["task_id"] != task_id:
-        raise HTTPException(status_code=422, detail={"code": "TASK_UPLOAD_BATCH_MISMATCH"})
-
-    requested_sample_id = request.headers.get("x-sample-id")
-    if requested_sample_id and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", requested_sample_id):
-        raise HTTPException(status_code=422, detail={"code": "INVALID_SAMPLE_ID"})
-    sample_id = requested_sample_id or uuid.uuid4().hex[:12]
-
-    target_dir = _upload_root() / batch_id
-    images_dir = target_dir / "images"
-    images_dir.mkdir(parents=True, exist_ok=True)
-    stored = images_dir / f"{sample_id}{Path(filename).suffix.lower()}"
-    if stored.exists() or sample_id in batch.get("samples", {}):
-        raise HTTPException(status_code=409, detail={"code": "DUPLICATE_SAMPLE_ID", "sample_id": sample_id})
-    stored.write_bytes(payload)
-
-    manifest = target_dir / "dataset.json"
-    if not manifest.is_file():
-        descriptor = {
-            "anonymized": bool(batch["anonymized"]),
-            "annotated": False,
-            "benchmark_ready": False,
-            "split": "upload",
-        }
-        manifest.write_text(json.dumps(descriptor), encoding="utf-8")
-
-    samples = dict(batch.get("samples", {}))
-    samples[sample_id] = {
-        "sample_id": sample_id,
-        "filename": filename,
-        "path": str(stored),
-        "bytes": len(payload),
-        "image_format": image_format,
-        "width": width,
-        "height": height,
-        "sha256": hashlib.sha256(payload).hexdigest(),
-        "annotation_status": "MISSING",
-    }
-    batch["samples"] = samples
-    batch["validation"] = summarize_batch(batch).model_dump(mode="json")
-    _store.update_record("upload_batch", batch_id, batch)
-
-    return {
-        "upload_id": sample_id,
-        "batch_id": batch_id,
-        "sample_id": sample_id,
-        "filename": filename,
-        "path": str(stored),
-        "bytes": len(payload),
-        "image_format": image_format,
-        "width": width,
-        "height": height,
-        "benchmark_ready": False,
-        "status": "RAW",
-        "anonymized": batch["anonymized"],
-        "annotation_status": "MISSING",
-        "dataset": "folder_dataset",
-        "dataset_params": {
-            "root": str(target_dir),
-            "input_format": "advertest",
-        },
-        "task_id": task_id,
-        "input_schema": ["image"],
-        "annotation_schema": [],
-    }
 
 
 @router.post("/checkpoints/uploads", status_code=201)
@@ -438,132 +226,6 @@ async def cancel_checkpoint_validation(checkpoint_id: str) -> dict[str, Any]:
     if not job_id or not _workflow_store.request_cancel(str(job_id)):
         raise HTTPException(status_code=409, detail="CHECKPOINT_VALIDATION_NOT_CANCELLABLE")
     return {"checkpoint_id": checkpoint_id, "job_id": job_id, "state": "CANCEL_REQUESTED"}
-
-
-@router.post("/datasets/import", status_code=201)
-async def import_dataset(body: DatasetImportIn) -> dict[str, Any]:
-    """Version an explicitly supplied, annotated local folder without copying it."""
-    try:
-        return _perform_dataset_import(body)
-    except _DatasetImportError as exc:
-        raise HTTPException(status_code=422, detail={"code": exc.code, "message": exc.message}) from exc
-
-
-@router.post("/datasets/import-jobs", status_code=202)
-async def create_dataset_import_job(body: DatasetImportIn) -> dict[str, Any]:
-    """New asynchronous import path; the synchronous endpoint remains compatible."""
-    job_id = _workflow_store.create_job("dataset_import", body.model_dump(mode="json"))
-    _dataset_import_workers.submit(_run_dataset_import_job, job_id, body)
-    return _workflow_job_out(job_id)
-
-
-@router.get("/datasets/import-jobs/{job_id}")
-async def get_dataset_import_job(job_id: str) -> dict[str, Any]:
-    job = _workflow_store.get_job(job_id)
-    if job is None or job["job_type"] != "dataset_import":
-        raise HTTPException(status_code=404, detail="DATASET_IMPORT_JOB_UNKNOWN")
-    return _workflow_job_out(job_id)
-
-
-@router.post("/datasets/import-jobs/{job_id}/cancel")
-async def cancel_dataset_import_job(job_id: str) -> dict[str, Any]:
-    job = _workflow_store.get_job(job_id)
-    if job is None or job["job_type"] != "dataset_import":
-        raise HTTPException(status_code=404, detail="DATASET_IMPORT_JOB_UNKNOWN")
-    _workflow_store.request_cancel(job_id)
-    return _workflow_job_out(job_id)
-
-
-def _run_dataset_import_job(job_id: str, body: DatasetImportIn) -> None:
-    if _workflow_store.cancel_requested(job_id):
-        _workflow_store.fail_job(job_id, "CANCELLED_BY_USER", cancelled=True)
-        return
-    _workflow_store.append_event(job_id, "VALIDATING", {"progress_ratio": 0.1, "detail": "Validating source contract"})
-    try:
-        dataset = _perform_dataset_import(body, job_id=job_id)
-    except _DatasetImportError as exc:
-        _workflow_store.fail_job(job_id, exc.code)
-        return
-    except Exception as exc:  # keep user-facing failure durable without exposing internals
-        _workflow_store.fail_job(job_id, f"DATASET_IMPORT_FAILED:{type(exc).__name__}")
-        return
-    _workflow_store.complete_job(job_id, dataset)
-
-
-class _DatasetImportError(ValueError):
-    def __init__(self, code: str, message: str) -> None:
-        self.code, self.message = code, message
-        super().__init__(message)
-
-
-def _perform_dataset_import(body: DatasetImportIn, *, job_id: str | None = None) -> dict[str, Any]:
-    """Shared worker/request implementation; worker emits only monotonic progress."""
-    root = Path(body.root).expanduser().resolve()
-    if body.task_id != "detection2d":
-        raise _DatasetImportError("TASK_DATASET_MISMATCH", "folder import accepts only image plus 2D boxes")
-    if not root.is_dir():
-        raise _DatasetImportError("DATASET_ROOT_MISSING", "dataset root does not exist")
-    source = FolderDataset(
-        root=str(root), input_format=body.input_format,
-        anonymization_manifest=body.anonymization_manifest, max_samples=body.max_samples,
-    )
-    try:
-        source.require_anonymized()
-    except Exception as exc:
-        raise _DatasetImportError("ANONYMISATION_REQUIRED", str(exc)) from exc
-    if job_id:
-        if _workflow_store.cancel_requested(job_id):
-            _workflow_store.fail_job(job_id, "CANCELLED_BY_USER", cancelled=True)
-            raise _DatasetImportError("CANCELLED_BY_USER", "dataset import cancelled")
-        _workflow_store.append_event(job_id, "IMPORTING", {"progress_ratio": 0.45, "detail": "Creating immutable dataset manifest"})
-    version = DatasetIngestor(_dataset_root() / "versions").ingest(
-        source, IngestConfig(name=body.name, logical_source_id=body.logical_source_id,
-                             metadata={"input_format": body.input_format, "task_id": body.task_id}),
-    )
-    payload = version.model_dump(mode="json")
-    payload["generation_source"] = {
-        "input_dir": str(root),
-        "input_format": body.input_format,
-        "anonymization_manifest": body.anonymization_manifest,
-    }
-    stored = _store.put_record("dataset_version", version.version_id, payload)
-    result = {
-        **stored,
-        "dataset": "folder_dataset",
-        "dataset_params": {
-            "root": str(root),
-            "input_format": body.input_format,
-            "anonymization_manifest": body.anonymization_manifest,
-            "max_samples": body.max_samples,
-        },
-        "anonymized": True,
-        "task_id": body.task_id,
-        "input_schema": ["image"],
-        "annotation_schema": ["boxes2d", "class_labels"],
-        "annotation_status": "VALIDATED",
-        "benchmark_ready": True,
-    }
-    if job_id:
-        _workflow_store.append_event(job_id, "FINALIZING", {"progress_ratio": 0.9, "detail": "Registering dataset version"})
-    return result
-
-
-def _workflow_job_out(job_id: str) -> dict[str, Any]:
-    job = _workflow_store.get_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="WORKFLOW_JOB_UNKNOWN")
-    events = _workflow_store.events(job_id)
-    progress = max((float(event["payload"].get("progress_ratio", 0.0)) for event in events), default=0.0)
-    return {
-        "job_id": job_id,
-        "job_type": job["job_type"],
-        "state": job["status"],
-        "progress_ratio": progress,
-        "detail": (events[-1]["payload"].get("detail") if events else None),
-        "can_cancel": job["status"] not in {"COMPLETED", "FAILED", "CANCELLED"},
-        "error": job["error"],
-        "result": job["result"],
-    }
 
 
 @router.websocket("/jobs/{job_id}/events/ws")
@@ -969,59 +631,6 @@ async def preview_recipe(body: RecipePreviewIn) -> dict[str, Any]:
 
 
 
-@router.post("/generated-datasets", status_code=202, response_model=GeneratedDatasetJobOut)
-async def create_generated_dataset(body: GeneratedDatasetCreateIn) -> GeneratedDatasetJobOut:
-    """Queue dataset generation; no attack computation runs in this request."""
-    job_id = _generated_datasets.enqueue(body)
-    return _generated_job_out(_generated_datasets.get(job_id))
-
-
-@router.get("/generated-datasets/{job_id}", response_model=GeneratedDatasetJobOut)
-async def get_generated_dataset(job_id: str) -> GeneratedDatasetJobOut:
-    return _generated_job_out(_generated_datasets.get(job_id))
-
-
-@router.post("/generated-datasets/{job_id}/cancel", response_model=GeneratedDatasetJobOut)
-async def cancel_generated_dataset(job_id: str) -> GeneratedDatasetJobOut:
-    if not _workflow_store.request_cancel(job_id):
-        raise HTTPException(status_code=404, detail=f"unknown generated dataset job {job_id!r}")
-    return _generated_job_out(_generated_datasets.get(job_id))
-
-
-@router.get("/generated-datasets/{job_id}/manifest", response_model=GeneratedDatasetManifestOut)
-async def get_generated_dataset_manifest(job_id: str) -> GeneratedDatasetManifestOut:
-    payload = _generated_datasets.manifest(job_id)
-    if payload is None:
-        _require_generated_job(job_id)
-        raise HTTPException(status_code=409, detail="manifest is not available until generation completes")
-    return GeneratedDatasetManifestOut(**payload)
-
-
-@router.get("/generated-datasets/{job_id}/variants", response_model=GeneratedDatasetVariantsOut)
-async def get_generated_dataset_variants(job_id: str) -> GeneratedDatasetVariantsOut:
-    payload = _generated_datasets.variants(job_id)
-    if payload is None:
-        _require_generated_job(job_id)
-        raise HTTPException(status_code=409, detail="variants are not available until generation completes")
-    return GeneratedDatasetVariantsOut(**payload)
-
-
-@router.get("/generated-datasets/{job_id}/events", response_model=GeneratedDatasetEventsOut)
-async def get_generated_dataset_events(job_id: str) -> GeneratedDatasetEventsOut:
-    _require_generated_job(job_id)
-    return GeneratedDatasetEventsOut(id=job_id, events=_workflow_store.events(job_id))
-
-
-@router.post("/generated-datasets/{job_id}/validate", response_model=GeneratedDatasetValidationOut)
-async def get_generated_dataset_validation(job_id: str) -> GeneratedDatasetValidationOut:
-    """Return the worker's persisted validation; routes never recompute artifacts."""
-    payload = _generated_datasets.validation(job_id)
-    if payload is None:
-        _require_generated_job(job_id)
-        raise HTTPException(status_code=409, detail="validation is not available until generation completes")
-    return GeneratedDatasetValidationOut(**payload)
-
-
 @router.post("/benchmark/protocols", status_code=201)
 async def create_benchmark_protocol(body: dict[str, Any]) -> dict[str, Any]:
     """Create a typed benchmark protocol from request body.
@@ -1159,48 +768,6 @@ async def compare_runs(baseline_run_id: str = Query(...), candidate_run_id: str 
     return {"baseline_run_id": baseline_run_id, "candidate_run_id": candidate_run_id,
             "paired": paired, "clean_score_delta": right["ap_clean"] - left["ap_clean"],
             "cell_count": {"baseline": len(left.get("cells", [])), "candidate": len(right.get("cells", []))}}
-
-
-@router.get("/catalog/attacks", response_model=list[AttackCatalogItem])
-async def list_attacks(
-    group: str | None = Query(default=None, min_length=1, max_length=1),
-    cost_class: str | None = None,
-    modality: str | None = None,
-    task_id: str | None = None,
-    threat_model: str | None = None,
-    attack_type: str | None = None,
-    scenario_kind: str | None = None,
-    model_family_id: str | None = None,
-    checkpoint_id: str | None = None,
-    dataset: str | None = None,
-) -> list[AttackCatalogItem]:
-    items = [attack.describe() for attack in load_attacks().values()]
-    for field, wanted in (("group", group), ("cost_class", cost_class), ("modality", modality)):
-        if wanted is not None:
-            items = [item for item in items if item[field] == wanted]
-    if task_id is not None:
-        items = [item for item in items if task_id in item["task_ids"]]
-    for field, wanted in (("threat_model", threat_model), ("attack_type", attack_type), ("scenario_kind", scenario_kind)):
-        if wanted is not None:
-            items = [item for item in items if item[field] == wanted]
-    availability = _attack_catalog_availability(
-        task_id=task_id,
-        model_family_id=model_family_id,
-        checkpoint_id=checkpoint_id,
-        dataset_name=dataset,
-    )
-    if availability is not None:
-        unavailable_reason, exclusions = availability
-        for item in items:
-            reasons = (unavailable_reason,) if unavailable_reason else exclusions.get(item["name"], ())
-            item["available"] = not reasons
-            item["reason"] = ", ".join(reasons) if reasons else None
-    return [AttackCatalogItem(**item) for item in items]
-
-
-@router.get("/catalog/models", response_model=list[ModelCatalogItem])
-async def list_models() -> list[ModelCatalogItem]:
-    return [ModelCatalogItem(**adapter.describe()) for adapter in load_adapters().values()]
 
 
 @router.get("/model-versions", response_model=list[ModelVersionOut])
@@ -1360,36 +927,6 @@ async def validate_recipe(body: RecipeValidationIn) -> RecipeValidationOut:
     )
 
 
-@router.get("/catalog/datasets", response_model=list[DatasetCatalogItem])
-async def list_datasets(task_id: str | None = Query(default=None)) -> list[DatasetCatalogItem]:
-    items = [dataset.describe() for dataset in load_datasets().values()]
-    if task_id is not None:
-        items = [item for item in items if item["task_id"] == task_id]
-    return [DatasetCatalogItem(**item) for item in items]
-
-
-@router.post("/runs/estimate", response_model=CostEstimateOut)
-async def estimate_run(config: RunConfig) -> CostEstimateOut:
-    return CostEstimateOut(**_runner.estimate(_resolve_run_config(config)).as_dict())
-
-
-@router.post("/runs/preflight", response_model=PreflightOut)
-async def preflight_run(config: RunConfig) -> PreflightOut:
-    return PreflightOut(**_runner.preflight(_resolve_run_config(config)).as_dict())
-
-
-@router.post("/runs", status_code=202, response_model=RunJobOut)
-async def create_run(config: RunConfig) -> RunJobOut:
-    """Persist and enqueue a run. Heavy model work never runs in the request."""
-    config = _resolve_run_config(config)
-    preflight = _runner.preflight(config)
-    if preflight.fatal_errors:
-        raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
-    run_id = _store.create(config)
-    _worker.enqueue(run_id, config)
-    return _job_out(_store.get(run_id))
-
-
 @router.post("/defence-runs", status_code=202, response_model=RunJobOut)
 async def create_defence_run(body: DefenceRunIn) -> RunJobOut:
     """Run a reviewed Defence candidate on the baseline's immutable protocol."""
@@ -1434,6 +971,10 @@ async def create_inference_experiment(body: QuickInferenceIn) -> RunJobOut:
     batch_root = (_upload_root() / body.upload_batch_id).resolve()
     uploads_root = _upload_root()
     if uploads_root not in batch_root.parents or not (batch_root / "images").is_dir():
+        print(f"DEBUG_DEBUG: uploads_root={uploads_root}, batch_root={batch_root}, is_dir={(batch_root / 'images').is_dir()}")
+        import os
+        print(f"DEBUG_DEBUG: {os.listdir(uploads_root) if uploads_root.exists() else 'uploads_root missing'}")
+        print(f"DEBUG_DEBUG: {os.listdir(batch_root) if batch_root.exists() else 'batch_root missing'}")
         raise HTTPException(status_code=404, detail="UPLOAD_BATCH_UNKNOWN")
     config = RunConfig(
         model_version_id=body.model_version_id,
@@ -1458,16 +999,6 @@ async def create_inference_experiment(body: QuickInferenceIn) -> RunJobOut:
     run_id = _store.create(config)
     _worker.enqueue(run_id, config)
     return _job_out(_store.get(run_id))
-
-
-@router.get("/runs", response_model=list[RunJobOut])
-async def list_runs() -> list[RunJobOut]:
-    return [_job_out(item) for item in _store.list()]
-
-
-@router.get("/runs/{run_id}", response_model=RunJobOut)
-async def get_run(run_id: str) -> RunJobOut:
-    return _job_out(_require_run(run_id))
 
 
 @router.get("/runs/{run_id}/defence-candidates", response_model=list[ModelVersionOut])
@@ -1502,13 +1033,6 @@ async def list_samples(
         for sample in report.get("sample_results", [])
         if (attack is None or sample["attack"] == attack) and (severity is None or sample["severity"] == severity)
     ]
-
-
-@router.post("/runs/{run_id}/cancel", response_model=RunJobOut)
-async def cancel_run(run_id: str) -> RunJobOut:
-    if not _store.request_cancel(run_id):
-        raise HTTPException(status_code=404, detail=f"unknown run {run_id!r}")
-    return _job_out(_require_run(run_id))
 
 
 @router.post("/runs/{run_id}/flag-reviews")
@@ -1979,7 +1503,7 @@ def _registered_model_versions() -> list[Any]:
     placeholders = list_known_versions()
     by_role = {str(item.training_metadata.get("role", "")): item for item in placeholders}
     versions = {item.id: item for item in placeholders}
-    for base in scan_base_checkpoints(PROJECT_ROOT / "checkpoints"):
+    for base in scan_base_checkpoints(Path(get_settings().checkpoint_root)):
         versions[base.id] = base
     for discovered in scan_model_artifacts(Path(get_settings().runs_root)):
         placeholder = by_role.get(str(discovered.training_metadata.get("role", "")))

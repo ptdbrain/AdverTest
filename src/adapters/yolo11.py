@@ -73,16 +73,18 @@ class Yolo11Adapter(ModelAdapter):
 
     def metadata(self) -> ModelInfo:
         checkpoint = Path(self.weights).expanduser()
+        is_local_file = checkpoint.is_file()
         return ModelInfo(
             name=self.name,
             task="detection2d",
             version=(f"{self.version}:{Path(self.weights).stem}:imgsz{self.image_size}:conf{self.score_threshold:.3f}"),
             supports_gradients=True,
             capabilities=self.capabilities,
-            checkpoint_hash=file_digest(checkpoint) if checkpoint.is_file() else None,
+            checkpoint_hash=file_digest(checkpoint) if is_local_file else None,
             preprocessing_version=(
                 f"letterbox-{self.image_size}-iou{self.nms_iou:.3f}-maptruck{self.map_truck_bus_to_car}"
             ),
+            is_local=is_local_file,
         )
 
     def predict(self, samples: Sequence[Sample]) -> list[DetectionPrediction]:

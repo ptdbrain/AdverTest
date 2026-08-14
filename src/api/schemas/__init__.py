@@ -154,6 +154,7 @@ class ModelCatalogItem(BaseModel):
     runnable: bool = True
     owner: str
     docstring: str = ""
+    is_local: bool = True
 
 
 class ModelFamilyOut(BaseModel):
