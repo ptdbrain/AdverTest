@@ -4,22 +4,20 @@ export default function ClosedLoopPanel({ report, backlog, trainingBlockedReason
 
   return (
     <section className="closed-loop-panel" aria-label="Recovery workflow">
-      <p className="evidence-stage__eyebrow">Recovery workflow</p>
-      <h2>Measured failures become retraining evidence</h2>
-      <p>{measuredFailures.length} measured attack cells are eligible for reviewer selection.</p>
+      <p className="evidence-stage__eyebrow">Recovery</p>
+      <h2 style={{ fontSize: "0.85rem", fontWeight: 600, margin: "4px 0 8px" }}>Retraining Workflow</h2>
+      <p>{measuredFailures.length} attack cells eligible for retraining.</p>
       {backlog ? (
         <p><strong>{backlog.name}</strong>: {backlog.status} ({backlog.failure_ids.length} failures)</p>
       ) : (
-        <button type="button" className="action-button action-button--primary" disabled={!canCreateBacklog || isCreatingBacklog} onClick={onCreateBacklog}>
-          {isCreatingBacklog ? "Creating retraining backlog…" : "Create retraining backlog"}
+        <button type="button" className="action-button action-button--primary" disabled={!canCreateBacklog || isCreatingBacklog} onClick={onCreateBacklog} style={{ marginTop: 8 }}>
+          {isCreatingBacklog ? "Creating backlog..." : "Create retraining backlog"}
         </button>
       )}
-      {error && <p role="alert">{error}</p>}
-      {trainingBlockedReason ? (
-        <p role="status">Training is waiting for verified model artefacts.</p>
-      ) : (
-        <p role="status">Approved backlog can start a queued training run.</p>
-      )}
+      {error && <p role="alert" className="text-xs" style={{ color: "var(--danger)", marginTop: 6 }}>{error}</p>}
+      <p role="status" className="text-xs text-tertiary" style={{ marginTop: 6 }}>
+        {trainingBlockedReason ? "Waiting for verified model artifacts." : "Approved backlog can start training."}
+      </p>
     </section>
   );
 }

@@ -317,7 +317,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
                 <div className="text-xs font-bold text-secondary">Selected Files ({filePreviews.length}):</div>
                 {filePreviews.map((item, idx) => (
                   <div
-                    key={idx}
+                    key={item.url || item.name || idx}
                     style={{
                       display: "flex",
                       alignItems: "center",

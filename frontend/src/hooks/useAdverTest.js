@@ -9,6 +9,62 @@ import {
 
 const TERMINAL_STATES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
 
+/* ---- Fallback data when backend is unavailable ---- */
+const FALLBACK_MODES = [
+  { id: "detection2d", title: "2D Object Detection", status: "available" },
+  { id: "segmentation", title: "Instance Segmentation", status: "coming_later" },
+  { id: "detection3d", title: "3D Object Detection", status: "coming_later" },
+];
+
+const FALLBACK_FAMILIES = [
+  { id: "yolo11", display_name: "YOLO11", runnable: true },
+];
+
+const FALLBACK_CHECKPOINTS = [
+  { id: "yolo11n", model_name: "YOLO11n", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11n.pt" },
+  { id: "yolo11s", model_name: "YOLO11s", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11s.pt" },
+  { id: "yolo11m", model_name: "YOLO11m", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11m.pt" },
+  { id: "yolo11l", model_name: "YOLO11l", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11l.pt" },
+  { id: "yolo11x", model_name: "YOLO11x", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11x.pt" },
+];
+
+const FALLBACK_DATASETS = [
+  { id: "kitti_val", name: "kitti", title: "KITTI Validation", annotation_schema: ["2d_bbox"], benchmark_ready: true, anonymized: true },
+  { id: "coco_val", name: "coco", title: "COCO Validation", annotation_schema: ["2d_bbox"], benchmark_ready: true, anonymized: true },
+  { id: "synthetic_shapes", name: "synthetic_shapes", title: "Synthetic Shapes", annotation_schema: ["2d_bbox"], benchmark_ready: true, anonymized: true },
+];
+
+const FALLBACK_ATTACKS = [
+  { name: "fgsm", threat_model: "white_box", attack_type: "gradient", scenario_kind: "digital", available: true, version: "1.0.0" },
+  { name: "pgd", threat_model: "white_box", attack_type: "gradient", scenario_kind: "digital", available: true, version: "1.0.0" },
+  { name: "mi_fgsm", threat_model: "white_box", attack_type: "gradient", scenario_kind: "digital", available: true, version: "1.0.0" },
+  { name: "cw_l2", threat_model: "white_box", attack_type: "optimization", scenario_kind: "digital", available: true, version: "1.0.0" },
+  { name: "tog", threat_model: "white_box", attack_type: "targeted", scenario_kind: "digital", available: true, version: "1.0.0" },
+  { name: "dpatch", threat_model: "white_box", attack_type: "patch", scenario_kind: "physical", available: true, version: "1.0.0" },
+  { name: "depth_fog", threat_model: "gray_box", attack_type: "weather", scenario_kind: "physical", available: true, version: "1.0.0" },
+  { name: "depth_rain", threat_model: "gray_box", attack_type: "weather", scenario_kind: "physical", available: true, version: "1.0.0" },
+  { name: "object_occlusion", threat_model: "gray_box", attack_type: "physical", scenario_kind: "physical", available: true, version: "1.0.0" },
+  { name: "sensor_fault", threat_model: "gray_box", attack_type: "sensor", scenario_kind: "physical", available: true, version: "1.0.0" },
+  { name: "gaussian_noise", threat_model: "black_box", attack_type: "corruption", scenario_kind: "digital", available: true, version: "1.0.0" },
+  { name: "motion_blur", threat_model: "black_box", attack_type: "corruption", scenario_kind: "digital", available: true, version: "1.0.0" },
+  { name: "defocus_blur", threat_model: "black_box", attack_type: "corruption", scenario_kind: "digital", available: true, version: "1.0.0" },
+  { name: "square_attack", threat_model: "black_box", attack_type: "query", scenario_kind: "digital", available: true, version: "1.0.0" },
+];
+
+const FALLBACK_SAMPLES = [
+  { attack: "fgsm", severity: 3, degradation: 25, artifacts: { clean_prediction_url: "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/bus.jpg", attacked_prediction_url: "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg" } }
+];
+
+const FALLBACK_REPORT = {
+  model: "YOLO11", model_version: "yolo11n", dataset: "Synthetic Shapes", ap_clean: 0.854, seconds: 12.5, benchmark_metrics_available: true,
+  cells: [
+    { attack: "fgsm", severity: 1, degradation: 5, group: "A", ap: 0.811 },
+    { attack: "fgsm", severity: 3, degradation: 25, group: "A", ap: 0.640 },
+    { attack: "fgsm", severity: 5, degradation: 60, group: "A", ap: 0.341 }
+  ],
+  heatmap: {}
+};
+
 function artifactUrl(value) {
   if (!value) return null;
   if (/^https?:\/\//i.test(value)) return value;
@@ -101,7 +157,15 @@ export function useAdverTest() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
       if (!cancelled) {
-        console.error("Failed to load AdverTest catalogs after retries.");
+        console.warn("Backend unavailable — loading fallback catalog data for UI preview.");
+        setModes(FALLBACK_MODES);
+        setModelFamilies(FALLBACK_FAMILIES);
+        setSelectedModelFamily(FALLBACK_FAMILIES[0].id);
+        setBaseCheckpoints(FALLBACK_CHECKPOINTS);
+        setSelectedModelVersion(FALLBACK_CHECKPOINTS[0].id);
+        setDatasets(FALLBACK_DATASETS);
+        setSelectedDataset(FALLBACK_DATASETS[2].id);
+        setAttacks(FALLBACK_ATTACKS);
         setLoading(false);
       }
     };

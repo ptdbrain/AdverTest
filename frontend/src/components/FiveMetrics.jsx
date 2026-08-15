@@ -5,7 +5,7 @@ const DETECTION_METRICS = [
 ];
 
 function formatMetric(value) {
-  return value == null ? "Unavailable" : Number(value).toFixed(3);
+  return value == null ? "—" : Number(value).toFixed(3);
 }
 
 export default function BaseModelMetrics({ ariaLabel, title, metrics, fallbackAp, benchmarkAvailable }) {
@@ -17,11 +17,11 @@ export default function BaseModelMetrics({ ariaLabel, title, metrics, fallbackAp
   return (
     <section className="prediction-metrics" aria-label={ariaLabel}>
       <header>
-        <p className="evidence-stage__eyebrow">Base model metrics</p>
+        <p className="evidence-stage__eyebrow">Metrics</p>
         <h3>{title}</h3>
       </header>
       {!benchmarkAvailable ? (
-        <p className="prediction-metrics__unavailable">No ground truth supplied. Benchmark AP/mAP metrics are unavailable.</p>
+        <p className="prediction-metrics__unavailable">No ground truth — benchmark metrics unavailable.</p>
       ) : (
         <div className="prediction-metrics__grid">
           {DETECTION_METRICS.map(([label, key]) => (

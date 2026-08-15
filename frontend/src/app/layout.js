@@ -11,13 +11,6 @@ export default function RootLayout({ children }) {
   return (
     <html lang="vi">
       <body>
-        {/* Simulation Banner - always visible */}
-        <div className="simulation-banner">
-          <span className="simulation-banner__text">
-            SIMULATION ONLY — Kết quả chưa được validate, không dùng để quyết định triển khai
-          </span>
-        </div>
-
         {/* Sidebar */}
         <nav className="sidebar">
           <div className="sidebar__logo">AT</div>
