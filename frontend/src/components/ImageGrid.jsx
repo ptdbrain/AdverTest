@@ -15,15 +15,48 @@ function GroundTruthOverlay({ groundTruth }) {
   if (groundTruth?.type !== "boxes" || !groundTruth.objects?.length) return null;
   const width = Number(groundTruth.image_width) || 1;
   const height = Number(groundTruth.image_height) || 1;
+  const fontSize = Math.max(3.5, Math.min(width, height) * 0.045);
+  const strokeWidth = Math.max(1, Math.min(width, height) * 0.008);
+
   return (
-    <svg className="evidence-media__ground-truth" aria-label="Ground truth overlay" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+    <svg className="evidence-media__ground-truth" aria-label="Ground truth overlay" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
       {groundTruth.objects.map((object, index) => {
         const [x1, y1, x2, y2] = object.xyxy ?? [];
         if (![x1, y1, x2, y2].every(Number.isFinite)) return null;
+        const label = object.label ?? "object";
+        const labelWidth = label.length * fontSize * 0.58 + fontSize * 0.5;
+        const labelHeight = fontSize * 1.35;
+        const tagY = y1 - labelHeight >= 0 ? y1 - labelHeight : y1;
+
         return (
           <g key={object.object_id ?? index}>
-            <rect x={x1} y={y1} width={Math.max(0, x2 - x1)} height={Math.max(0, y2 - y1)} />
-            <text x={x1} y={Math.max(14, y1 - 4)}>{object.label ?? "object"}</text>
+            <rect
+              x={x1}
+              y={y1}
+              width={Math.max(0, x2 - x1)}
+              height={Math.max(0, y2 - y1)}
+              stroke="var(--gt-color, #22c55e)"
+              strokeWidth={strokeWidth}
+              fill="rgba(34, 197, 94, 0.10)"
+            />
+            <rect
+              x={x1}
+              y={tagY}
+              width={labelWidth}
+              height={labelHeight}
+              fill="rgba(15, 23, 42, 0.82)"
+              rx={Math.max(1, fontSize * 0.2)}
+            />
+            <text
+              x={x1 + fontSize * 0.25}
+              y={tagY + fontSize * 0.95}
+              fontSize={fontSize}
+              fill="#22c55e"
+              fontWeight="600"
+              fontFamily="var(--font-mono, monospace)"
+            >
+              {label}
+            </text>
           </g>
         );
       })}
@@ -31,7 +64,7 @@ function GroundTruthOverlay({ groundTruth }) {
   );
 }
 
-function GridImage({ src, alt, children }) {
+function GridImage({ src, alt, label, labelClass, groundTruth, children }) {
   if (!src) {
     return (
       <div className="image-grid__empty">
@@ -40,10 +73,17 @@ function GridImage({ src, alt, children }) {
       </div>
     );
   }
+  const width = Number(groundTruth?.image_width) || 1;
+  const height = Number(groundTruth?.image_height) || 1;
+  const aspect = groundTruth?.image_width && groundTruth?.image_height ? `${width} / ${height}` : "auto";
+
   return (
     <div className="image-grid__image-wrapper">
-      <Image src={src} alt={alt} fill sizes="(max-width: 900px) 100vw, 35vw" unoptimized style={{ objectFit: "contain" }} />
-      {children}
+      <div className="image-frame" style={{ position: "relative", aspectRatio: aspect }}>
+        {label && <span className={`image-grid__label ${labelClass}`}>{label}</span>}
+        <Image src={src} alt={alt} fill sizes="(max-width: 900px) 100vw, 35vw" unoptimized style={{ objectFit: "contain" }} />
+        {children}
+      </div>
     </div>
   );
 }
@@ -118,29 +158,49 @@ export default function ImageGrid({ report, samples, selectedIndex = 0, onSelect
       <div className="image-grid">
         {/* Cell 1: Clean + Ground Truth */}
         <div className="image-grid__cell">
-          <span className="image-grid__label image-grid__label--gt">Clean + Ground Truth</span>
-          <GridImage src={artifacts.clean_input_url} alt="Clean input with ground truth">
+          <GridImage
+            src={artifacts.clean_input_url}
+            alt="Clean input with ground truth"
+            label="Clean + Ground Truth"
+            labelClass="image-grid__label--gt"
+            groundTruth={sample?.ground_truth}
+          >
             <GroundTruthOverlay groundTruth={sample?.ground_truth} />
           </GridImage>
         </div>
 
         {/* Cell 2: Attacked Raw */}
         <div className="image-grid__cell">
-          <span className="image-grid__label image-grid__label--attacked">Attacked Input</span>
-          <GridImage src={artifacts.attacked_input_url} alt="Attacked input" />
+          <GridImage
+            src={artifacts.attacked_input_url}
+            alt="Attacked input"
+            label="Attacked Input"
+            labelClass="image-grid__label--attacked"
+            groundTruth={sample?.ground_truth}
+          />
         </div>
 
         {/* Cell 3: Clean + YOLO Prediction + Metrics */}
         <div className="image-grid__cell">
-          <span className="image-grid__label image-grid__label--pred">Clean Prediction</span>
-          <GridImage src={artifacts.clean_prediction_url} alt="Clean model prediction" />
+          <GridImage
+            src={artifacts.clean_prediction_url}
+            alt="Clean model prediction"
+            label="Clean Prediction"
+            labelClass="image-grid__label--pred"
+            groundTruth={sample?.ground_truth}
+          />
           {benchmarkAvailable && <MetricChips metrics={report?.metrics?.clean} variant="clean" />}
         </div>
 
         {/* Cell 4: Attacked + YOLO Prediction + Metrics */}
         <div className="image-grid__cell">
-          <span className="image-grid__label image-grid__label--attacked-pred">Attacked Prediction</span>
-          <GridImage src={artifacts.attacked_prediction_url} alt="Attacked model prediction" />
+          <GridImage
+            src={artifacts.attacked_prediction_url}
+            alt="Attacked model prediction"
+            label="Attacked Prediction"
+            labelClass="image-grid__label--attacked-pred"
+            groundTruth={sample?.ground_truth}
+          />
           {benchmarkAvailable && <MetricChips metrics={attack?.metrics ?? report?.metrics?.attacked} variant="attacked" />}
         </div>
       </div>

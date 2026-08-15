@@ -81,12 +81,12 @@ async def get_run_report(
 async def cancel_run(
     run_id: str,
     store: SqliteRunStore = Depends(get_store),
-    worker: LocalRunWorker = Depends(get_worker)
 ) -> RunJobOut:
     record = store.get(run_id)
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
-    if record["status"] in ("PENDING", "RUNNING"):
-        worker.cancel(run_id)
-        store.update_status(run_id, "CANCELLED")
+    if record["status"] not in ("COMPLETED", "FAILED", "CANCELLED"):
+        store.request_cancel(run_id)
+        if record["status"] == "QUEUED":
+            store.fail(run_id, "Cancelled by user", cancelled=True)
     return _job_out(store.get(run_id))

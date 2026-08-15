@@ -7,6 +7,7 @@ import DefencePanel from "@/components/DefencePanel";
 import ComparisonView from "@/components/ComparisonView";
 import ReportView from "@/components/ReportView";
 import ImageGrid from "@/components/ImageGrid";
+import ThemeToggle from "@/components/ThemeToggle";
 import { useAdverTest } from "@/hooks/useAdverTest";
 
 const MODE_LABELS = {
@@ -40,6 +41,7 @@ function HeaderBar({ mode, runStatus, isRunning }) {
         </span>
       </div>
       <div className="app-header__right">
+        <ThemeToggle />
         <div className={`app-header__status ${statusClass}`} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <span className={`status-beacon ${isRunning ? "status-beacon--running" : runStatus === "FAILED" ? "status-beacon--failed" : "status-beacon--ready"}`} />
           {statusLabel}
@@ -53,12 +55,66 @@ function HeaderBar({ mode, runStatus, isRunning }) {
 export default function HomePage() {
   const { state, actions } = useAdverTest();
   const [gridIndex, setGridIndex] = useState(0);
+  const [configWidth, setConfigWidth] = useState(25); // percentage (15% to 30%)
+  const isDraggingRef = React.useRef(false);
+
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem("advertest-config-width");
+      if (saved) {
+        const parsed = Number(saved);
+        if (parsed >= 15 && parsed <= 30) {
+          setConfigWidth(parsed);
+        }
+      }
+    } catch {}
+  }, []);
+
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handleMouseMove = (moveEvent) => {
+      if (!isDraggingRef.current) return;
+      const totalWidth = window.innerWidth - 52;
+      const relativeX = moveEvent.clientX - 52;
+      const percentage = (relativeX / totalWidth) * 100;
+      const clamped = Math.min(30, Math.max(15, percentage));
+      setConfigWidth(clamped);
+    };
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+      setConfigWidth((current) => {
+        try {
+          localStorage.setItem("advertest-config-width", current.toString());
+        } catch {}
+        return current;
+      });
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
 
   if (state.loading) {
     return (
       <>
         <HeaderBar mode={state.mode} runStatus={null} isRunning={false} />
-        <main className="main-content">
+        <main
+          className="main-content"
+          style={{
+            display: "grid",
+            gridTemplateColumns: `${configWidth}% 4px minmax(0, 1fr)`,
+            gap: 0,
+          }}
+        >
           <aside className="config-panel" style={{ gap: "var(--space-lg)" }}>
             {/* Skeleton task selector */}
             <div style={{ padding: "0 var(--space-md)" }}>
@@ -83,6 +139,7 @@ export default function HomePage() {
               ))}
             </div>
           </aside>
+          <div className="resize-divider" />
           <div className="center-view flex-center" style={{ flexDirection: "column", gap: "var(--space-lg)" }}>
             <div className="skeleton" style={{ width: "48px", height: "48px", borderRadius: "50%" }} />
             <div className="skeleton" style={{ width: "160px", height: "12px" }} />
@@ -96,7 +153,14 @@ export default function HomePage() {
   return (
     <>
       <HeaderBar mode={state.mode} runStatus={state.runStatus} isRunning={state.isRunning} />
-      <main className="main-content">
+      <main
+        className="main-content"
+        style={{
+          display: "grid",
+          gridTemplateColumns: `${configWidth}% 4px minmax(0, 1fr)`,
+          gap: 0,
+        }}
+      >
         <ConfigPanel
           datasets={state.datasets}
           attacks={state.attacks}
@@ -117,6 +181,20 @@ export default function HomePage() {
           runStatus={state.runStatus}
           actions={actions}
         />
+
+        {/* Resizable Divider Handle */}
+        <div
+          className="resize-divider"
+          onMouseDown={handleMouseDown}
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuenow={Math.round(configWidth)}
+          aria-valuemin={15}
+          aria-valuemax={30}
+          title={`Kéo để thay đổi độ rộng cột cài đặt (${Math.round(configWidth)}%, tối đa 30%)`}
+        >
+          <div className="resize-divider__handle" />
+        </div>
 
         <section className="center-view" aria-label="Robustness evidence workspace">
           {state.isRunning ? (

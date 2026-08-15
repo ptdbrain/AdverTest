@@ -21,11 +21,9 @@ const FALLBACK_FAMILIES = [
 ];
 
 const FALLBACK_CHECKPOINTS = [
+  { id: "yolo11s-base", model_name: "yolo11s", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "checkpoints/surrogates/yolo11s.pt" },
   { id: "yolo11n", model_name: "YOLO11n", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11n.pt" },
   { id: "yolo11s", model_name: "YOLO11s", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11s.pt" },
-  { id: "yolo11m", model_name: "YOLO11m", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11m.pt" },
-  { id: "yolo11l", model_name: "YOLO11l", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11l.pt" },
-  { id: "yolo11x", model_name: "YOLO11x", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11x.pt" },
 ];
 
 const FALLBACK_DATASETS = [
@@ -256,14 +254,40 @@ export function useAdverTest() {
   const toggleAttack = useCallback((name) => {
     const metadata = attacks.find((item) => item.name === name);
     if (metadata?.available === false) return;
+    const isWhiteBox = metadata?.group === "D" || metadata?.threat_model === "white_box" || ["fgsm", "pgd", "cw_l2", "dag", "bim", "deepfool", "apgd"].includes(name);
+
     setRecipe((current) => {
-      const remaining = current.steps.filter((step) => step.attack_name !== name);
-      const steps = remaining.length === current.steps.length
+      const isAlreadySelected = current.steps.some((step) => step.attack_name === name);
+      let remaining = current.steps.filter((step) => step.attack_name !== name);
+
+      // If selecting a white-box attack, replace any existing white-box attack to comply with max_white_box_steps=1
+      if (!isAlreadySelected && isWhiteBox) {
+        remaining = remaining.filter((step) => {
+          const stepMeta = attacks.find((item) => item.name === step.attack_name);
+          const stepIsWhiteBox = stepMeta?.group === "D" || stepMeta?.threat_model === "white_box" || ["fgsm", "pgd", "cw_l2", "dag", "bim", "deepfool", "apgd"].includes(step.attack_name);
+          return !stepIsWhiteBox;
+        });
+      }
+
+      const steps = !isAlreadySelected
         ? [...remaining, { position: remaining.length, attack_name: name, implementation_version: metadata?.version || "1.0.0", severity: 3, parameters: {}, seed: runOptions.seed, expected_cost: 1 }]
         : remaining;
       return { ...current, steps: steps.map((step, position) => ({ ...step, position })) };
     });
-    setSelectedAttacks((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]);
+
+    setSelectedAttacks((current) => {
+      if (current.includes(name)) {
+        return current.filter((item) => item !== name);
+      }
+      if (isWhiteBox) {
+        const filtered = current.filter((item) => {
+          const itemMeta = attacks.find((a) => a.name === item);
+          return !(itemMeta?.group === "D" || itemMeta?.threat_model === "white_box" || ["fgsm", "pgd", "cw_l2", "dag", "bim", "deepfool", "apgd"].includes(item));
+        });
+        return [...filtered, name];
+      }
+      return [...current, name];
+    });
   }, [attacks, runOptions.seed]);
   const addDataset = useCallback((dataset) => {
     if (!dataset) return;
@@ -376,13 +400,26 @@ export function useAdverTest() {
       } else {
         const preflight = await preflightRun(config);
         if (preflight.fatal_errors?.length) {
-          setRunStatus("BLOCKED"); setProgressDetail(preflight.fatal_errors.join(" ")); setIsRunning(false); return;
+          setRunStatus("BLOCKED");
+          const msg = preflight.fatal_errors.join(" ");
+          const friendly = msg.includes("multiple_white_box_steps") || msg.includes("forbidden_pair")
+            ? "Không thể kết hợp nhiều đòn White-box gradient cùng lúc trong 1 chuỗi. Vui lòng chọn 1 đòn White-box kết hợp với Black-box hoặc Corruptions."
+            : msg;
+          setProgressDetail(friendly);
+          setIsRunning(false);
+          return;
         }
         job = await createRun(config);
       }
       setRunId(job.run_id); setRunStatus(job.status); setProgressDetail("Queueing..."); monitorRun(job.run_id);
     } catch (error) {
-      setRunStatus("FAILED"); setProgressDetail(error.message || "Run failed due to an API error."); setIsRunning(false);
+      setRunStatus("FAILED");
+      const raw = error.message || "";
+      const friendly = raw.includes("multiple_white_box_steps") || raw.includes("forbidden_pair")
+        ? "Không thể kết hợp nhiều đòn White-box gradient cùng lúc trong 1 chuỗi. Vui lòng chọn 1 đòn White-box kết hợp với Black-box hoặc Corruptions."
+        : raw || "Run failed due to an API error.";
+      setProgressDetail(friendly);
+      setIsRunning(false);
     }
   }, [baseCheckpoints, buildRunConfig, datasets, mode, monitorRun, recipe, runOptions, selectedDataset, selectedModelFamily, selectedModelVersion]);
 
@@ -436,7 +473,26 @@ export function useAdverTest() {
     setCanonicalRecipe(await sweepRecipeRequest(attack));
   }, [setCanonicalRecipe]);
   const previewRecipe = useCallback(async (payload) => previewRecipeRequest(payload), []);
-  const cancelRunAction = useCallback(async () => { if (!runId) return; setRunStatus("CANCEL_REQUESTED"); setProgressDetail("Cancelling job..."); const job = await cancelRun(runId); setRunStatus(job.status); }, [runId]);
+  const cancelRunAction = useCallback(async () => {
+    if (!runId) return;
+    setRunStatus("CANCEL_REQUESTED");
+    setProgressDetail("Cancelling job...");
+    try {
+      const job = await cancelRun(runId);
+      if (pollRef.current) clearInterval(pollRef.current);
+      wsRef.current?.close();
+      setRunStatus(job.status || "CANCELLED");
+      setProgressDetail("Run cancelled by user.");
+      setIsRunning(false);
+    } catch (err) {
+      console.warn("Cancel request error:", err);
+      if (pollRef.current) clearInterval(pollRef.current);
+      wsRef.current?.close();
+      setRunStatus("CANCELLED");
+      setProgressDetail("Run cancelled.");
+      setIsRunning(false);
+    }
+  }, [runId]);
   const retryEvidence = useCallback(() => { if (!runId) return; finalizedRef.current = false; finalizeRun(runId, { status: "COMPLETED" }); }, [finalizeRun, runId]);
 
   useEffect(() => () => { wsRef.current?.close(); if (pollRef.current) clearInterval(pollRef.current); }, []);

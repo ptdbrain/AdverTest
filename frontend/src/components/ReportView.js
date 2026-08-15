@@ -1,6 +1,7 @@
 import React from "react";
 import HeatmapMatrix from "@/components/HeatmapMatrix";
 import RAChart from "@/components/RAChart";
+import MetricsComparisonChart from "@/components/MetricsComparisonChart";
 
 export default function ReportView({ report }) {
   if (!report) {
@@ -68,6 +69,9 @@ export default function ReportView({ report }) {
         </div>
         
       </div>
+
+      {/* Bar Chart comparing metrics before and after attack */}
+      <MetricsComparisonChart report={report} />
 
       {report.benchmark_metrics_available !== false && (
         <>

@@ -97,6 +97,62 @@
   --header-height: 48px;
 }
 
+/* ---- Light Theme Tokens ---- */
+[data-theme="light"] {
+  /* Backgrounds — Ultra-clean Neutral Slate/Zinc */
+  --bg-deep: #F8FAFC;
+  --bg-primary: #FFFFFF;
+  --bg-surface: #F1F5F9;
+  --bg-elevated: #FFFFFF;
+  --bg-hover: #E2E8F0;
+  --bg-active: #CBD5E1;
+  --bg-glass: rgba(255, 255, 255, 0.92);
+
+  /* Borders */
+  --border-subtle: rgba(15, 23, 42, 0.08);
+  --border-light: rgba(15, 23, 42, 0.12);
+  --border-medium: rgba(15, 23, 42, 0.18);
+  --border-focus: rgba(37, 99, 235, 0.45);
+
+  /* Primary Accent — Crisp Blue */
+  --accent: #2563EB;
+  --accent-light: #3B82F6;
+  --accent-dim: rgba(37, 99, 235, 0.08);
+  --accent-border: rgba(37, 99, 235, 0.25);
+
+  /* Semantic Colors */
+  --success: #16A34A;
+  --success-dim: rgba(22, 163, 74, 0.08);
+  --success-border: rgba(22, 163, 74, 0.20);
+  --warning: #D97706;
+  --warning-dim: rgba(217, 119, 6, 0.08);
+  --warning-border: rgba(217, 119, 6, 0.20);
+  --danger: #DC2626;
+  --danger-dim: rgba(220, 38, 38, 0.08);
+  --danger-border: rgba(220, 38, 38, 0.20);
+  --info: #2563EB;
+
+  /* Functional colors for image overlay */
+  --gt-color: #16A34A;
+  --pred-color: #2563EB;
+  --degradation-color: #DC2626;
+
+  /* Text */
+  --text-primary: #0F172A;
+  --text-secondary: #334155;
+  --text-tertiary: #64748B;
+  --text-muted: #94A3B8;
+  --text-accent: #2563EB;
+
+  /* Shadows — soft and clean */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.07);
+  --shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.09);
+  --shadow-xl: 0 12px 40px rgba(15, 23, 42, 0.10);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
 /* ---- Reset & Base ---- */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -495,6 +551,63 @@ body {
   border: 2px solid var(--bg-surface);
 }
 
+.sidebar__bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding-bottom: var(--space-xs);
+}
+
+.sidebar__bottom .theme-toggle-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+}
+
+.sidebar__bottom .theme-toggle-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+/* ---- Theme Toggle Button ---- */
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-medium);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+
+.theme-toggle-btn svg {
+  flex-shrink: 0;
+  transition: transform var(--transition-base);
+}
+
+.theme-toggle-btn:hover svg {
+  transform: rotate(15deg);
+}
+
 /* ---- Main Layout ---- */
 .app-layout {
   margin-left: var(--sidebar-width);
@@ -506,11 +619,47 @@ body {
 
 .main-content {
   display: grid;
-  grid-template-columns: minmax(300px, 32%) minmax(0, 1fr);
+  grid-template-columns: 25% 4px minmax(0, 1fr);
   gap: 0;
   height: calc(100vh - var(--header-height));
   min-height: 0;
   overflow: hidden;
+}
+
+/* ---- Resize Divider ---- */
+.resize-divider {
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  background: var(--border-subtle);
+  position: relative;
+  transition: background var(--transition-fast);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.resize-divider:hover,
+.resize-divider:active {
+  background: var(--accent);
+}
+
+.resize-divider__handle {
+  width: 2px;
+  height: 24px;
+  border-radius: 1px;
+  background: var(--text-muted);
+  opacity: 0.6;
+  transition: all var(--transition-fast);
+}
+
+.resize-divider:hover .resize-divider__handle,
+.resize-divider:active .resize-divider__handle {
+  background: white;
+  opacity: 1;
+  height: 36px;
 }
 
 /* ---- Glass Panel ---- */
@@ -522,9 +671,8 @@ body {
   border-radius: var(--radius-md);
 }
 
-/* ---- Config Panel (Left, ~30%) ---- */
+/* ---- Config Panel (Left, resizable max 30%) ---- */
 .config-panel {
-  border-right: 1px solid var(--border-subtle);
   padding: var(--space-lg) var(--space-md);
   overflow-y: auto;
   display: flex;
@@ -532,6 +680,8 @@ body {
   gap: var(--space-lg);
   background: var(--bg-surface);
   animation: slideInLeft 0.4s var(--ease-out);
+  max-width: 100%;
+  min-width: 0;
 }
 
 .config-panel__section {
@@ -703,6 +853,32 @@ body {
   align-items: stretch;
 }
 
+.attack-card--disabled {
+  opacity: 0.40;
+  cursor: not-allowed !important;
+  background: var(--bg-deep);
+  border-style: dashed;
+}
+
+.attack-card--disabled:hover {
+  transform: none;
+  border-color: var(--border-subtle);
+  background: var(--bg-deep);
+}
+
+.attack-card__disabled-badge {
+  font-size: 0.55rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
 .attack-card__name {
   font-size: 0.72rem;
   font-weight: 500;
@@ -832,6 +1008,55 @@ body {
 
 .recipe-step input[type="range"]::-webkit-slider-thumb:hover {
   transform: scale(1.2);
+}
+
+/* ---- Remove Attack Buttons ---- */
+.attack-card__remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1px solid var(--border-medium);
+  background: var(--bg-surface);
+  color: var(--text-tertiary);
+  font-size: 0.62rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  transition: all var(--transition-fast);
+}
+
+.attack-card__remove-btn:hover {
+  background: var(--danger-dim);
+  border-color: var(--danger-border);
+  color: var(--danger);
+  transform: scale(1.15);
+}
+
+.recipe-step__remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: var(--radius-xs);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 4px;
+  transition: all var(--transition-fast);
+}
+
+.recipe-step__remove-btn:hover {
+  background: var(--danger-dim);
+  color: var(--danger);
+  transform: scale(1.1);
 }
 
 /* ---- Progress Bar (inline, slim) ---- */
@@ -1050,12 +1275,34 @@ body {
   align-items: center;
   justify-content: center;
   background: var(--bg-deep);
+  padding: 6px;
 }
 
-.image-grid__image-wrapper img {
+.image-frame {
+  position: relative;
   max-width: 100%;
   max-height: 100%;
+  width: auto;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.image-frame img {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
+}
+
+.image-frame .image-grid__label {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 10;
 }
 
 .image-grid__empty {
@@ -1141,20 +1388,11 @@ body {
 }
 
 .evidence-media__ground-truth rect {
-  fill: none;
-  stroke: var(--gt-color);
-  stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
 
 .evidence-media__ground-truth text {
-  fill: #0B1F14;
-  stroke: var(--gt-color);
-  stroke-width: 3;
-  paint-order: stroke;
-  font-size: 14px;
-  font-weight: 700;
-  vector-effect: non-scaling-stroke;
+  user-select: none;
 }
 
 /* ---- Sample Navigation ---- */

@@ -21,15 +21,13 @@ function checkpointLabel(item) {
   return filename ? `${item.id} — ${filename}` : item.id;
 }
 
-/* Severity indicator: 5 squares showing current level */
-function SeveritySquares({ level = 3 }) {
-  return (
-    <div className="severity-squares">
-      {[1, 2, 3, 4, 5].map((n) => (
-        <div key={n} className={`severity-squares__dot ${n <= level ? "severity-squares__dot--filled" : ""}`} />
-      ))}
-    </div>
-  );
+function formatDisabledReason(reason) {
+  if (!reason) return "N/A";
+  if (reason.includes("modality_mismatch:lidar")) return "LiDAR only";
+  if (reason.includes("modality_mismatch:multi")) return "Multi-cam";
+  if (reason.includes("missing_model_capability")) return "Incompatible";
+  if (reason.includes("CHECKPOINT_UNKNOWN")) return "No Checkpoint";
+  return reason.replace(/_/g, " ").slice(0, 12);
 }
 
 export default function ConfigPanel({
@@ -119,14 +117,7 @@ export default function ConfigPanel({
   };
 
   const handleAttackCardClick = (attackName) => {
-    // Toggle selection
     toggleAttack(attackName);
-    // If newly selected, expand to show severity
-    if (!selectedAttacks.includes(attackName)) {
-      setExpandedAttack(attackName);
-    } else {
-      setExpandedAttack(null);
-    }
   };
 
   const handleSeveritySelect = (attackName, severity) => {
@@ -134,8 +125,6 @@ export default function ConfigPanel({
     if (step) {
       updateAttackSeverity?.(step.position, severity);
     }
-    // Collapse after selecting
-    setTimeout(() => setExpandedAttack(null), 200);
   };
 
   const getAttackSeverity = (attackName) => {
@@ -274,38 +263,66 @@ export default function ConfigPanel({
             const isSelected = selectedAttacks.includes(atk.name);
             const isExpanded = expandedAttack === atk.name;
             const severity = getAttackSeverity(atk.name);
+            const isAvailable = atk.available !== false;
 
             return (
               <div
                 key={atk.name}
-                className={`attack-card ${isSelected ? "attack-card--selected" : ""} ${isExpanded ? "attack-card--expanded" : ""}`}
+                className={`attack-card ${isSelected ? "attack-card--selected" : ""} ${isExpanded ? "attack-card--expanded" : ""} ${!isAvailable ? "attack-card--disabled" : ""}`}
+                title={!isAvailable ? `Không khả dụng: ${atk.reason || "Không tương thích với mô hình hoặc dữ liệu hiện tại"}` : undefined}
               >
                 <div
-                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", cursor: "pointer" }}
-                  onClick={() => handleAttackCardClick(atk.name)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    width: "100%",
+                    cursor: isAvailable ? "pointer" : "not-allowed",
+                  }}
+                  onClick={() => isAvailable && handleAttackCardClick(atk.name)}
                   role="button"
-                  tabIndex={0}
-                  aria-disabled={atk.available === false}
-                  title={atk.available === false ? atk.reason : undefined}
+                  tabIndex={isAvailable ? 0 : -1}
+                  aria-disabled={!isAvailable}
                 >
                   <div className="attack-card__left">
                     <span className="attack-card__name">{atk.name.replace(/_/g, " ")}</span>
-                    <span className="attack-card__group">{atk.threat_model?.replace(/_/g, " ")}</span>
                   </div>
                   <div className="attack-card__right">
-                    {isSelected && <SeveritySquares level={severity} />}
+                    {!isAvailable && (
+                      <span className="attack-card__disabled-badge">
+                        {formatDisabledReason(atk.reason)}
+                      </span>
+                    )}
+                    {isSelected && (
+                      <button
+                        type="button"
+                        className="attack-card__remove-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleAttack(atk.name);
+                        }}
+                        title={`Bỏ chọn ${atk.name.replace(/_/g, " ")}`}
+                        aria-label={`Remove ${atk.name}`}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {/* Expanded severity selector */}
-                {isExpanded && isSelected && (
-                  <div className="severity-expanded">
+                {/* Single unified severity level selector */}
+                {isSelected && (
+                  <div className="severity-expanded" style={{ marginTop: "4px" }}>
+                    <span style={{ fontSize: "0.62rem", color: "var(--text-tertiary)", alignSelf: "center", marginRight: "2px" }}>
+                      Sev:
+                    </span>
                     {[1, 2, 3, 4, 5].map((n) => (
                       <button
                         key={n}
                         type="button"
                         className={`severity-expanded__btn ${severity === n ? "severity-expanded__btn--active" : ""}`}
                         onClick={(e) => { e.stopPropagation(); handleSeveritySelect(atk.name, n); }}
+                        title={`Severity level ${n}`}
                       >
                         {n}
                       </button>
@@ -321,30 +338,7 @@ export default function ConfigPanel({
         </div>
       </div>
 
-      {/* 5. Recipe Summary (compact) */}
-      {recipe.steps.length > 0 && (
-        <div className="config-panel__section">
-          <label className="config-panel__label">Recipe ({recipe.steps.length} steps)</label>
-          <div className="stagger-children" style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-            {recipe.steps.map((step) => (
-              <label key={`${step.position}-${step.attack_name}`} className="recipe-step">
-                <span>{step.attack_name.replace(/_/g, " ")}</span>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.68rem", color: "var(--accent-light)" }}>Sev {step.severity}</span>
-                <input
-                  aria-label={`${step.attack_name} severity`}
-                  type="range"
-                  min="1"
-                  max="5"
-                  value={step.severity}
-                  onChange={(event) => updateAttackSeverity?.(step.position, Number(event.target.value))}
-                />
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 6. Progress Bar (inline, when running) */}
+      {/* 5. Progress Bar (inline, when running) */}
       {isRunning && (
         <div className="progress-inline">
           <div className="progress-inline__text">
@@ -357,14 +351,31 @@ export default function ConfigPanel({
         </div>
       )}
 
-      {/* 7. Run Button */}
-      <button
-        className={`run-button ${isRunning ? "run-button--loading" : ""}`}
-        onClick={handleRun}
-        disabled={isRunning || blocked || selectedAttacks.length === 0}
-      >
-        {isRunning ? "Running..." : blocked ? "Waiting for artifacts" : "Run Test"}
-      </button>
+      {/* Run / Cancel Button */}
+      {isRunning ? (
+        <button
+          type="button"
+          className="run-button"
+          onClick={cancelRunAction}
+          style={{
+            background: "var(--danger-dim, rgba(239, 68, 68, 0.15))",
+            borderColor: "var(--danger, #ef4444)",
+            color: "var(--danger, #ef4444)",
+            cursor: "pointer",
+          }}
+        >
+          ✕ Cancel Run
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="run-button"
+          onClick={handleRun}
+          disabled={blocked || selectedAttacks.length === 0}
+        >
+          {blocked ? "Waiting for artifacts" : "Run Test"}
+        </button>
+      )}
     </aside>
   );
 }

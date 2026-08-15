@@ -10,12 +10,50 @@ function GroundTruthOverlay({ groundTruth }) {
   if (groundTruth?.type !== "boxes" || !groundTruth.objects?.length) return null;
   const width = Number(groundTruth.image_width) || 1;
   const height = Number(groundTruth.image_height) || 1;
+  const fontSize = Math.max(3.5, Math.min(width, height) * 0.045);
+  const strokeWidth = Math.max(1, Math.min(width, height) * 0.008);
+
   return (
-    <svg className="evidence-media__ground-truth" aria-label="Ground truth overlay" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+    <svg className="evidence-media__ground-truth" aria-label="Ground truth overlay" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
       {groundTruth.objects.map((object, index) => {
         const [x1, y1, x2, y2] = object.xyxy ?? [];
         if (![x1, y1, x2, y2].every(Number.isFinite)) return null;
-        return <g key={object.object_id ?? index}><rect x={x1} y={y1} width={Math.max(0, x2 - x1)} height={Math.max(0, y2 - y1)} /><text x={x1} y={Math.max(14, y1 - 4)}>{object.label ?? "object"}</text></g>;
+        const label = object.label ?? "object";
+        const labelWidth = label.length * fontSize * 0.58 + fontSize * 0.5;
+        const labelHeight = fontSize * 1.35;
+        const tagY = y1 - labelHeight >= 0 ? y1 - labelHeight : y1;
+
+        return (
+          <g key={object.object_id ?? index}>
+            <rect
+              x={x1}
+              y={y1}
+              width={Math.max(0, x2 - x1)}
+              height={Math.max(0, y2 - y1)}
+              stroke="var(--gt-color, #22c55e)"
+              strokeWidth={strokeWidth}
+              fill="rgba(34, 197, 94, 0.10)"
+            />
+            <rect
+              x={x1}
+              y={tagY}
+              width={labelWidth}
+              height={labelHeight}
+              fill="rgba(15, 23, 42, 0.82)"
+              rx={Math.max(1, fontSize * 0.2)}
+            />
+            <text
+              x={x1 + fontSize * 0.25}
+              y={tagY + fontSize * 0.95}
+              fontSize={fontSize}
+              fill="#22c55e"
+              fontWeight="600"
+              fontFamily="var(--font-mono, monospace)"
+            >
+              {label}
+            </text>
+          </g>
+        );
       })}
     </svg>
   );
