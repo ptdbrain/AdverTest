@@ -38,6 +38,26 @@ make test                                # pytest
 make run                                 # API: http://localhost:8000/docs
 ```
 
+### Environment variables
+
+Copy `.env.example` to `.env` for local development. The application reads
+configuration from the environment; values in `.env` are never required to be
+committed.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `APP_ENV` | `development` | Runtime profile shown by the API banner. |
+| `APP_HOST` | `0.0.0.0` | Uvicorn bind address. |
+| `APP_PORT` | `8000` | API port. |
+| `DATABASE_URL` | `sqlite:///./data/app.db` | Run/job and product-record storage. |
+| `DATA_ROOT` | `./data` | Uploads, datasets, and generated artifacts. |
+| `CORS_ORIGINS` | local origins | Browser origins allowed to call the API. |
+| `AI_LOG_API_KEY` | unset | Optional team AI-usage log submission key. |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Frontend API base URL when the UI runs separately. |
+
+Do not put model weights, access tokens, or private dataset paths in tracked
+files. Keep credentials in `.env` or the deployment secret manager.
+
 Output thật của `make demo`:
 
 ```
