@@ -265,6 +265,18 @@ recipe, and run ID with any shared evidence.
 | 8–9 | Journal + Worklog | `JOURNAL.md`, `WORKLOG.md` |
 | 10 | Evaluation Evidence | `eval/` |
 
+## 🩺 Troubleshooting
+
+- **Port 8000 is already in use:** stop the existing Uvicorn process or set a
+  different `APP_PORT`, then update `NEXT_PUBLIC_API_URL`.
+- **Missing anonymisation manifest:** use an anonymised dataset import and
+  verify the manifest is inside the configured dataset root.
+- **Missing model capability or annotation:** inspect catalog fields such as
+  `required_capabilities` and `required_annotations` before selecting an attack.
+- **Empty metrics:** raw images support quick inference only; AP/mAP requires
+  reviewed ground truth and a finalized dataset version.
+- **The UI cannot reach the API:** check CORS origins, API port, and `/health`.
+
 ## 📊 AI Usage Logging
 
 Hook đã cấu hình sẵn cho Claude Code, Cursor, Codex, Gemini CLI, Copilot,
