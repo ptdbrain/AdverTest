@@ -258,7 +258,7 @@ recipe, and run ID with any shared evidence.
 |---|---|---|
 | 1 | Source Code | `src/` |
 | 2 | README | file này |
-| 3 | Architecture Diagram | `ARCHITECTURE.md`, `docs/architecture_diagram.md` |
+| 3 | Architecture Diagram | `ARCHITECTURE.md`, `docs/architecture-diagram.md` |
 | 4 | AI Logs | `.ai-log/` (hook tự động, submit khi `git push`) |
 | 5 | Live URL | Dockerfile + CI đã sẵn |
 | 6–7 | Video + Pitch Deck | `presentation/` |
