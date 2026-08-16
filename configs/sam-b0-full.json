@@ -1,0 +1,29 @@
+{
+  "run_id": "sam-b0-full",
+  "trainer_name": "sam2",
+  "model_version": "sam2.1-hiera-small-pretrained",
+  "dataset_version_id": "cityscapes-anonymized-v1",
+  "split_manifest_id": "cityscapes-train-val-v1",
+  "defense_profile_id": "sam-b0-clean",
+  "seed": 20260807,
+  "epochs": 15,
+  "batch_size": 1,
+  "learning_rate": 0.0001,
+  "metadata": {
+    "sam_stage": "b0",
+    "training_manifest_hash": "f8303ff23b2698fe66eef713c38a4917",
+    "lineage_valid": true,
+    "dataset_root": "data/anonymized/cityscapes",
+    "anonymization_manifest": "manifest.jsonl",
+    "sam_checkpoint": "checkpoints/sam2/sam2.1_hiera_small.pt",
+    "sam_config": "configs/sam2.1/sam2.1_hiera_s.yaml",
+    "device": "cuda",
+    "train_split": "train",
+    "validation_split": "val",
+    "gradient_accumulation": 1,
+    "amp": true,
+    "freeze_image_encoder": true,
+    "early_stopping_patience": 5,
+    "output_checkpoint": "checkpoints/training/sam-b0-full.pt"
+  }
+}

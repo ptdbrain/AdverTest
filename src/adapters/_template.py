@@ -31,7 +31,7 @@ import numpy as np
 
 from src.adapters import MODELS
 from src.adapters.base import ModelAdapter
-from src.core.types import Box, ModelInfo, Prediction, Sample, Task
+from src.core.types import Box, DetectionPrediction, ModelInfo, Sample, Task
 
 #: Map the checkpoint's label space onto the normalised classes (plan §1.1).
 LABEL_MAP: dict[str, str] = {"car": "Car", "person": "Pedestrian", "bicycle": "Cyclist"}
@@ -67,14 +67,20 @@ class TemplateAdapter(ModelAdapter):
             supports_gradients=self.supports_gradients,
         )
 
-    def predict(self, samples: Sequence[Sample]) -> list[Prediction]:
+    def predict(self, samples: Sequence[Sample]) -> list[DetectionPrediction]:
         backend = self._load()
-        predictions: list[Prediction] = []
+        predictions: list[DetectionPrediction] = []
         for sample in samples:
             started = perf_counter()
             raw = backend.infer((sample.image * 255.0).round().astype(np.uint8))
             boxes = self.postprocess(self._convert(raw))
-            predictions.append(Prediction(sample.sample_id, boxes, (perf_counter() - started) * 1000.0))
+            predictions.append(
+                DetectionPrediction(
+                    sample_id=sample.sample_id,
+                    boxes=boxes,
+                    latency_ms=(perf_counter() - started) * 1000.0,
+                )
+            )
         return predictions
 
     @staticmethod

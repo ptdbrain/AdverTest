@@ -31,6 +31,9 @@ from src.pipeline.generator import (
     AttackGenerationConfig,
     inspect_generated_dataset,
 )
+from src.pipeline.generic_benchmark import BenchmarkRunner
+
+__all__ = ["AttackDatasetBenchmark", "BenchmarkRunner", "TransferMatrixBenchmark"]
 
 
 class BenchmarkModelConfig(BaseModel):

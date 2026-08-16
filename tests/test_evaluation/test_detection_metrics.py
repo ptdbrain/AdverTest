@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.core.types import Box, Prediction, Sample
+from src.core.types import Box, DetectionPrediction, Sample
 from src.evaluation.detection_metrics import (
     average_precision,
     detection_attack_success_rate,
@@ -42,32 +42,47 @@ def test_matching_ignores_class_mismatch() -> None:
 
 def test_perfect_prediction_scores_one() -> None:
     sample = _sample((CAR,))
-    prediction = Prediction("s0", (Box(0, 0, 10, 10, "Car", 0.9),))
+    prediction = DetectionPrediction(
+        sample_id="s0",
+        boxes=(Box(0, 0, 10, 10, "Car", 0.9),),
+    )
     assert average_precision([prediction], [sample]) == pytest.approx(1.0)
 
 
 def test_one_of_two_objects_found_halves_ap() -> None:
     sample = _sample((CAR, Box(20, 20, 30, 30, "Car")))
-    prediction = Prediction("s0", (Box(0, 0, 10, 10, "Car", 0.9),))
+    prediction = DetectionPrediction(
+        sample_id="s0",
+        boxes=(Box(0, 0, 10, 10, "Car", 0.9),),
+    )
     assert average_precision([prediction], [sample]) == pytest.approx(0.5)
 
 
 def test_low_scored_false_positive_does_not_erase_ap() -> None:
     """A confident hit plus a weak false alarm still yields AP 1.0."""
     sample = _sample((CAR,))
-    prediction = Prediction("s0", (Box(0, 0, 10, 10, "Car", 0.9), Box(40, 40, 50, 50, "Car", 0.3)))
+    prediction = DetectionPrediction(
+        sample_id="s0",
+        boxes=(
+            Box(0, 0, 10, 10, "Car", 0.9),
+            Box(40, 40, 50, 50, "Car", 0.3),
+        ),
+    )
     assert average_precision([prediction], [sample]) == pytest.approx(1.0)
 
 
 def test_no_predictions_scores_zero() -> None:
-    assert average_precision([Prediction("s0")], [_sample((CAR,))]) == 0.0
+    assert average_precision(
+        [DetectionPrediction(sample_id="s0")],
+        [_sample((CAR,))],
+    ) == 0.0
 
 
 def test_detection_summary_counts_tp_fp_and_fn() -> None:
     sample = _sample((CAR, Box(20, 20, 30, 30, "Car")))
-    prediction = Prediction(
-        "s0",
-        (
+    prediction = DetectionPrediction(
+        sample_id="s0",
+        boxes=(
             Box(0, 0, 10, 10, "Car", 0.9),
             Box(40, 40, 50, 50, "Car", 0.8),
         ),
@@ -83,14 +98,17 @@ def test_detection_summary_counts_tp_fp_and_fn() -> None:
 
 def test_attack_success_counts_clean_detections_lost_after_attack() -> None:
     sample = _sample((CAR, Box(20, 20, 30, 30, "Car")))
-    clean = Prediction(
-        "s0",
-        (
+    clean = DetectionPrediction(
+        sample_id="s0",
+        boxes=(
             Box(0, 0, 10, 10, "Car", 0.9),
             Box(20, 20, 30, 30, "Car", 0.8),
         ),
     )
-    attacked = Prediction("s0", (Box(0, 0, 10, 10, "Car", 0.7),))
+    attacked = DetectionPrediction(
+        sample_id="s0",
+        boxes=(Box(0, 0, 10, 10, "Car", 0.7),),
+    )
     summary = detection_attack_success_rate([clean], [attacked], [sample])
 
     assert summary.clean_detected_truths == 2
@@ -108,3 +126,58 @@ def test_degradation_is_zero_when_baseline_is_zero() -> None:
     report = RunReport("r0", "m", "m:1", "d", 4, ap_clean=0.0)
     cell = CellResult("gaussian_noise", "A", 3, ap=0.0, n_samples=4)
     assert report.degradation(cell) == 0.0
+
+
+def test_per_object_detection_comparison_categorizes_failures() -> None:
+    from src.evaluation.detection_metrics import per_object_detection_comparison
+
+    # Sample with 3 objects:
+    # 1. Car at (0, 0, 10, 10) - correctly detected clean, missed after attack
+    # 2. Pedestrian at (20, 20, 30, 30) - correctly detected clean, misclassified as Car after attack
+    # 3. Cyclist at (40, 40, 50, 50) - correctly detected clean, confidence collapsed (< 0.25) after attack
+    car_gt = Box(0, 0, 10, 10, "Car")
+    ped_gt = Box(20, 20, 30, 30, "Pedestrian")
+    cyc_gt = Box(40, 40, 50, 50, "Cyclist")
+    sample = _sample((car_gt, ped_gt, cyc_gt))
+
+    clean_pred = DetectionPrediction(
+        sample_id="s0",
+        boxes=(
+            Box(0, 0, 10, 10, "Car", 0.95),
+            Box(20, 20, 30, 30, "Pedestrian", 0.88),
+            Box(40, 40, 50, 50, "Cyclist", 0.82),
+        ),
+    )
+
+    attacked_pred = DetectionPrediction(
+        sample_id="s0",
+        boxes=(
+            # car is missed completely
+            Box(20, 20, 30, 30, "Car", 0.75),       # misclassified Pedestrian -> Car
+            Box(40, 40, 50, 50, "Cyclist", 0.15),   # confidence collapsed (0.15 < 0.25)
+        ),
+    )
+
+    details = per_object_detection_comparison([clean_pred], [attacked_pred], [sample])
+
+    assert len(details) == 3
+
+    # Check Car GT
+    car_detail = next(d for d in details if d.gt_box.label == "Car")
+    assert car_detail.status_clean == "correct"
+    assert car_detail.status_attacked == "missed"
+    assert car_detail.failure_reason == "missed"
+    assert car_detail.as_dict()["sample_id"] == "s0"
+
+    # Check Pedestrian GT
+    ped_detail = next(d for d in details if d.gt_box.label == "Pedestrian")
+    assert ped_detail.status_clean == "correct"
+    assert ped_detail.status_attacked == "misclassified"
+    assert ped_detail.failure_reason == "misclassified"
+
+    # Check Cyclist GT
+    cyc_detail = next(d for d in details if d.gt_box.label == "Cyclist")
+    assert cyc_detail.status_clean == "correct"
+    assert cyc_detail.status_attacked == "confidence_collapsed"
+    assert cyc_detail.failure_reason == "confidence_collapsed"
+

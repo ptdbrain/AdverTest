@@ -1,4 +1,5 @@
 import asyncio
+import io
 
 import pytest
 
@@ -82,6 +83,12 @@ async def test_run_is_queued_and_report_is_retrievable(client):
     assert set(report["heatmap"]) == {"gaussian_noise"}
     samples = await client.get(f"/api/v1/runs/{job['run_id']}/samples", params={"attack": "gaussian_noise"})
     assert len(samples.json()) == 4
+    sample = samples.json()[0]
+    assert "clean_image_path" not in sample
+    assert set(sample["artifacts"]) == {
+        "clean_input_url", "attacked_input_url", "clean_prediction_url", "attacked_prediction_url"
+    }
+    assert all(value is None or value.startswith("/data/") for value in sample["artifacts"].values())
 
 
 @pytest.mark.asyncio
@@ -100,3 +107,175 @@ async def test_unknown_run_is_404(client):
 async def test_unknown_config_field_is_422(client):
     response = await client.post("/api/v1/runs", json={"not_a_field": 1})
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_non_image_bytes(client):
+    response = await client.post(
+        "/api/v1/uploads/images",
+        headers={"x-filename": "test.png"},
+        content=b"not an image file content",
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "INVALID_IMAGE"
+
+
+@pytest.mark.asyncio
+async def test_raw_upload_is_not_marked_anonymized(client):
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (10, 10), color="red").save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+
+    response = await client.post(
+        "/api/v1/uploads/images",
+        headers={"x-filename": "sample.png", "x-upload-batch-id": "batch-test-123456"},
+        content=png_bytes,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["benchmark_ready"] is False
+    assert data["status"] == "RAW"
+    assert data["annotation_status"] == "MISSING"
+    assert data["batch_id"] == "batch-test-123456"
+
+
+@pytest.mark.asyncio
+async def test_quick_inference_fails_fast_without_a_runnable_checkpoint(client):
+    response = await client.post("/api/v1/inference-experiments", json={
+        "upload_batch_id": "batch-missing-123",
+        "model_version_id": "yolo_b0",
+        "attacks": ["gaussian_noise"],
+    })
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_quick_inference_requires_a_recipe_or_attack(client):
+    response = await client.post("/api/v1/inference-experiments", json={
+        "upload_batch_id": "batch-missing-123",
+        "model_version_id": "yolo_b0",
+    })
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_quick_inference_accepts_the_runnable_catalog_model_id(client, monkeypatch, tmp_path):
+    """The model ID returned by the catalog must be accepted by quick inference."""
+    from PIL import Image
+
+    import src.api.routes as routes
+    from src.models.versions import ModelVersion
+    from src.pipeline import PreflightResult
+
+    actual_checkpoint = tmp_path / "yolo11s-base.pt"
+    actual_checkpoint.write_bytes(b"checkpoint")
+    discovered = ModelVersion(
+        id="yolo11s-base-test",
+        model_name="yolo11s",
+        task="detection2d",
+        checkpoint_path=str(actual_checkpoint),
+        checkpoint_hash="test-checkpoint",
+        parent_id=None,
+        training_metadata={"role": "base"},
+        runnable=True,
+        model_family_id="yolo11",
+        checkpoint_role="base",
+    )
+    monkeypatch.setattr(routes, "scan_base_checkpoints", lambda _root: [discovered])
+    monkeypatch.setattr(
+        routes._runner,
+        "preflight",
+        lambda _config: PreflightResult(compatible=("gaussian_noise",), skipped=()),
+    )
+    enqueued = []
+    monkeypatch.setattr(
+        routes._worker,
+        "enqueue",
+        lambda _run_id, config: enqueued.append(config),
+    )
+
+    catalog = await client.get("/api/v1/model-versions")
+    model_id = next(item["id"] for item in catalog.json() if item["runnable"])
+
+    image = io.BytesIO()
+    Image.new("RGB", (10, 10), color="red").save(image, format="PNG")
+    uploaded = await client.post(
+        "/api/v1/uploads/images",
+        headers={"x-filename": "sample.png", "x-upload-batch-id": "batch-catalog-model"},
+        content=image.getvalue(),
+    )
+    assert uploaded.status_code == 201
+
+    response = await client.post("/api/v1/inference-experiments", json={
+        "upload_batch_id": "batch-catalog-model",
+        "checkpoint_id": model_id,
+        "model_family_id": "yolo11",
+        "task_id": "segmentation",
+        "attacks": ["gaussian_noise"],
+    })
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "MODEL_FAMILY_TASK_MISMATCH"
+
+    response = await client.post("/api/v1/inference-experiments", json={
+        "upload_batch_id": "batch-catalog-model",
+        "checkpoint_id": model_id,
+        "model_family_id": "yolo11",
+        "task_id": "detection2d",
+        "attacks": ["gaussian_noise"],
+        "confidence_threshold": 0.61,
+    })
+    assert response.status_code == 202
+    assert enqueued[0].checkpoint_id == model_id
+    assert enqueued[0].model == "yolo11"
+    assert enqueued[0].adapter_params["weights"] == str(actual_checkpoint.resolve())
+    assert enqueued[0].adapter_params["score_threshold"] == 0.61
+
+
+@pytest.mark.asyncio
+async def test_random_recipe_is_seeded_and_replayable(client):
+    body = {"n_steps": 3, "seed": 195}
+    first = await client.post("/api/v1/attack-recipes/randomize", json=body)
+    second = await client.post("/api/v1/attack-recipes/randomize", json=body)
+    assert first.status_code == second.status_code == 201
+    assert first.json()["seed"] == second.json()["seed"] == 195
+    assert first.json()["steps"] == second.json()["steps"]
+
+
+@pytest.mark.asyncio
+async def test_protocol_must_lock_before_benchmark(client):
+    proto_res = await client.post(
+        "/api/v1/benchmark/protocols",
+        json={
+            "dataset_version_id": "ds-v1",
+            "model_version_id": "mv-v1",
+            "recipe": {"steps": [{"attack": "gaussian_noise", "severity": 1}]},
+            "task": "detection2d",
+            "state": "VALIDATED",
+        },
+    )
+    assert proto_res.status_code == 201
+    proto_id = proto_res.json()["id"]
+
+    run_config = {
+        "model": "blob_detector",
+        "dataset": "synthetic_shapes",
+        "attacks": ["gaussian_noise"],
+        "severities": [1],
+        "limit": 1,
+    }
+    # Attempting to run non-LOCKED (VALIDATED) protocol fails with 409 PROTOCOL_NOT_LOCKED
+    run_res = await client.post(f"/api/v1/benchmark/runs?protocol_id={proto_id}", json=run_config)
+    assert run_res.status_code == 409
+    assert run_res.json()["detail"]["code"] == "PROTOCOL_NOT_LOCKED"
+
+    # Locking advances VALIDATED protocol to LOCKED
+    lock_res = await client.post(f"/api/v1/benchmark/protocols/{proto_id}/lock")
+    assert lock_res.status_code == 200
+    assert lock_res.json()["state"] == "LOCKED"
+
+    # After lock, run creation succeeds
+    run_res2 = await client.post(f"/api/v1/benchmark/runs?protocol_id={proto_id}", json=run_config)
+    assert run_res2.status_code == 202

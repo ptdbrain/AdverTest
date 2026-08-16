@@ -6,8 +6,10 @@ RobustScore never blocks or approves anything automatically — a human Reviewer
 decides (plan §7).
 """
 
+import os
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,6 +49,9 @@ app = FastAPI(
 )
 
 settings = get_settings()
+data_root = Path(settings.data_root).expanduser().resolve()
+data_root.mkdir(parents=True, exist_ok=True)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins.split(","),
@@ -55,8 +60,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from src.api.routers import catalog, runs, datasets
+
+app.include_router(catalog.router, prefix="/api/v1")
+app.include_router(runs.router, prefix="/api/v1")
+app.include_router(datasets.router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")
-app.mount("/data", StaticFiles(directory="data"), name="data")
+app.mount("/data", StaticFiles(directory=str(data_root)), name="data")
 
 
 @app.middleware("http")
@@ -89,4 +99,11 @@ async def handle_plugin_params(request: Request, exc: ValidationError) -> JSONRe
 
 @app.get("/health")
 async def health() -> dict[str, str | bool]:
-    return {"status": "ok", "env": settings.app_env, "simulation_only": True, "banner": SIMULATION_BANNER}
+    return {
+        "status": "ok",
+        "env": settings.app_env,
+        "simulation_only": True,
+        "banner": SIMULATION_BANNER,
+        "build_sha": os.getenv("BUILD_SHA", "unknown"),
+        "execution_profile": "gpu" if settings.model_device.startswith("cuda") else "cpu",
+    }

@@ -1,3 +1,5 @@
+import importlib
+
 import numpy as np
 import pytest
 import pytest_asyncio
@@ -6,20 +8,71 @@ from httpx import ASGITransport, AsyncClient
 from src.adapters import get_adapter
 from src.adapters.base import ModelAdapter
 from src.attacks.base import AttackContext
+from src.config import get_settings
 from src.core.types import Sample
 from src.datasets import get_dataset
-from src.main import app
 
 #: Fixed so every test compares against the same pixels.
 TEST_SEED = 4242
 
 
 @pytest_asyncio.fixture
-async def client():
+async def client(tmp_path, monkeypatch):
     """Async HTTP client for testing API endpoints."""
+    test_root = tmp_path / "api-state"
+    artifact_root = test_root / "artifacts"
+    runs_root = test_root / "runs"
+    temp_root = test_root / "tmp"
+    static_root = test_root / "data"
+    checkpoint_root = test_root / "checkpoints"
+    database_path = test_root / "app.db"
+
+    for path in (artifact_root, runs_root, temp_root, static_root, checkpoint_root):
+        path.mkdir(parents=True, exist_ok=True)
+    
+    surrogates_dir = checkpoint_root / "surrogates"
+    surrogates_dir.mkdir(parents=True, exist_ok=True)
+    (surrogates_dir / "yolo11s.pt").write_bytes(b"mock weights")
+
+    monkeypatch.chdir(test_root)
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path.as_posix()}")
+    monkeypatch.setenv("ARTIFACT_ROOT", str(artifact_root))
+    monkeypatch.setenv("DATA_ROOT", str(static_root))
+    monkeypatch.setenv("CHECKPOINT_ROOT", str(checkpoint_root))
+    monkeypatch.setenv("RUNS_ROOT", str(runs_root))
+    monkeypatch.setenv("TEMP", str(temp_root))
+    monkeypatch.setenv("TMP", str(temp_root))
+    monkeypatch.setenv("TMPDIR", str(temp_root))
+    monkeypatch.setenv("CORS_ORIGINS", "http://test,http://127.0.0.1:3000")
+    get_settings.cache_clear()
+
+    import src.api.routes as routes_module
+    import src.main as main_module
+    import src.api.dependencies as deps_module
+    import src.api.routers.catalog as catalog_module
+    import src.api.routers.runs as runs_module
+    import src.api.routers.datasets as datasets_module
+
+    deps_module.get_store.cache_clear()
+    deps_module.get_worker.cache_clear()
+    if hasattr(deps_module, 'get_workflow_store'):
+        deps_module.get_workflow_store.cache_clear()
+    if hasattr(deps_module, 'get_generated_datasets'):
+        deps_module.get_generated_datasets.cache_clear()
+
+    importlib.reload(deps_module)
+    importlib.reload(routes_module)
+    importlib.reload(catalog_module)
+    importlib.reload(runs_module)
+    importlib.reload(datasets_module)
+    main_module = importlib.reload(main_module)
+
+    app = main_module.app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+    get_settings.cache_clear()
 
 
 @pytest.fixture

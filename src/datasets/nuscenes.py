@@ -36,6 +36,10 @@ class NuScenesDataset(DatasetSource):
     modality = "multi"
     owner = "3d-evaluation"
     params_model = NuScenesParams
+    task_id = "detection3d"
+    input_schema = ("multi_camera_images", "calibration", "lidar_point_cloud")
+    annotation_schema = ("boxes3d", "depth", "pose", "class_labels")
+    ground_truth_status = "WAITING_FOR_ARTIFACTS"
 
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)

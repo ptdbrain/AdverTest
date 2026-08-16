@@ -1,0 +1,22 @@
+{
+  "request": {
+    "job_id": "job-fixture-1",
+    "job_type": "generation",
+    "requested_by": "person-a",
+    "payload": {
+      "recipe_id": "recipe-fixture-1"
+    },
+    "seed": 195,
+    "contract_version": "1.0.0",
+    "created_at": "2026-08-06T12:00:00Z"
+  },
+  "event": {
+    "job_id": "job-fixture-1",
+    "job_type": "generation",
+    "state": "queued",
+    "progress_ratio": 0.0,
+    "sequence": 0,
+    "detail": {},
+    "created_at": "2026-08-06T12:00:01Z"
+  }
+}

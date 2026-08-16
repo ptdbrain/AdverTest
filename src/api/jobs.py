@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.config import get_settings
 from src.pipeline import RunConfig, TestRunner
 from src.pipeline.cache import SqliteCache
 from src.pipeline.runner import RunCancelledError
@@ -72,8 +73,68 @@ class SqliteRunStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS product_records (
+                    record_type TEXT NOT NULL, record_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL, created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (record_type, record_id)
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_review_cell
+                ON reviews(run_id, attack, severity, flagged_by);
                 """
             )
+
+    def put_record(self, record_type: str, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist immutable product configuration records alongside run jobs."""
+        now = _now()
+        with self._lock, self._connection() as connection:
+            existing = connection.execute(
+                "SELECT payload_json, created_at FROM product_records WHERE record_type=? AND record_id=?",
+                (record_type, record_id),
+            ).fetchone()
+            serialized = json.dumps(payload, sort_keys=True)
+            if existing is not None and existing["payload_json"] != serialized:
+                raise ValueError(f"{record_type} {record_id!r} is immutable")
+            connection.execute(
+                "INSERT OR IGNORE INTO product_records(record_type, record_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (record_type, record_id, serialized, now, now),
+            )
+            row = connection.execute(
+                "SELECT * FROM product_records WHERE record_type=? AND record_id=?", (record_type, record_id)
+            ).fetchone()
+        return _product_row(row)
+
+    def update_record(self, record_type: str, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Update an existing product configuration record (e.g., protocol state transition)."""
+        now = _now()
+        with self._lock, self._connection() as connection:
+            serialized = json.dumps(payload, sort_keys=True)
+            connection.execute(
+                """
+                UPDATE product_records
+                SET payload_json=?, updated_at=?
+                WHERE record_type=? AND record_id=?
+                """,
+                (serialized, now, record_type, record_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM product_records WHERE record_type=? AND record_id=?", (record_type, record_id)
+            ).fetchone()
+        return _product_row(row) if row else payload
+
+    def get_record(self, record_type: str, record_id: str) -> dict[str, Any] | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM product_records WHERE record_type=? AND record_id=?", (record_type, record_id)
+            ).fetchone()
+        return _product_row(row) if row else None
+
+    def list_records(self, record_type: str) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM product_records WHERE record_type=? ORDER BY created_at DESC", (record_type,)
+            ).fetchall()
+        return [_product_row(row) for row in rows]
 
     def _connection(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
@@ -231,7 +292,17 @@ class SqliteRunStore:
         now = _now()
         with self._lock, self._connection() as connection:
             for cell in report.get("cells", []):
-                if cell.get("degradation", 0) >= threshold:
+                degradation_percent = cell.get(
+                    "degradation_percent",
+                    float(cell.get("degradation_ratio", cell.get("degradation", 0.0))) * 100.0,
+                )
+                if degradation_percent >= threshold:
+                    existing = connection.execute(
+                        "SELECT review_id FROM reviews WHERE run_id=? AND attack=? AND severity=? AND flagged_by='system_auto'",
+                        (run_id, cell["attack"], cell["severity"]),
+                    ).fetchone()
+                    if existing is not None:
+                        continue
                     review_id = f"REV-{uuid.uuid4().hex[:8]}"
                     connection.execute(
                         """INSERT OR IGNORE INTO reviews
@@ -241,7 +312,7 @@ class SqliteRunStore:
                             review_id, run_id, cell["attack"], cell["severity"],
                             report.get("dataset", config.get("dataset", "")),
                             report.get("model", config.get("model", "")),
-                            cell["degradation"], now, now,
+                            cell.get("degradation", 0), now, now,
                         ),
                     )
                     created_ids.append(review_id)
@@ -315,7 +386,10 @@ class LocalRunWorker:
 
         try:
             config = config.model_copy(
-                update={"evidence_dir": config.evidence_dir or str(self.store.path.parent / "artifacts" / run_id)}
+                update={
+                    "evidence_dir": config.evidence_dir
+                    or str(Path(get_settings().artifact_root).expanduser().resolve() / "runs" / run_id)
+                }
             )
             runner = TestRunner(SqliteCache(str(self.store.path.parent / "prediction-cache.db")))
 
@@ -360,3 +434,8 @@ def _row_payload(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
+
+def _product_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {"id": row["record_id"], "record_type": row["record_type"],
+            **json.loads(row["payload_json"]), "created_at": row["created_at"], "updated_at": row["updated_at"]}

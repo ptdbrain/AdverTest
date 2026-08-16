@@ -27,7 +27,7 @@ from typing import Any, ClassVar
 import numpy as np
 
 from src.core.objectives import AttackObjective, SurrogateCapability
-from src.core.types import Box, Modality, ModelInfo, Prediction, Sample, Task
+from src.core.types import Box, Modality, ModelInfo, ModelPrediction, Sample, Task
 
 
 class GradientsNotSupportedError(NotImplementedError):
@@ -52,7 +52,7 @@ class ModelAdapter(ABC):
         self.max_detections = max_detections
 
     @abstractmethod
-    def predict(self, samples: Sequence[Sample]) -> list[Prediction]:
+    def predict(self, samples: Sequence[Sample]) -> list[ModelPrediction]:
         """Run inference on a batch. Must return one prediction per sample."""
 
     @abstractmethod

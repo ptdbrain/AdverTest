@@ -10,7 +10,7 @@ import pytest
 
 from src.datasets import get_dataset
 from src.datasets.base import AnonymizationRequiredError
-from src.datasets.kitti import Kitti
+from src.datasets.kitti import Kitti, KittiParams
 
 IMAGE_HEIGHT, IMAGE_WIDTH = 120, 200
 
@@ -66,6 +66,11 @@ def test_catalog_does_not_claim_raw_kitti_is_anonymized() -> None:
     assert Kitti.describe()["anonymized"] is False
 
 
+def test_default_root_targets_the_local_anonymized_kitti_export(monkeypatch) -> None:
+    monkeypatch.delenv("ADVERTEST_KITTI_ROOT", raising=False)
+    assert KittiParams().root == "data/anonymized/kitti-de"
+
+
 def test_gate_rejects_raw_kitti(kitti_root: Path) -> None:
     dataset = _dataset(kitti_root)
     assert dataset.anonymized is False
@@ -117,6 +122,11 @@ def test_anonymized_load_preserves_ids_and_pixels(kitti_root: Path) -> None:
     assert samples[0].image.dtype == np.float32
     assert samples[0].image.shape == (IMAGE_HEIGHT, IMAGE_WIDTH, 3)
     assert samples[0].anonymized is True
+    assert samples[0].meta["source_uri"] == "kitti://000000"
+    assert samples[0].meta["native_labels"] == ("Car", "Pedestrian", "DontCare")
+    assert samples[0].meta["loader_version"] == Kitti.loader_version
+    assert samples[0].meta["split"] == "val"
+    assert len(samples[0].meta["anonymization_manifest_hash"]) == 64
 
 
 def test_split_and_explicit_sample_ids_are_honoured(kitti_root: Path) -> None:

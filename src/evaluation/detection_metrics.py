@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from src.core.types import Box, Prediction, Sample
+from src.core.types import Box, DetectionPrediction, Sample
 
 DEFAULT_IOU_THRESHOLD = 0.5
 
@@ -114,7 +114,7 @@ def match_boxes(
 
 
 def average_precision(
-    predictions: Sequence[Prediction],
+    predictions: Sequence[DetectionPrediction],
     samples: Sequence[Sample],
     iou_threshold: float = DEFAULT_IOU_THRESHOLD,
 ) -> float:
@@ -124,7 +124,7 @@ def average_precision(
 
 
 def average_precision_per_class(
-    predictions: Sequence[Prediction],
+    predictions: Sequence[DetectionPrediction],
     samples: Sequence[Sample],
     iou_threshold: float = DEFAULT_IOU_THRESHOLD,
 ) -> dict[str, float]:
@@ -139,7 +139,7 @@ def average_precision_per_class(
 
 
 def detection_metric_suite(
-    predictions: Sequence[Prediction],
+    predictions: Sequence[DetectionPrediction],
     samples: Sequence[Sample],
 ) -> dict[str, Any]:
     """Detection metrics with explicit non-COCO provenance.
@@ -176,7 +176,13 @@ def detection_metric_suite(
             for sample in samples
         ]
         by_size[bucket] = average_precision(
-            [by_id.get(sample.sample_id, Prediction(sample.sample_id)) for sample in scoped_samples],
+            [
+                by_id.get(
+                    sample.sample_id,
+                    DetectionPrediction(sample_id=sample.sample_id),
+                )
+                for sample in scoped_samples
+            ],
             scoped_samples,
             0.5,
         )
@@ -191,7 +197,7 @@ def detection_metric_suite(
 
 
 def bootstrap_average_precision(
-    predictions: Sequence[Prediction],
+    predictions: Sequence[DetectionPrediction],
     samples: Sequence[Sample],
     *,
     iou_threshold: float = DEFAULT_IOU_THRESHOLD,
@@ -210,18 +216,29 @@ def bootstrap_average_precision(
         # Duplicate source IDs need unique IDs because metric lookups are keyed
         # by sample ID. Preserve each paired prediction under a sampled alias.
         copied_samples: list[Sample] = []
-        copied_predictions: list[Prediction] = []
+        copied_predictions: list[DetectionPrediction] = []
         for position, sample in enumerate(sampled):
             alias = f"{sample.sample_id}#bootstrap-{position}"
             copied_samples.append(Sample(sample_id=alias, image=sample.image, boxes=sample.boxes))
-            prediction = by_id.get(sample.sample_id, Prediction(sample.sample_id))
-            copied_predictions.append(Prediction(alias, prediction.boxes, prediction.boxes3d, prediction.latency_ms))
+            prediction = by_id.get(
+                sample.sample_id,
+                DetectionPrediction(sample_id=sample.sample_id),
+            )
+            copied_predictions.append(
+                DetectionPrediction(
+                    sample_id=alias,
+                    boxes=prediction.boxes,
+                    boxes3d=prediction.boxes3d,
+                    latency_ms=prediction.latency_ms,
+                    metadata=prediction.metadata,
+                )
+            )
         values.append(average_precision(copied_predictions, copied_samples, iou_threshold))
     return tuple(float(value) for value in np.quantile(values, [0.025, 0.975]))
 
 
 def detection_summary(
-    predictions: Sequence[Prediction],
+    predictions: Sequence[DetectionPrediction],
     samples: Sequence[Sample],
     iou_threshold: float = DEFAULT_IOU_THRESHOLD,
 ) -> DetectionSummary:
@@ -233,7 +250,10 @@ def detection_summary(
     detections = 0
     ground_truths = 0
     for sample in samples:
-        predicted = by_sample.get(sample.sample_id, Prediction(sample.sample_id)).boxes
+        predicted = by_sample.get(
+            sample.sample_id,
+            DetectionPrediction(sample_id=sample.sample_id),
+        ).boxes
         matches = match_boxes(predicted, sample.boxes, iou_threshold)
         matched = len(matches)
         true_positives += matched
@@ -251,8 +271,8 @@ def detection_summary(
 
 
 def detection_attack_success_rate(
-    clean_predictions: Sequence[Prediction],
-    attacked_predictions: Sequence[Prediction],
+    clean_predictions: Sequence[DetectionPrediction],
+    attacked_predictions: Sequence[DetectionPrediction],
     samples: Sequence[Sample],
     iou_threshold: float = DEFAULT_IOU_THRESHOLD,
 ) -> AttackSuccessSummary:
@@ -264,11 +284,11 @@ def detection_attack_success_rate(
     for sample in samples:
         clean_boxes = clean_by_sample.get(
             sample.sample_id,
-            Prediction(sample.sample_id),
+            DetectionPrediction(sample_id=sample.sample_id),
         ).boxes
         attacked_boxes = attacked_by_sample.get(
             sample.sample_id,
-            Prediction(sample.sample_id),
+            DetectionPrediction(sample_id=sample.sample_id),
         ).boxes
         clean_truths = set(match_boxes(clean_boxes, sample.boxes, iou_threshold).values())
         attacked_truths = set(match_boxes(attacked_boxes, sample.boxes, iou_threshold).values())
@@ -280,7 +300,7 @@ def detection_attack_success_rate(
 def _collect_hits(
     label: str,
     samples: Sequence[Sample],
-    by_sample: dict[str, Prediction],
+    by_sample: dict[str, DetectionPrediction],
     iou_threshold: float,
 ) -> tuple[list[tuple[float, bool]], int]:
     """Per-class ``(score, is_true_positive)`` pairs plus the ground-truth count."""
@@ -289,7 +309,13 @@ def _collect_hits(
     for sample in samples:
         truths = [box for box in sample.boxes if box.label == label]
         n_truths += len(truths)
-        candidates = [box for box in by_sample.get(sample.sample_id, Prediction(sample.sample_id)).boxes]
+        candidates = [
+            box
+            for box in by_sample.get(
+                sample.sample_id,
+                DetectionPrediction(sample_id=sample.sample_id),
+            ).boxes
+        ]
         selected = [box for box in candidates if box.label == label]
         matches = match_boxes(selected, truths, iou_threshold)
         flags.extend((box.score, index in matches) for index, box in enumerate(selected))
@@ -312,3 +338,158 @@ def _average_precision_from_hits(flags: list[tuple[float, bool]], n_truths: int)
     precision = np.maximum.accumulate(precision[::-1])[::-1]
     recall_steps = np.diff(np.concatenate(([0.0], recall)))
     return float(np.sum(precision * recall_steps))
+
+
+@dataclass(frozen=True, slots=True)
+class PerObjectEvaluationDetail:
+    """Per-object evaluation contract matching Section 11.5 and 21.3.7."""
+
+    sample_id: str
+    object_id: str
+    gt_box: Box
+    clean_match: Box | None
+    attacked_match: Box | None
+    clean_confidence: float | None
+    attacked_confidence: float | None
+    status_clean: str
+    status_attacked: str
+    iou_clean: float
+    iou_attacked: float
+    failure_reason: str | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "sample_id": self.sample_id,
+            "object_id": self.object_id,
+            "gt_box": {
+                "x1": self.gt_box.x1,
+                "y1": self.gt_box.y1,
+                "x2": self.gt_box.x2,
+                "y2": self.gt_box.y2,
+                "label": self.gt_box.label,
+                "score": self.gt_box.score,
+            },
+            "clean_match": {
+                "x1": self.clean_match.x1,
+                "y1": self.clean_match.y1,
+                "x2": self.clean_match.x2,
+                "y2": self.clean_match.y2,
+                "label": self.clean_match.label,
+                "score": self.clean_match.score,
+            }
+            if self.clean_match
+            else None,
+            "attacked_match": {
+                "x1": self.attacked_match.x1,
+                "y1": self.attacked_match.y1,
+                "x2": self.attacked_match.x2,
+                "y2": self.attacked_match.y2,
+                "label": self.attacked_match.label,
+                "score": self.attacked_match.score,
+            }
+            if self.attacked_match
+            else None,
+            "clean_confidence": round(self.clean_confidence, 4)
+            if self.clean_confidence is not None
+            else None,
+            "attacked_confidence": round(self.attacked_confidence, 4)
+            if self.attacked_confidence is not None
+            else None,
+            "status_clean": self.status_clean,
+            "status_attacked": self.status_attacked,
+            "iou_clean": round(self.iou_clean, 4),
+            "iou_attacked": round(self.iou_attacked, 4),
+            "failure_reason": self.failure_reason,
+        }
+
+
+def per_object_detection_comparison(
+    clean_predictions: Sequence[DetectionPrediction],
+    attacked_predictions: Sequence[DetectionPrediction],
+    samples: Sequence[Sample],
+    iou_threshold: float = DEFAULT_IOU_THRESHOLD,
+    confidence_threshold: float = 0.25,
+) -> list[PerObjectEvaluationDetail]:
+    """Detailed per-object comparison identifying failure reasons for each GT object."""
+    clean_by_sample = {pred.sample_id: pred for pred in clean_predictions}
+    attacked_by_sample = {pred.sample_id: pred for pred in attacked_predictions}
+    details: list[PerObjectEvaluationDetail] = []
+
+    for sample in samples:
+        clean_boxes = clean_by_sample.get(
+            sample.sample_id,
+            DetectionPrediction(sample_id=sample.sample_id),
+        ).boxes
+        attacked_boxes = attacked_by_sample.get(
+            sample.sample_id,
+            DetectionPrediction(sample_id=sample.sample_id),
+        ).boxes
+
+        for obj_idx, gt in enumerate(sample.boxes):
+            obj_id = f"{sample.sample_id}_obj_{obj_idx}"
+
+            # Best overlapping clean box
+            best_clean_box: Box | None = None
+            best_clean_iou = 0.0
+            for pred in clean_boxes:
+                overlap = iou(pred, gt)
+                if overlap > best_clean_iou:
+                    best_clean_iou = overlap
+                    best_clean_box = pred
+
+            # Best overlapping attacked box
+            best_attacked_box: Box | None = None
+            best_attacked_iou = 0.0
+            for pred in attacked_boxes:
+                overlap = iou(pred, gt)
+                if overlap > best_attacked_iou:
+                    best_attacked_iou = overlap
+                    best_attacked_box = pred
+
+            # Clean status
+            if best_clean_box is None or best_clean_iou == 0.0:
+                status_clean = "missed"
+            elif best_clean_box.label != gt.label and best_clean_iou >= iou_threshold:
+                status_clean = "misclassified"
+            elif best_clean_box.score < confidence_threshold and best_clean_iou >= iou_threshold:
+                status_clean = "confidence_collapsed"
+            elif best_clean_iou < iou_threshold:
+                status_clean = "localization_degraded"
+            else:
+                status_clean = "correct"
+
+            # Attacked status
+            if best_attacked_box is None or best_attacked_iou == 0.0:
+                status_attacked = "missed"
+                failure_reason = "missed"
+            elif best_attacked_box.label != gt.label and best_attacked_iou >= iou_threshold:
+                status_attacked = "misclassified"
+                failure_reason = "misclassified"
+            elif best_attacked_box.score < confidence_threshold and best_attacked_iou >= iou_threshold:
+                status_attacked = "confidence_collapsed"
+                failure_reason = "confidence_collapsed"
+            elif best_attacked_iou < iou_threshold:
+                status_attacked = "localization_degraded"
+                failure_reason = "localization_degraded"
+            else:
+                status_attacked = "correct"
+                failure_reason = None
+
+            details.append(
+                PerObjectEvaluationDetail(
+                    sample_id=sample.sample_id,
+                    object_id=obj_id,
+                    gt_box=gt,
+                    clean_match=best_clean_box,
+                    attacked_match=best_attacked_box,
+                    clean_confidence=best_clean_box.score if best_clean_box else None,
+                    attacked_confidence=best_attacked_box.score if best_attacked_box else None,
+                    status_clean=status_clean,
+                    status_attacked=status_attacked,
+                    iou_clean=best_clean_iou,
+                    iou_attacked=best_attacked_iou,
+                    failure_reason=failure_reason if status_clean == "correct" else (None if status_attacked == "correct" else failure_reason),
+                )
+            )
+    return details
+

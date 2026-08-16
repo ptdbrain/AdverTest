@@ -9,8 +9,20 @@ from typing import Any
 import numpy as np
 
 from src.core.types import Box, Box3D, validate_image
+from src.datasets.contracts import GeneratedVariantRecord
 
 IMAGE_SUFFIXES = {".npy", ".png", ".jpg", ".jpeg", ".bmp"}
+
+
+def migrate_generated_record(
+    payload: dict[str, Any],
+    *,
+    dataset_format: str,
+) -> dict[str, Any]:
+    """Validate v3 records while preserving byte-compatible v1/v2 manifests."""
+    if dataset_format == "advertest-generated-v3":
+        return GeneratedVariantRecord.model_validate(payload).model_dump(mode="json")
+    return dict(payload)
 
 
 def load_image(path: Path) -> np.ndarray:

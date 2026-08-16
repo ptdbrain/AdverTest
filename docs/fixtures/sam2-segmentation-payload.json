@@ -1,0 +1,9 @@
+{
+  "sample_id": "cityscapes/train/aachen_000001",
+  "prediction_type": "segmentation",
+  "contract_version": "1.0.0",
+  "instances": [{"instance_id": "17", "label": "Car", "score": 0.94, "mask": {"encoding": "rle-row-major-zero-first", "version": "1.0.0", "shape": [2, 2], "runs": [0, 4]}}],
+  "prompt_id": "gt-box:cityscapes/train/aachen_000001:17",
+  "latency_ms": 41.2,
+  "metadata": {"model_version_id": "sam2-cityscapes-clean-v1", "preprocessing_version": "sam2-rgb-uint8-original-resolution-box-prompt-v1", "prompt_coordinates": {"gt-box:cityscapes/train/aachen_000001:17": [120.0, 80.0, 360.0, 480.0]}, "failure_reason": "correct", "mask_failure_policy_version": "sam-mask-failure-v1"}
+}

@@ -13,7 +13,7 @@ from src.adapters import MODELS
 from src.adapters.base import ModelAdapter
 from src.core.hashing import file_digest
 from src.core.objectives import AttackObjective, SurrogateCapability
-from src.core.types import Box, ModelInfo, Prediction, Sample
+from src.core.types import Box, DetectionPrediction, ModelInfo, Sample
 
 COCO_MAP = {1: "Pedestrian", 2: "Cyclist", 3: "Car"}
 COCO_REVERSE = {"Pedestrian": 1, "Cyclist": 2, "Car": 3}
@@ -59,13 +59,13 @@ class FasterRcnnAdapter(ModelAdapter):
             preprocessing_version="torchvision-default-transform-v1",
         )
 
-    def predict(self, samples: Sequence[Sample]) -> list[Prediction]:
+    def predict(self, samples: Sequence[Sample]) -> list[DetectionPrediction]:
         try:
             import torch
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError("Faster R-CNN adapter requires torch") from exc
         model = self._load().eval()
-        predictions: list[Prediction] = []
+        predictions: list[DetectionPrediction] = []
         with torch.no_grad():
             for sample in samples:
                 started = perf_counter()
@@ -82,10 +82,10 @@ class FasterRcnnAdapter(ModelAdapter):
                     if label is not None:
                         boxes.append(Box(*map(float, coordinates), label, float(score)))
                 predictions.append(
-                    Prediction(
-                        sample.sample_id,
-                        self.postprocess(boxes),
-                        (perf_counter() - started) * 1000.0,
+                    DetectionPrediction(
+                        sample_id=sample.sample_id,
+                        boxes=self.postprocess(boxes),
+                        latency_ms=(perf_counter() - started) * 1000.0,
                     )
                 )
         return predictions

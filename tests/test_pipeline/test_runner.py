@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from src.attacks import load_attacks
+from src.attacks.recipes import AttackRecipe, AttackRecipeStep
 from src.core.types import ModelInfo
 from src.datasets import get_dataset
 from src.pipeline import MemoryCache, NullCache, RunConfig, TestRunner
@@ -19,6 +20,52 @@ def test_run_produces_one_cell_per_attack_and_severity() -> None:
     assert {cell.severity for cell in report.cells} == {1, 5}
     assert report.n_samples == 3
     assert report.simulation_only is True
+
+
+def test_ordered_recipe_produces_one_final_evidence_result() -> None:
+    """A live recipe must execute sequentially, never as an attack/severity matrix."""
+    recipe = AttackRecipe(
+        name="noise-then-brightness",
+        steps=(
+            AttackRecipeStep(
+                position=0,
+                attack_name="gaussian_noise",
+                implementation_version="1.0.0",
+                severity=2,
+                seed=10,
+                expected_cost=1.0,
+            ),
+            AttackRecipeStep(
+                position=1,
+                attack_name="brightness",
+                implementation_version="1.0.0",
+                severity=4,
+                seed=11,
+                expected_cost=1.0,
+            ),
+        ),
+    )
+
+    report = TestRunner().run(
+        RunConfig(recipe=recipe, limit=2, bootstrap_repetitions=0)
+    )
+
+    assert len(report.cells) == 1
+    assert report.cells[0].attack == recipe.recipe_id
+    assert report.provenance["recipe"]["recipe_hash"] == recipe.recipe_hash
+    assert all(item.recipe_hash == recipe.recipe_hash for item in report.sample_results)
+    assert all(len(item.recipe_steps) == 2 for item in report.sample_results)
+
+
+def test_evidence_includes_structured_ground_truth_boxes() -> None:
+    report = TestRunner().run(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1, bootstrap_repetitions=0))
+
+    ground_truth = report.sample_results[0].ground_truth
+    assert ground_truth["type"] == "boxes"
+    assert ground_truth["image_width"] > 0
+    assert ground_truth["image_height"] > 0
+    assert ground_truth["objects"]
+    assert set(ground_truth["objects"][0]) >= {"object_id", "label", "xyxy"}
 
 
 def test_report_bootstrap_resamples_samples_not_aggregate_cells() -> None:

@@ -61,11 +61,16 @@ class SampleResult:
     attacked_prediction: dict[str, Any]
     clean_image_path: str | None = None
     attacked_image_path: str | None = None
-    overlay_path: str | None = None
+    clean_prediction_path: str | None = None
+    attacked_prediction_path: str | None = None
+    object_evidence: list[dict[str, Any]] = field(default_factory=list)
     degradation_hint: float = 0.0
     attack_version: str = ""
     attack_params: dict[str, Any] = field(default_factory=dict)
     model_checkpoint_hash: str | None = None
+    recipe_hash: str | None = None
+    recipe_steps: list[dict[str, Any]] = field(default_factory=list)
+    ground_truth: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -76,11 +81,16 @@ class SampleResult:
             "attacked_prediction": self.attacked_prediction,
             "clean_image_path": self.clean_image_path,
             "attacked_image_path": self.attacked_image_path,
-            "overlay_path": self.overlay_path,
+            "clean_prediction_path": self.clean_prediction_path,
+            "attacked_prediction_path": self.attacked_prediction_path,
+            "object_evidence": self.object_evidence,
             "degradation_hint": round(self.degradation_hint, 6),
             "attack_version": self.attack_version,
             "attack_params": self.attack_params,
             "model_checkpoint_hash": self.model_checkpoint_hash,
+            "recipe_hash": self.recipe_hash,
+            "recipe_steps": self.recipe_steps,
+            "ground_truth": self.ground_truth,
         }
 
 
@@ -102,6 +112,7 @@ class RunReport:
     seconds: float = 0.0
     #: Never remove: this platform evaluates in simulation only (plan §7).
     simulation_only: bool = True
+    benchmark_metrics_available: bool = True
 
     def degradation(self, cell: CellResult) -> float:
         """``D(c, s)`` as a fraction in ``[0, 1]``; 0.0 when the baseline is 0."""
@@ -129,7 +140,16 @@ class RunReport:
             "dataset": self.dataset,
             "n_samples": self.n_samples,
             "ap_clean": round(self.ap_clean, 4),
-            "cells": [{**cell.as_dict(), "degradation": round(self.degradation(cell), 4)} for cell in self.cells],
+            "cells": [
+                {
+                    **cell.as_dict(),
+                    "degradation": round(self.degradation(cell), 4),  # DEPRECATED
+                    "degradation_ratio": round(self.degradation(cell), 6),
+                    "degradation_percent": round(self.degradation(cell) * 100.0, 4),
+                    "unit": "ratio",
+                }
+                for cell in self.cells
+            ],
             "heatmap": self.heatmap(),
             "worst_cases": self.worst_cases(),
             "skipped": [{"attack": item.attack, "reason": item.reason} for item in self.skipped],
@@ -138,4 +158,5 @@ class RunReport:
             "provenance": self.provenance,
             "seconds": round(self.seconds, 3),
             "simulation_only": True,
+            "benchmark_metrics_available": self.benchmark_metrics_available,
         }
