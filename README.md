@@ -205,6 +205,23 @@ curl -s localhost:8000/api/v1/runs -H 'content-type: application/json' \
 
 ## 🛠 Tech Stack
 
+## 🧭 Local development workflow
+
+Use the following loop when working on documentation or plugins:
+
+```bash
+uv sync
+make catalog
+uv run pytest tests/test_api tests/test_pipeline -q
+uv run ruff check src tests
+make demo
+```
+
+Run `make run` in one terminal and query `http://localhost:8000/docs` from a
+second terminal when exercising the HTTP API. Keep experiments reproducible by
+recording the seed, dataset version, checkpoint identifier, recipe, and output
+run ID in the accompanying evidence.
+
 | Layer | Hiện tại | Khi lên model thật (plan §4) |
 |---|---|---|
 | Attack/metric | numpy | + kornia (GPU), imagecorruptions, torchattacks |
