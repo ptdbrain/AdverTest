@@ -10,8 +10,8 @@ function GroundTruthOverlay({ groundTruth }) {
   if (groundTruth?.type !== "boxes" || !groundTruth.objects?.length) return null;
   const width = Number(groundTruth.image_width) || 1;
   const height = Number(groundTruth.image_height) || 1;
-  const fontSize = Math.max(3.5, Math.min(width, height) * 0.045);
-  const strokeWidth = Math.max(1, Math.min(width, height) * 0.008);
+  const fontSize = Math.max(8, Math.min(width, height) * 0.024);
+  const strokeWidth = Math.max(1.5, Math.min(width, height) * 0.004);
 
   return (
     <svg className="evidence-media__ground-truth" aria-label="Ground truth overlay" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
@@ -19,8 +19,8 @@ function GroundTruthOverlay({ groundTruth }) {
         const [x1, y1, x2, y2] = object.xyxy ?? [];
         if (![x1, y1, x2, y2].every(Number.isFinite)) return null;
         const label = object.label ?? "object";
-        const labelWidth = label.length * fontSize * 0.58 + fontSize * 0.5;
-        const labelHeight = fontSize * 1.35;
+        const labelWidth = label.length * fontSize * 0.58 + fontSize * 0.45;
+        const labelHeight = fontSize * 1.25;
         const tagY = y1 - labelHeight >= 0 ? y1 - labelHeight : y1;
 
         return (
@@ -32,19 +32,19 @@ function GroundTruthOverlay({ groundTruth }) {
               height={Math.max(0, y2 - y1)}
               stroke="var(--gt-color, #22c55e)"
               strokeWidth={strokeWidth}
-              fill="rgba(34, 197, 94, 0.10)"
+              fill="rgba(34, 197, 94, 0.08)"
             />
             <rect
               x={x1}
               y={tagY}
               width={labelWidth}
               height={labelHeight}
-              fill="rgba(15, 23, 42, 0.82)"
-              rx={Math.max(1, fontSize * 0.2)}
+              fill="rgba(15, 23, 42, 0.85)"
+              rx={Math.max(1, fontSize * 0.15)}
             />
             <text
-              x={x1 + fontSize * 0.25}
-              y={tagY + fontSize * 0.95}
+              x={x1 + fontSize * 0.22}
+              y={tagY + fontSize * 0.9}
               fontSize={fontSize}
               fill="#22c55e"
               fontWeight="600"

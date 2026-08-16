@@ -92,7 +92,14 @@ export function useAdverTest() {
   const [mode, setModeState] = useState("detection2d");
   const [selectedModelVersion, setSelectedModelVersion] = useState("");
   const [selectedModelFamily, setSelectedModelFamily] = useState("");
-  const [runOptions, setRunOptionsState] = useState({ seed: 42, limit: 8, confidence: 0.25, iou: 0.5 });
+  const [runOptions, setRunOptionsState] = useState({
+    seed: 42,
+    limit: 8,
+    split: "val",
+    difficulty: "all",
+    confidence: 0.25,
+    iou: 0.5,
+  });
   const [runId, setRunId] = useState(null);
   const [runStatus, setRunStatus] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -302,17 +309,23 @@ export function useAdverTest() {
 
   const buildRunConfig = useCallback(() => {
     const dataset = datasets.find((item) => (item.id || item.name) === selectedDataset) || { name: selectedDataset };
+    const datasetParams = {
+      merge_van_truck: true,
+      ...(dataset.dataset_params || {}),
+      ...(runOptions.split ? { split: runOptions.split } : {}),
+      ...(runOptions.difficulty ? { difficulty: runOptions.difficulty } : {}),
+    };
     return {
       model_family_id: selectedModelFamily,
       checkpoint_id: selectedModelVersion,
       task_id: mode,
       dataset: dataset.dataset || dataset.name || selectedDataset,
-      dataset_params: dataset.dataset_params || {},
+      dataset_params: datasetParams,
       recipe,
-      limit: runOptions.limit,
-      seed: runOptions.seed,
-      iou_threshold: runOptions.iou,
-      confidence_threshold: runOptions.confidence,
+      limit: runOptions.limit === "all" || runOptions.limit === null || runOptions.limit === 0 || runOptions.limit === "" ? null : Number(runOptions.limit),
+      seed: Number(runOptions.seed) || 42,
+      iou_threshold: Number(runOptions.iou) || 0.5,
+      confidence_threshold: Number(runOptions.confidence) || 0.25,
     };
   }, [datasets, mode, recipe, runOptions, selectedDataset, selectedModelFamily, selectedModelVersion]);
 
@@ -472,7 +485,7 @@ export function useAdverTest() {
   const sweepRecipe = useCallback(async (attack) => {
     setCanonicalRecipe(await sweepRecipeRequest(attack));
   }, [setCanonicalRecipe]);
-  const previewRecipe = useCallback(async (payload) => previewRecipeRequest(payload), []);
+  const previewRecipe = useCallback(async (payload) => previewRecipeRequest(payload || { recipe }), [recipe]);
   const cancelRunAction = useCallback(async () => {
     if (!runId) return;
     setRunStatus("CANCEL_REQUESTED");

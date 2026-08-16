@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import random
 import shutil
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -33,8 +34,13 @@ def convert_kitti_to_yolo(
     val_ratio: float = 0.15,
     seed: int = 20260807,
     max_samples: int | None = None,
+    stratified: bool = True,
 ) -> Path:
-    """Converts KITTI image_2 and label_2 into YOLO dataset directory structure."""
+    """Converts KITTI image_2 and label_2 into YOLO dataset directory structure.
+
+    Supports multi-label class-stratified split to ensure balanced representation
+    of all class combinations (Car, Pedestrian, Cyclist) across train and val sets.
+    """
     raw_path = Path(kitti_raw_dir).expanduser().resolve()
     out_path = Path(output_dir).expanduser().resolve()
 
@@ -58,20 +64,42 @@ def convert_kitti_to_yolo(
 
     # Split train and val
     rng = random.Random(seed)
-    indices = list(range(len(image_files)))
-    rng.shuffle(indices)
+    val_stems: set[str] = set()
 
-    n_val = max(1, int(len(image_files) * val_ratio))
-    val_indices = set(indices[:n_val])
+    if stratified and label_dir.is_dir():
+        # Multi-label class stratification by co-occurrence signature
+        groups: dict[tuple[str, ...], list[str]] = defaultdict(list)
+        for img_path in image_files:
+            stem = img_path.stem
+            lbl_file = label_dir / f"{stem}.txt"
+            classes: set[str] = set()
+            if lbl_file.is_file():
+                for line in lbl_file.read_text(encoding="utf-8").strip().splitlines():
+                    parts = line.strip().split()
+                    if parts and parts[0] in KITTI_TO_YOLO_CLASS:
+                        classes.add(parts[0])
+            key = tuple(sorted(classes)) if classes else ("Empty",)
+            groups[key].append(stem)
+
+        for key in sorted(groups.keys()):
+            stems = list(groups[key])
+            rng.shuffle(stems)
+            n_val = max(1, int(round(len(stems) * val_ratio))) if stems else 0
+            val_stems.update(stems[:n_val])
+    else:
+        indices = list(range(len(image_files)))
+        rng.shuffle(indices)
+        n_val = max(1, int(len(image_files) * val_ratio))
+        val_stems = {image_files[i].stem for i in indices[:n_val]}
 
     # Create directories
     for split in ("train", "val"):
         (out_path / "images" / split).mkdir(parents=True, exist_ok=True)
         (out_path / "labels" / split).mkdir(parents=True, exist_ok=True)
 
-    for idx, img_path in enumerate(image_files):
-        split = "val" if idx in val_indices else "train"
+    for img_path in image_files:
         stem = img_path.stem
+        split = "val" if stem in val_stems else "train"
 
         # Destination paths
         dst_img = out_path / "images" / split / img_path.name
@@ -233,6 +261,7 @@ def ensure_kitti_dataset(
     val_ratio: float = 0.15,
     seed: int = 20260807,
     max_samples: int | None = None,
+    stratified: bool = True,
 ) -> Path:
     """Ensures YOLO-formatted KITTI dataset exists, downloading via torchvision if requested or missing."""
     raw_path = Path(kitti_raw_dir).expanduser().resolve()
@@ -260,6 +289,7 @@ def ensure_kitti_dataset(
         val_ratio=val_ratio,
         seed=seed,
         max_samples=max_samples,
+        stratified=stratified,
     )
 
 

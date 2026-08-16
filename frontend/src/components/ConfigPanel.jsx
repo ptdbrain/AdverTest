@@ -2,37 +2,56 @@ import React, { useRef, useState } from "react";
 import UploadModal from "./UploadModal";
 import { getCheckpoint, uploadCheckpoint } from "@/lib/api";
 
+const GROUP_LABELS = {
+  A: "Corruption",
+  B: "Weather",
+  C: "Occlusion",
+  D: "Adversarial",
+  E: "Patch",
+  F: "Blackbox",
+};
+
 const ATTACK_TAB_DEFS = [
   ["white", "White-box"],
-  ["gray", "Gray-box"],
-  ["black", "Black-box"],
+  ["black", "Black-box / query"],
+  ["gray", "Real-world / corruption / weather / sensor"],
 ];
 
 function attackSection(attack) {
-  if (attack.threat_model === "white_box") return "white";
-  if (attack.threat_model === "black_box" || attack.attack_type === "query") return "black";
-  // Gray-box includes physical, transfer, patch, weather, sensor, corruption
+  if (
+    attack.threat_model === "white_box" ||
+    attack.group === "D" ||
+    ["fgsm", "pgd", "dag", "cw_l2", "bim", "deepfool", "apgd"].includes(attack.name)
+  ) {
+    return "white";
+  }
+  if (
+    attack.threat_model === "black_box" ||
+    attack.attack_type === "query" ||
+    attack.group === "F" ||
+    ["square", "nes"].includes(attack.name)
+  ) {
+    return "black";
+  }
   return "gray";
 }
 
-function checkpointLabel(item) {
-  const path = item.checkpoint_path || "";
-  const filename = path.split(/[\\/]/).pop();
-  return filename ? `${item.id} — ${filename}` : item.id;
-}
-
-function formatDisabledReason(reason) {
-  if (!reason) return "N/A";
-  if (reason.includes("modality_mismatch:lidar")) return "LiDAR only";
-  if (reason.includes("modality_mismatch:multi")) return "Multi-cam";
-  if (reason.includes("missing_model_capability")) return "Incompatible";
-  if (reason.includes("CHECKPOINT_UNKNOWN")) return "No Checkpoint";
-  return reason.replace(/_/g, " ").slice(0, 12);
+function SeveritySquares({ level = 3 }) {
+  return (
+    <div className="severity-squares" title={`Severity ${level}/5`}>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <span
+          key={i}
+          className={`severity-squares__dot ${i <= level ? "severity-squares__dot--filled" : ""}`}
+        />
+      ))}
+    </div>
+  );
 }
 
 export default function ConfigPanel({
-  datasets,
-  attacks,
+  datasets = [],
+  attacks = [],
   modes = [],
   modelFamilies = [],
   baseCheckpoints = [],
@@ -41,14 +60,14 @@ export default function ConfigPanel({
   selectedModelFamily,
   selectedModelVersion,
   selectedDataset,
-  selectedAttacks,
+  selectedAttacks = [],
   recipe = { steps: [] },
-  runOptions,
-  isRunning,
+  runOptions = { seed: 42, limit: 8, split: "val", difficulty: "all", confidence: 0.25, iou: 0.5 },
+  isRunning = false,
   progress = 0,
   progressDetail = "",
   runStatus,
-  actions,
+  actions = {},
 }) {
   const {
     setSelectedDataset,
@@ -59,41 +78,37 @@ export default function ConfigPanel({
     toggleAttack,
     updateAttackSeverity,
     handleRun,
-    loadPreset,
-    randomizeRecipe,
-    sweepRecipe,
-    previewRecipe,
     setRunOptions,
     refreshBaseCheckpoints,
     cancelRun: cancelRunAction,
   } = actions;
 
   const [attackTab, setAttackTab] = useState("white");
-  const [expandedAttack, setExpandedAttack] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [checkpointUpload, setCheckpointUpload] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const checkpointInputRef = useRef(null);
 
   const checkpoints = baseCheckpoints.filter(
-    (item) => item.task === mode && item.model_family_id === selectedModelFamily
+    (item) => item.task === mode && (!selectedModelFamily || item.model_family_id === selectedModelFamily)
   );
   const blocked = !checkpoints.find((item) => item.id === selectedModelVersion)?.runnable;
-
-  const visibleAttacks = attacks.filter(
-    (item) => attackSection(item) === attackTab
-  );
 
   const handleCheckpointFile = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
     setCheckpointUpload("Uploading: 0%");
     try {
-      const created = await uploadCheckpoint(file, {
-        taskId: mode,
-        familyId: selectedModelFamily,
-        displayName: file.name,
-        role: "base",
-      }, (ratio) => setCheckpointUpload(`Uploading: ${Math.round(ratio * 100)}%`));
+      const created = await uploadCheckpoint(
+        file,
+        {
+          taskId: mode,
+          familyId: selectedModelFamily,
+          displayName: file.name,
+          role: "base",
+        },
+        (ratio) => setCheckpointUpload(`Uploading: ${Math.round(ratio * 100)}%`)
+      );
       setCheckpointUpload("Validating...");
       for (let attempt = 0; attempt < 60; attempt += 1) {
         const status = await getCheckpoint(created.checkpoint_id);
@@ -116,17 +131,6 @@ export default function ConfigPanel({
     }
   };
 
-  const handleAttackCardClick = (attackName) => {
-    toggleAttack(attackName);
-  };
-
-  const handleSeveritySelect = (attackName, severity) => {
-    const step = recipe.steps.find((s) => s.attack_name === attackName);
-    if (step) {
-      updateAttackSeverity?.(step.position, severity);
-    }
-  };
-
   const getAttackSeverity = (attackName) => {
     const step = recipe.steps.find((s) => s.attack_name === attackName);
     return step?.severity ?? 3;
@@ -134,29 +138,37 @@ export default function ConfigPanel({
 
   return (
     <aside className="config-panel" aria-label="Configuration Panel">
-      {/* 1. Task Selector (Segmented Control Pills) */}
+      {/* 1. Task Selector */}
       <div className="config-panel__section">
-        <label className="config-panel__label">Task</label>
-        <div className="segmented-control">
-          {modes.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`segmented-control__item ${mode === item.id ? "segmented-control__item--active" : ""}`}
-              onClick={() => setMode(item.id)}
-              disabled={item.status === "coming_later"}
-            >
-              {item.title}
-            </button>
-          ))}
+        <label className="config-panel__label" htmlFor="perception-mode">Task</label>
+        <div className="select-wrapper">
+          <select
+            id="perception-mode"
+            aria-label="Task"
+            className="select-field"
+            value={mode || ""}
+            onChange={(e) => setMode?.(e.target.value)}
+          >
+            {modes.map((item) => (
+              <option key={item.id} value={item.id} disabled={item.status === "coming_later"}>
+                {item.title}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* 2. Model / Checkpoint */}
+      {/* 2. Model / Base Checkpoint */}
       <div className="config-panel__section">
         <label className="config-panel__label" htmlFor="model-family">Model</label>
         <div className="select-wrapper">
-          <select id="model-family" className="select-field" value={selectedModelFamily || ""} onChange={(e) => setModelFamily(e.target.value)}>
+          <select
+            id="model-family"
+            aria-label="Model"
+            className="select-field"
+            value={selectedModelFamily || ""}
+            onChange={(e) => setModelFamily?.(e.target.value)}
+          >
             {modelFamilies.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.display_name}{item.runnable ? "" : ` (${item.blocked_reason || "unavailable"})`}
@@ -168,7 +180,7 @@ export default function ConfigPanel({
 
       <div className="config-panel__section">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <label className="config-panel__label" htmlFor="model-version" style={{ margin: 0 }}>Checkpoint</label>
+          <label className="config-panel__label" htmlFor="model-version" style={{ margin: 0 }}>Base Checkpoint</label>
           <button
             type="button"
             className="action-button action-button--secondary"
@@ -188,7 +200,13 @@ export default function ConfigPanel({
           />
         </div>
         <div className="select-wrapper">
-          <select id="model-version" className="select-field" value={selectedModelVersion || ""} onChange={(e) => setSelectedModelVersion(e.target.value)}>
+          <select
+            id="model-version"
+            aria-label="Base Checkpoint"
+            className="select-field"
+            value={selectedModelVersion || ""}
+            onChange={(e) => setSelectedModelVersion?.(e.target.value)}
+          >
             {checkpoints.map((item) => (
               <option key={item.id} value={item.id} disabled={!item.runnable}>
                 {item.model_name} — {item.id}
@@ -201,13 +219,17 @@ export default function ConfigPanel({
             Validated checkpoint required for Attack.
           </small>
         )}
-        {checkpointUpload && <small role="status" style={{ display: "block", marginTop: 4, fontSize: "0.62rem", color: "var(--text-tertiary)" }}>{checkpointUpload}</small>}
+        {checkpointUpload && (
+          <small role="status" style={{ display: "block", marginTop: 4, fontSize: "0.62rem", color: "var(--text-tertiary)" }}>
+            {checkpointUpload}
+          </small>
+        )}
       </div>
 
       {/* 3. Dataset */}
       <div className="config-panel__section">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <label className="config-panel__label" style={{ margin: 0 }}>Dataset</label>
+          <label className="config-panel__label" htmlFor="dataset-select" style={{ margin: 0 }}>Dataset</label>
           <button
             type="button"
             className="action-button action-button--secondary"
@@ -218,7 +240,13 @@ export default function ConfigPanel({
           </button>
         </div>
         <div className="select-wrapper">
-          <select className="select-field" value={selectedDataset} onChange={(e) => setSelectedDataset(e.target.value)}>
+          <select
+            id="dataset-select"
+            aria-label="Dataset"
+            className="select-field"
+            value={selectedDataset || ""}
+            onChange={(e) => setSelectedDataset?.(e.target.value)}
+          >
             {datasets.map((ds) => (
               <option key={ds.id || ds.name} value={ds.id || ds.name}>
                 {ds.title || ds.name || ds.id}
@@ -234,22 +262,47 @@ export default function ConfigPanel({
         onClose={() => setShowUploadModal(false)}
         onDatasetCreated={(newDs) => {
           if (newDs) {
-            if (addDataset) { addDataset(newDs); }
-            else { setSelectedDataset(newDs.id || newDs.name); }
+            if (addDataset) {
+              addDataset(newDs);
+            } else {
+              setSelectedDataset?.(newDs.id || newDs.name);
+            }
           }
         }}
         datasets={datasets}
         taskId={mode}
       />
 
-      {/* 4. Attacks — 3 tabs + accordion cards */}
+      {/* 3b. Dataset Split */}
       <div className="config-panel__section">
-        <label className="config-panel__label">Attacks ({selectedAttacks.length})</label>
-        <div className="attack-tabs">
+        <label className="config-panel__label" htmlFor="dataset-split">
+          Split
+        </label>
+        <div className="select-wrapper">
+          <select
+            id="dataset-split"
+            aria-label="Dataset Split"
+            className="select-field"
+            value={runOptions?.split || "val"}
+            onChange={(e) => setRunOptions?.({ split: e.target.value })}
+          >
+            <option value="val">Val (Validation)</option>
+            <option value="train">Train (Training)</option>
+            <option value="all">All (Full)</option>
+          </select>
+        </div>
+      </div>
+
+      {/* 4. Attack Tabs: White-box / Black-box / Gray-box */}
+      <div className="config-panel__section">
+        <label className="config-panel__label">Attacks ({selectedAttacks.length} selected)</label>
+        <div className="attack-tabs" role="tablist">
           {ATTACK_TAB_DEFS.map(([tabId, label]) => (
             <button
               key={tabId}
               type="button"
+              role="tab"
+              aria-selected={attackTab === tabId}
               className={`attack-tabs__item ${attackTab === tabId ? "attack-tabs__item--active" : ""}`}
               onClick={() => setAttackTab(tabId)}
             >
@@ -258,87 +311,188 @@ export default function ConfigPanel({
           ))}
         </div>
 
-        <div className="attack-grid stagger-children" style={{ marginTop: "6px" }}>
-          {visibleAttacks.map((atk) => {
-            const isSelected = selectedAttacks.includes(atk.name);
-            const isExpanded = expandedAttack === atk.name;
-            const severity = getAttackSeverity(atk.name);
-            const isAvailable = atk.available !== false;
+        {ATTACK_TAB_DEFS.map(([tabId]) => {
+          const sectionAttacks = attacks.filter((atk) => attackSection(atk) === tabId);
+          const isCurrentTab = attackTab === tabId;
 
-            return (
-              <div
-                key={atk.name}
-                className={`attack-card ${isSelected ? "attack-card--selected" : ""} ${isExpanded ? "attack-card--expanded" : ""} ${!isAvailable ? "attack-card--disabled" : ""}`}
-                title={!isAvailable ? `Không khả dụng: ${atk.reason || "Không tương thích với mô hình hoặc dữ liệu hiện tại"}` : undefined}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    width: "100%",
-                    cursor: isAvailable ? "pointer" : "not-allowed",
-                  }}
-                  onClick={() => isAvailable && handleAttackCardClick(atk.name)}
-                  role="button"
-                  tabIndex={isAvailable ? 0 : -1}
-                  aria-disabled={!isAvailable}
-                >
-                  <div className="attack-card__left">
-                    <span className="attack-card__name">{atk.name.replace(/_/g, " ")}</span>
-                  </div>
-                  <div className="attack-card__right">
-                    {!isAvailable && (
-                      <span className="attack-card__disabled-badge">
-                        {formatDisabledReason(atk.reason)}
+          return (
+            <div
+              key={tabId}
+              className="attack-grid stagger-children"
+              style={
+                !isCurrentTab
+                  ? { height: 0, overflow: "hidden", opacity: 0, margin: 0, padding: 0, pointerEvents: "none" }
+                  : { marginTop: "6px" }
+              }
+            >
+              {sectionAttacks.map((atk) => {
+                const isSelected = selectedAttacks.includes(atk.name);
+                const severity = getAttackSeverity(atk.name);
+                const isAvailable = atk.available !== false;
+
+                return (
+                  <button
+                    key={atk.name}
+                    type="button"
+                    className={`attack-card ${isSelected ? "attack-card--selected" : ""}`}
+                    onClick={() => isAvailable && toggleAttack?.(atk.name)}
+                    disabled={!isAvailable}
+                    title={!isAvailable ? (atk.reason || "Unavailable") : undefined}
+                  >
+                    <div className="attack-card__left">
+                      <span className="attack-card__name">{atk.name.replace(/_/g, " ")}</span>
+                      <span className="attack-card__group">
+                        {atk.attack_type?.replace(/_/g, " ") || GROUP_LABELS[atk.group] || atk.threat_model?.replace(/_/g, " ") || atk.group}
                       </span>
-                    )}
-                    {isSelected && (
-                      <button
-                        type="button"
-                        className="attack-card__remove-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleAttack(atk.name);
-                        }}
-                        title={`Bỏ chọn ${atk.name.replace(/_/g, " ")}`}
-                        aria-label={`Remove ${atk.name}`}
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
+                      {!isAvailable && (
+                        <span className="attack-card__group" style={{ color: "var(--warning)" }}>
+                          Unavailable: {atk.reason}
+                        </span>
+                      )}
+                    </div>
+                    <div className="attack-card__right">
+                      {isSelected && <SeveritySquares level={severity} />}
+                    </div>
+                  </button>
+                );
+              })}
+              {sectionAttacks.length === 0 && isCurrentTab && (
+                <div className="text-xs text-secondary" style={{ padding: "8px 0", gridColumn: "1 / -1" }}>
+                  No attacks in this category.
                 </div>
-
-                {/* Single unified severity level selector */}
-                {isSelected && (
-                  <div className="severity-expanded" style={{ marginTop: "4px" }}>
-                    <span style={{ fontSize: "0.62rem", color: "var(--text-tertiary)", alignSelf: "center", marginRight: "2px" }}>
-                      Sev:
-                    </span>
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        className={`severity-expanded__btn ${severity === n ? "severity-expanded__btn--active" : ""}`}
-                        onClick={(e) => { e.stopPropagation(); handleSeveritySelect(atk.name, n); }}
-                        title={`Severity level ${n}`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {visibleAttacks.length === 0 && (
-            <div className="text-xs text-secondary" style={{ padding: "8px 0" }}>No attacks in this category.</div>
-          )}
-        </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* 5. Progress Bar (inline, when running) */}
+      {/* 5. Recipe Steps with Direct Sliders */}
+      {recipe.steps.length > 0 && (
+        <div className="config-panel__section">
+          <label className="config-panel__label">Recipe ({recipe.steps.length} steps)</label>
+          <div className="stagger-children" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            {recipe.steps.map((step) => (
+              <label
+                key={`${step.position}-${step.attack_name}`}
+                className="recipe-step"
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.72rem" }}
+              >
+                <span>{step.attack_name.replace(/_/g, " ")}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.68rem", color: "var(--accent-light)" }}>
+                    Sev {step.severity}
+                  </span>
+                  <input
+                    aria-label={`${step.attack_name} severity`}
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={step.severity}
+                    onChange={(event) => updateAttackSeverity?.(step.position, Number(event.target.value))}
+                    style={{ width: "60px" }}
+                  />
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 6. Advanced Settings Drawer */}
+      <div className="config-panel__section">
+        <button
+          type="button"
+          className="text-xs text-secondary"
+          onClick={() => setShowAdvanced((prev) => !prev)}
+          style={{ background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}
+        >
+          {showAdvanced ? "▼ Hide Advanced Drawer" : "▶ Show Advanced Settings Drawer"}
+        </button>
+
+        {showAdvanced && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "6px",
+              marginTop: "6px",
+              padding: "6px",
+              background: "var(--bg-deep)",
+              borderRadius: "var(--radius-xs)",
+            }}
+          >
+            <div>
+              <label className="config-panel__label" htmlFor="run-seed" style={{ fontSize: "0.58rem", margin: "0 0 2px 0" }}>
+                Seed
+              </label>
+              <input
+                id="run-seed"
+                aria-label="Seed"
+                type="number"
+                min="0"
+                className="select-field"
+                value={runOptions?.seed ?? 42}
+                onChange={(event) => setRunOptions?.({ seed: Number(event.target.value) })}
+                style={{ padding: "4px 6px", fontSize: "0.68rem", width: "100%" }}
+              />
+            </div>
+            <div>
+              <label className="config-panel__label" htmlFor="run-limit" style={{ fontSize: "0.58rem", margin: "0 0 2px 0" }}>
+                Sample Limit
+              </label>
+              <input
+                id="run-limit"
+                aria-label="Sample Limit"
+                type="number"
+                min="1"
+                className="select-field"
+                value={runOptions?.limit ?? 8}
+                onChange={(event) => setRunOptions?.({ limit: Number(event.target.value) })}
+                style={{ padding: "4px 6px", fontSize: "0.68rem", width: "100%" }}
+              />
+            </div>
+            <div>
+              <label className="config-panel__label" htmlFor="run-difficulty" style={{ fontSize: "0.58rem", margin: "0 0 2px 0" }}>
+                Difficulty
+              </label>
+              <div className="select-wrapper">
+                <select
+                  id="run-difficulty"
+                  aria-label="Difficulty"
+                  className="select-field"
+                  value={runOptions?.difficulty || "all"}
+                  onChange={(e) => setRunOptions?.({ difficulty: e.target.value })}
+                  style={{ padding: "4px 6px", fontSize: "0.68rem" }}
+                >
+                  <option value="all">All (All Boxes)</option>
+                  <option value="moderate">Moderate (Benchmark)</option>
+                  <option value="easy">Easy</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="config-panel__label" htmlFor="run-iou" style={{ fontSize: "0.58rem", margin: "0 0 2px 0" }}>
+                IoU Threshold
+              </label>
+              <input
+                id="run-iou"
+                aria-label="IoU Threshold"
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                className="select-field"
+                value={runOptions?.iou ?? 0.5}
+                onChange={(event) => setRunOptions?.({ iou: Number(event.target.value) })}
+                style={{ padding: "4px 6px", fontSize: "0.68rem", width: "100%" }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 7. Progress Bar */}
       {isRunning && (
         <div className="progress-inline">
           <div className="progress-inline__text">
@@ -351,7 +505,7 @@ export default function ConfigPanel({
         </div>
       )}
 
-      {/* Run / Cancel Button */}
+      {/* 8. Run Button */}
       {isRunning ? (
         <button
           type="button"

@@ -22,7 +22,7 @@ LABEL_MAP = {
     "Pedestrian": "Pedestrian",
     "Cyclist": "Cyclist",
 }
-VEHICLE_ALIASES = {"Van": "Car", "Truck": "Car"}
+VEHICLE_ALIASES = {"Van": "Car", "Truck": "Car", "Person_sitting": "Pedestrian"}
 Difficulty = Literal["all", "easy", "moderate", "hard"]
 DIFFICULTY_LIMITS: dict[Difficulty, tuple[float, int, float]] = {
     "easy": (40.0, 0, 0.15),
@@ -68,9 +68,16 @@ class Kitti(DatasetSource):
         self.anonymized = settings.anonymize == "required" and self._has_manifest()
 
     def _find_dir(self, name: str) -> Path:
-        direct = self.root / name
-        nested = self.root / "training" / name
-        return direct if direct.is_dir() else nested
+        candidates = [
+            self.root / name,
+            self.root / "training" / name,
+            self.root / "raw" / "training" / name,
+            self.root / "raw" / name,
+        ]
+        for cand in candidates:
+            if cand.is_dir():
+                return cand
+        return self.root / name
 
     def _has_manifest(self) -> bool:
         settings: KittiParams = self.params  # type: ignore[assignment]

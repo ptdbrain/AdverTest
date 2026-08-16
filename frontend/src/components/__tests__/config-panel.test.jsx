@@ -115,7 +115,7 @@ describe("ConfigPanel", () => {
     expect(screen.getByRole("button", { name: /square/i })).toBeDisabled();
   });
 
-  it("supports recipe strategy modes and cost preview button", () => {
+  it("supports manual recipe attack selection and severity", () => {
     const actions = {
       setSelectedDataset: vi.fn(),
       setMode: vi.fn(),
@@ -124,10 +124,6 @@ describe("ConfigPanel", () => {
       toggleAttack: vi.fn(),
       updateAttackSeverity: vi.fn(),
       handleRun: vi.fn(),
-      loadPreset: vi.fn(),
-      randomizeRecipe: vi.fn(),
-      sweepRecipe: vi.fn(),
-      previewRecipe: vi.fn().mockResolvedValue({ estimated_seconds: 1.2, total_samples: 8 }),
     };
 
     render(
@@ -137,7 +133,6 @@ describe("ConfigPanel", () => {
         modes={[{ id: "detection2d", title: "YOLO", runnable: true }]}
         modelFamilies={[{ id: "yolo11", display_name: "YOLO11", runnable: true }]}
         baseCheckpoints={[{ id: "yolo11s-base", model_name: "yolo11s", model_family_id: "yolo11", task: "detection2d", runnable: true }]}
-        recipePresets={[{ preset_id: "weather_robustness", name: "Weather Robustness" }]}
         mode="detection2d"
         selectedModelFamily="yolo11"
         selectedModelVersion="yolo11s-base"
@@ -149,19 +144,10 @@ describe("ConfigPanel", () => {
       />
     );
 
-    // Click PRESET tab
-    fireEvent.click(screen.getByText("PRESET"));
-    fireEvent.click(screen.getByRole("button", { name: "Weather Robustness" }));
-    expect(actions.loadPreset).toHaveBeenCalledWith("weather_robustness");
-
-    // Click RANDOM N tab
-    fireEvent.click(screen.getByText("RANDOM N"));
-    fireEvent.click(screen.getByRole("button", { name: /Randomize Recipe/ }));
-    expect(actions.randomizeRecipe).toHaveBeenCalledWith(3);
-
-    // Click Preview Cost button
-    fireEvent.click(screen.getByRole("button", { name: /Preview Resource Cost/ }));
-    expect(actions.previewRecipe).toHaveBeenCalled();
+    // Click Real-world tab and toggle attack
+    fireEvent.click(screen.getByText("Real-world / corruption / weather / sensor"));
+    fireEvent.click(screen.getByRole("button", { name: /gaussian noise/i }));
+    expect(actions.toggleAttack).toHaveBeenCalledWith("gaussian_noise");
   });
 
   it("toggles the advanced settings drawer", () => {

@@ -16,7 +16,7 @@ export default function ClosedLoopPanel({ report, backlog, trainingBlockedReason
       )}
       {error && <p role="alert" className="text-xs" style={{ color: "var(--danger)", marginTop: 6 }}>{error}</p>}
       <p role="status" className="text-xs text-tertiary" style={{ marginTop: 6 }}>
-        {trainingBlockedReason ? "Waiting for verified model artifacts." : "Approved backlog can start training."}
+        {trainingBlockedReason ? "Training is waiting for verified model artefacts." : "Approved backlog can start training."}
       </p>
     </section>
   );

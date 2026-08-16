@@ -1,5 +1,4 @@
 import React from "react";
-import HeatmapMatrix from "@/components/HeatmapMatrix";
 import RAChart from "@/components/RAChart";
 import MetricsComparisonChart from "@/components/MetricsComparisonChart";
 
@@ -9,14 +8,14 @@ export default function ReportView({ report }) {
       <div className="placeholder-view">
         <div className="placeholder-view__title">No report yet</div>
         <div className="placeholder-view__subtitle">
-          Configure and run attacks to generate the robustness report with heatmap and RA curve.
+          Configure and run attacks to generate the robustness report.
         </div>
       </div>
     );
   }
 
-  const avgDegradation = report.cells.length > 0
-    ? report.cells.reduce((sum, c) => sum + c.degradation, 0) / report.cells.length
+  const avgDegradation = report.cells?.length > 0
+    ? report.cells.reduce((sum, c) => sum + (c.degradation || 0), 0) / report.cells.length
     : 0;
 
   return (
@@ -73,11 +72,9 @@ export default function ReportView({ report }) {
       {/* Bar Chart comparing metrics before and after attack */}
       <MetricsComparisonChart report={report} />
 
+      {/* Aggregate Robustness Accuracy Curve */}
       {report.benchmark_metrics_available !== false && (
-        <>
-          <HeatmapMatrix cells={report.cells} heatmap={report.heatmap} />
-          <RAChart cells={report.cells} apClean={report.ap_clean} />
-        </>
+        <RAChart cells={report.cells} apClean={report.ap_clean} />
       )}
     </div>
   );
