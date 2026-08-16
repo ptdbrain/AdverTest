@@ -72,3 +72,10 @@ sequenceDiagram
 
 All long-running boundaries expose a durable job state so the UI can reconnect,
 show progress, cancel work when supported, and retain the reason for failure.
+
+## Extension points
+
+New attacks, model adapters, datasets, and metrics are registered behind their
+existing contracts. The API and UI consume catalog metadata rather than
+hard-coding implementation details, so compatibility remains a backend
+decision even when a client is upgraded independently.
