@@ -277,6 +277,20 @@ run ID in the accompanying evidence.
 
 ## 📊 AI Usage Logging
 
+## 🩺 Troubleshooting
+
+- **Port 8000 is already in use:** stop the existing Uvicorn process or start
+  the API with a different `APP_PORT`, then point `NEXT_PUBLIC_API_URL` at it.
+- **`missing anonymisation manifest`:** use an anonymised dataset import and
+  verify that its manifest is inside the configured dataset root.
+- **`missing_model_capability` or `missing_annotation`:** inspect the attack
+  catalog fields `required_capabilities` and `required_annotations`; choose a
+  compatible model family and a benchmark-ready dataset.
+- **Metrics are empty:** raw images can be used for quick inference, but AP/mAP
+  requires reviewed ground truth and a finalized dataset version.
+- **The UI cannot reach the API:** confirm CORS origins, API port, and the
+  `NEXT_PUBLIC_API_URL` value, then check `/health` directly.
+
 Hook đã cấu hình sẵn cho Claude Code, Cursor, Codex, Gemini CLI, Copilot,
 Antigravity. Mọi prompt/tool call ghi vào `.ai-log/session.jsonl` và tự submit lên
 grading server mỗi lần `git push`.
