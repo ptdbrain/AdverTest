@@ -298,3 +298,15 @@ uv run python scripts/log_manual.py --tool chatgpt --prompt "What you asked"
 ## 📄 License
 
 MIT — dùng cho mục đích giáo dục.
+
+## 📚 Documentation map
+
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — full component boundaries and design decisions.
+- [`docs/architecture-diagram.md`](docs/architecture-diagram.md) — concise Mermaid diagrams.
+- [`docs/advertest-plan.md`](docs/advertest-plan.md) — technical source-of-truth plan.
+- [`docs/CONTRIBUTING_ATTACKS.md`](docs/CONTRIBUTING_ATTACKS.md) — attack plugin contract and PR checklist.
+- [`docs/ATTACK_DATASET_GENERATOR.md`](docs/ATTACK_DATASET_GENERATOR.md) — generated dataset inputs and manifests.
+
+When documentation and implementation appear to disagree, record the observed
+commit/run ID and update the relevant contract documentation before making a
+scientific claim from a simulation result.
