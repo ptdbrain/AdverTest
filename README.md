@@ -154,6 +154,33 @@ Hướng dẫn input, checkpoint, attack params, output manifest và resume:
 
 ## 🔌 API
 
+### Sample queries
+
+Check the service and inspect the available contracts:
+
+```bash
+curl -s http://localhost:8000/health | jq
+curl -s http://localhost:8000/api/v1/catalog/attacks | jq '.[] | {name, group, required_annotations}'
+curl -s http://localhost:8000/api/v1/catalog/models | jq '.[] | {name, task}'
+curl -s http://localhost:8000/api/v1/catalog/datasets | jq '.[] | {name, task, anonymized}'
+```
+
+Estimate and queue a small reproducible run:
+
+```bash
+curl -s http://localhost:8000/api/v1/runs/estimate \
+  -H 'content-type: application/json' \
+  -d '{"attacks":["gaussian_noise"],"severities":[1,3],"limit":4,"seed":42}' | jq
+
+curl -s http://localhost:8000/api/v1/runs \
+  -H 'content-type: application/json' \
+  -d '{"attacks":["gaussian_noise","fgsm"],"severities":[1,3,5],"limit":4,"seed":42}' | jq
+```
+
+Replace the attack/model/dataset identifiers with values returned by the
+catalog endpoints. Treat every response as simulation evidence and preserve
+the returned run ID when sharing a result.
+
 | Endpoint | Mô tả |
 |---|---|
 | `GET /health` | trạng thái + banner simulation |
