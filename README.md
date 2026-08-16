@@ -137,6 +137,35 @@ composition, inference, metrics, and report export.
 
 ## Attack Dataset Generator
 
+### Dataset and checkpoint request shapes
+
+A minimal reproducible run keeps the task, family, checkpoint, dataset, recipe,
+seed, and limit explicit:
+
+```json
+{
+  "task_id": "detection2d",
+  "model_family_id": "yolo11",
+  "checkpoint_id": "yolo11s-base",
+  "dataset": "synthetic_shapes",
+  "recipe": {"steps": [{"attack_name": "gaussian_noise", "severity": 3}]},
+  "seed": 42,
+  "limit": 4
+}
+```
+
+An annotated upload also needs a canonical label document per sample:
+
+```json
+{
+  "task_id": "detection2d",
+  "annotations": [{"class_id": "car", "bbox_xyxy": [120, 80, 420, 300]}]
+}
+```
+
+The server validates coordinates and class-map membership before a dataset is
+marked benchmark-ready.
+
 Nhóm D/E có pipeline riêng để sinh dataset bị tấn công mà không gọi evaluator
 hoặc tính AP. Config synthetic chạy không cần checkpoint; config KITTI dùng
 checkpoint local và không tự tải weight:
