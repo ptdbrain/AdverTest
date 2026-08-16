@@ -60,3 +60,15 @@ sequenceDiagram
 - A base checkpoint is used by Attack; fine-tuned/repaired checkpoints belong to Defence.
 - Missing ground truth permits quick inference only; it cannot produce benchmark AP/mAP.
 - The backend preflight is the final compatibility gate even when the UI disables an option.
+
+## Operational contracts
+
+| Boundary | Input | Output | Failure is reported as |
+|---|---|---|---|
+| Ingestion → validation | image/sensor files, task, annotations | validated dataset version | field-level validation issues |
+| Catalog → preflight | family, checkpoint, recipe, capabilities | compatible run plan | incompatible task/capability/annotation |
+| Runner → adapter | canonical sample and locked preprocessing | predictions and provenance | adapter/runtime error |
+| Evaluation → report | clean/attacked predictions and ground truth | metrics, evidence, artifacts | incomplete benchmark evidence |
+
+All long-running boundaries expose a durable job state so the UI can reconnect,
+show progress, cancel work when supported, and retain the reason for failure.
