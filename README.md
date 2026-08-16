@@ -127,6 +127,14 @@ bảng slot còn trống): **[docs/CONTRIBUTING_ATTACKS.md](docs/CONTRIBUTING_AT
 └── eval/ presentation/     # 📊 evidence + slides cho Demo Day
 ```
 
+## 🏗️ Architecture and data flow
+
+The concise component and sequence diagrams live in
+[`docs/architecture-diagram.md`](docs/architecture-diagram.md). The longer
+design record remains in [`ARCHITECTURE.md`](ARCHITECTURE.md). Start with the
+diagram when tracing a request from ingestion through validation, attack
+composition, inference, metrics, and report export.
+
 ## Attack Dataset Generator
 
 Nhóm D/E có pipeline riêng để sinh dataset bị tấn công mà không gọi evaluator
