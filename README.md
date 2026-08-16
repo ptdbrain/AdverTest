@@ -268,14 +268,12 @@ run ID in the accompanying evidence.
 |---|---|---|
 | 1 | Source Code | `src/` |
 | 2 | README | file này |
-| 3 | Architecture Diagram | `ARCHITECTURE.md`, `docs/architecture_diagram.md` |
+| 3 | Architecture Diagram | `ARCHITECTURE.md`, `docs/architecture-diagram.md` |
 | 4 | AI Logs | `.ai-log/` (hook tự động, submit khi `git push`) |
 | 5 | Live URL | Dockerfile + CI đã sẵn |
 | 6–7 | Video + Pitch Deck | `presentation/` |
 | 8–9 | Journal + Worklog | `JOURNAL.md`, `WORKLOG.md` |
 | 10 | Evaluation Evidence | `eval/` |
-
-## 📊 AI Usage Logging
 
 ## 🩺 Troubleshooting
 
@@ -290,6 +288,8 @@ run ID in the accompanying evidence.
   requires reviewed ground truth and a finalized dataset version.
 - **The UI cannot reach the API:** confirm CORS origins, API port, and the
   `NEXT_PUBLIC_API_URL` value, then check `/health` directly.
+
+## 📊 AI Usage Logging
 
 Hook đã cấu hình sẵn cho Claude Code, Cursor, Codex, Gemini CLI, Copilot,
 Antigravity. Mọi prompt/tool call ghi vào `.ai-log/session.jsonl` và tự submit lên
