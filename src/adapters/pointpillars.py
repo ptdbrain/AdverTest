@@ -108,25 +108,27 @@ class PointPillarsAdapter(ModelAdapter):
             if len(raw_box) < 7:
                 raise ValueError("PointPillars returned a 3D box with fewer than seven values")
             # MMDetection3D LiDARInstance3DBoxes documents its tensor as
-            # (x, y, z, dx, dy, dz, yaw): dx follows the LiDAR x axis and is
-            # canonical length; dy is canonical width.
+            # (x, y, z, dx, dy, dz, yaw) with a bottom-centre origin. dx
+            # follows the LiDAR x axis and is canonical length; dy is width.
             x, y, z, length, width, height, yaw = raw_box[:7]
+            canonical_height = float(height)
             boxes.append(
                 Box3D(
                     x=float(x),
                     y=float(y),
-                    z=float(z),
+                    z=float(z) + canonical_height / 2.0,
                     length=float(length),
                     width=float(width),
-                    height=float(height),
+                    height=canonical_height,
                     yaw=float(yaw),
                     label=self._classes[label_index],
                     score=float(score),
                 )
             )
-            if len(boxes) >= self.max_detections:
-                break
-        return boxes
+        # Python's stable sort makes equal-score ordering deterministic and
+        # preserves the backend order only for genuine score ties.
+        boxes.sort(key=lambda box: box.score, reverse=True)
+        return boxes[: self.max_detections]
 
 
 def _load_mmdet3d_backend() -> tuple[Any, Any]:
