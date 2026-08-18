@@ -26,7 +26,7 @@ def _write_calibration(path: Path) -> None:
     )
 
 
-def _write_sample(root: Path, image_id: str, *, label: str = "Car") -> None:
+def _write_sample(root: Path, image_id: str, *, label: str = "Car", rotation_y: float = 0.0) -> None:
     training = root / "training"
     _write_png(training / "image_2" / f"{image_id}.png")
     np.asarray([[1.0, 2.0, 3.0, 0.5], [4.0, 5.0, 6.0, 0.25]], dtype=np.float32).tofile(
@@ -34,7 +34,7 @@ def _write_sample(root: Path, image_id: str, *, label: str = "Car") -> None:
     )
     _write_calibration(training / "calib" / f"{image_id}.txt")
     (training / "label_2" / f"{image_id}.txt").write_text(
-        f"{label} 0 0 0 0 0 50 50 2 2 4 0 0 10 0\n",
+        f"{label} 0 0 0 0 0 50 50 2 2 4 0 0 10 {rotation_y}\n",
         encoding="utf-8",
     )
 
@@ -101,14 +101,36 @@ def test_kitti3d_sample_ids_are_deterministic(kitti3d_root: Path) -> None:
     assert [sample.meta["image_id"] for sample in first] == ["000001", "000002"]
 
 
-def test_kitti3d_box_coordinate_frame_is_lidar(kitti3d_root: Path) -> None:
+def test_kitti3d_box_length_axis_yaw_at_zero_rotation_is_lidar(kitti3d_root: Path) -> None:
     sample = _dataset(kitti3d_root).load(limit=1)[0]
     box = sample.boxes3d[0]
 
     # KITTI labels locate the bottom center in rectified camera coordinates.
-    # With the fixture calibration, (0, 0, 10) and h=2 maps to LiDAR
-    # geometric center (10, 0, 1), and camera yaw 0 points along LiDAR +x.
+    # Their non-square length axis at rotation_y=0 is camera +x.  With this
+    # fixture calibration it maps to LiDAR -y, therefore yaw=-pi/2.
     assert (box.x, box.y, box.z) == pytest.approx((10.0, 0.0, 1.0))
-    assert box.yaw == pytest.approx(0.0)
+    assert box.yaw == pytest.approx(-np.pi / 2.0)
     assert sample.meta["coordinate_frame"] == "LIDAR"
     assert sample.meta["box_layout"] == "x,y,z,length,width,height,yaw"
+
+
+def test_kitti3d_box_length_axis_yaw_at_nonzero_rotation_is_lidar(kitti3d_root: Path) -> None:
+    _write_sample(kitti3d_root, "000001", rotation_y=np.pi / 4.0)
+
+    box = _dataset(kitti3d_root).load(limit=1)[0].boxes3d[0]
+
+    # The KITTI length axis is (cos(ry), 0, -sin(ry)); the fixture maps its
+    # ry=pi/4 direction to LiDAR (-sqrt(1/2), -sqrt(1/2), 0).
+    assert box.length == pytest.approx(4.0)
+    assert box.width == pytest.approx(2.0)
+    assert box.yaw == pytest.approx(-3.0 * np.pi / 4.0)
+
+
+def test_kitti3d_rejects_noninvertible_calibration_transform(kitti3d_root: Path) -> None:
+    (kitti3d_root / "training" / "calib" / "000001.txt").write_text(
+        "P2: 1 0 0 0 0 1 0 0 0 0 1 0\nR0_rect: 0 0 0 0 0 0 0 0 0\nTr_velo_to_cam: 0 -1 0 0 0 0 -1 0 1 0 0 0\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="transform is non-invertible"):
+        _dataset(kitti3d_root).load(limit=1)

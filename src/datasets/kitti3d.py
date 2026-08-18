@@ -30,6 +30,7 @@ class KittiCalibration:
     p2: np.ndarray
     r0_rect: np.ndarray
     tr_velo_to_cam: np.ndarray
+    source_path: Path | None = None
 
     def lidar_to_rectified_camera(self) -> np.ndarray:
         """Return the homogeneous transform from Velodyne to rectified camera."""
@@ -41,7 +42,10 @@ class KittiCalibration:
 
     def rectified_camera_to_lidar(self) -> np.ndarray:
         """Return the inverse transform used for labels in ``label_2``."""
-        return np.linalg.inv(self.lidar_to_rectified_camera())
+        try:
+            return np.linalg.inv(self.lidar_to_rectified_camera())
+        except np.linalg.LinAlgError as exc:
+            raise ValueError(f"KITTI calibration transform is non-invertible: {self.source_path}") from exc
 
 
 def load_kitti_calibration(path: Path) -> KittiCalibration:
@@ -58,11 +62,14 @@ def load_kitti_calibration(path: Path) -> KittiCalibration:
         except ValueError as exc:  # pragma: no cover - np.fromstring is permissive
             raise ValueError(f"invalid KITTI calibration record {key!r}: {path}") from exc
 
-    return KittiCalibration(
+    calibration = KittiCalibration(
         p2=_calibration_matrix(records, "P2", (3, 4), path),
         r0_rect=_calibration_matrix(records, "R0_rect", (3, 3), path),
         tr_velo_to_cam=_calibration_matrix(records, "Tr_velo_to_cam", (3, 4), path),
+        source_path=path,
     )
+    calibration.rectified_camera_to_lidar()
+    return calibration
 
 
 def _calibration_matrix(records: dict[str, np.ndarray], key: str, shape: tuple[int, int], path: Path) -> np.ndarray:
@@ -92,7 +99,8 @@ def kitti_camera_box_to_lidar(
     ``location`` is the KITTI rectified-camera bottom centre.  Moving it by
     ``-height / 2`` along camera ``y`` gives the geometric centre before the
     inverse ``R0_rect @ Tr_velo_to_cam`` transform is applied.  The KITTI
-    heading vector is ``(sin(rotation_y), 0, cos(rotation_y))``; transforming
+    longitudinal vector is ``(cos(rotation_y), 0, -sin(rotation_y))``;
+    transforming
     that vector gives the LiDAR yaw without relying on an implicit sign rule.
     """
     dimensions = np.asarray((height, width, length), dtype=np.float64)
@@ -113,7 +121,7 @@ def kitti_camera_box_to_lidar(
     if not np.isclose(lidar_center[3], 1.0):
         lidar_center /= lidar_center[3]
 
-    camera_heading = np.array((np.sin(rotation_y), 0.0, np.cos(rotation_y)), dtype=np.float64)
+    camera_heading = np.array((np.cos(rotation_y), 0.0, -np.sin(rotation_y)), dtype=np.float64)
     lidar_heading = camera_to_lidar[:3, :3] @ camera_heading
     planar_heading = lidar_heading[:2]
     if np.linalg.norm(planar_heading) <= 1e-12:
