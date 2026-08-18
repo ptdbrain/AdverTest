@@ -75,7 +75,7 @@ from src.datasets.folder import FolderDataset
 from src.datasets.versioning import DatasetIngestor, IngestConfig
 from src.evaluation.export import export_comparison
 from src.models import list_known_versions, scan_base_checkpoints, scan_model_artifacts
-from src.models.families import FAMILIES, adapter_request
+from src.models.families import FAMILIES, adapter_request, approved_model_config
 from src.models.versions import ModelVersion
 from src.pipeline import RunConfig, TestRunner
 from src.services.person_d import PersonDServices
@@ -98,10 +98,13 @@ _generated_datasets = GeneratedDatasetService(
     max_workers=get_settings().worker_max_concurrency,
 )
 _checkpoint_validations = CheckpointValidationService(
-    _store, _workflow_store, max_workers=get_settings().worker_max_concurrency,
+    _store,
+    _workflow_store,
+    max_workers=get_settings().worker_max_concurrency,
 )
 _dataset_import_workers = ThreadPoolExecutor(
-    max_workers=get_settings().worker_max_concurrency, thread_name_prefix="dataset-import",
+    max_workers=get_settings().worker_max_concurrency,
+    thread_name_prefix="dataset-import",
 )
 _generated_datasets.recover()
 for _run_id, _config in _store.recoverable():
@@ -136,6 +139,7 @@ async def upload_checkpoint(request: Request) -> dict[str, Any]:
     filename = Path(request.headers.get("x-filename", "checkpoint.pt")).name
     task_id = request.headers.get("x-task-id", "")
     family_id = request.headers.get("x-model-family-id", "")
+    model_config_id = request.headers.get("x-model-config-id", "")
     display_name = request.headers.get("x-display-name", filename)
     checkpoint_role = request.headers.get("x-checkpoint-role", "base")
     parent_checkpoint_id = request.headers.get("x-parent-checkpoint-id")
@@ -150,6 +154,9 @@ async def upload_checkpoint(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail={"code": "MODEL_FAMILY_TASK_MISMATCH"})
     if Path(filename).suffix.lower() not in family.checkpoint_extensions:
         raise HTTPException(status_code=422, detail={"code": "CHECKPOINT_EXTENSION_INVALID"})
+    model_config = approved_model_config(family_id, model_config_id)
+    if family_id == "pointpillars3d" and model_config is None:
+        raise HTTPException(status_code=422, detail={"code": "MODEL_FAMILY_CONFIG_INVALID"})
     checkpoint_id = f"checkpoint-{uuid.uuid4().hex[:16]}"
     target_root = Path(get_settings().checkpoint_root).expanduser().resolve() / "uploaded"
     target_root.mkdir(parents=True, exist_ok=True)
@@ -179,6 +186,7 @@ async def upload_checkpoint(request: Request) -> dict[str, Any]:
         "display_name": display_name[:128],
         "task_id": task_id,
         "family_id": family_id,
+        "model_config": model_config,
         "storage_path": str(target),
         "sha256": digest.hexdigest(),
         "bytes": total,
@@ -358,7 +366,6 @@ async def training_run_events(job_id: str, websocket: WebSocket) -> None:
         return
 
 
-
 @router.post("/retraining-backlogs", status_code=201)
 async def create_retraining_backlog(body: RetrainingBacklogIn) -> dict[str, Any]:
     return _workflow_store.create_backlog(body.name)
@@ -409,10 +416,14 @@ async def create_model_comparison(body: ModelComparisonIn) -> dict[str, Any]:
     recovered_score = candidate_attack_score - baseline_attack_score
     recovery_ratio = None if not paired or lost_score <= 0 else recovered_score / lost_score
     payload = {
-        "comparison_id": comparison_id, **body.model_dump(mode="json"), "paired": paired,
+        "comparison_id": comparison_id,
+        **body.model_dump(mode="json"),
+        "paired": paired,
         "baseline_signature": baseline_signature,
         "candidate_signature": candidate_signature,
-        "incompatibilities": [] if paired else [key for key in baseline_signature if baseline_signature.get(key) != candidate_signature.get(key)],
+        "incompatibilities": []
+        if paired
+        else [key for key in baseline_signature if baseline_signature.get(key) != candidate_signature.get(key)],
         "metric_deltas": metric_deltas,
         "recovery_report": {
             "baseline_clean": left["ap_clean"],
@@ -484,7 +495,10 @@ async def export_model_comparison(comparison_id: str, format: str = Query(defaul
     return Response(
         artifact.content,
         media_type=artifact.media_type,
-        headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"', "X-Content-SHA256": artifact.sha256},
+        headers={
+            "Content-Disposition": f'attachment; filename="{artifact.filename}"',
+            "X-Content-SHA256": artifact.sha256,
+        },
     )
 
 
@@ -514,7 +528,6 @@ async def get_model_comparison_failures(comparison_id: str) -> dict[str, Any]:
         "candidate_failures": cand_failures,
         "recovered_count": max(0, len(base_failures) - len(cand_failures)),
     }
-
 
 
 @router.post("/attack-recipes", status_code=201)
@@ -567,19 +580,17 @@ async def list_recipe_presets() -> list[dict[str, Any]]:
 async def randomize_recipe(body: RecipeRandomizeIn) -> dict[str, Any]:
     """Generate a randomized attack recipe with N steps or filtered by group."""
     import random
+
     attacks = load_attacks()
-    candidates = [
-        item for item in attacks.values()
-        if body.group is None or item.group == body.group
-    ]
+    candidates = [item for item in attacks.values() if body.group is None or item.group == body.group]
     if not candidates:
-        raise HTTPException(status_code=422, detail={"code": "TASK_INCOMPATIBLE", "message": f"no attacks matching group {body.group!r}"})
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "TASK_INCOMPATIBLE", "message": f"no attacks matching group {body.group!r}"},
+        )
     rng = random.Random(body.seed)
     selected = rng.sample(candidates, k=min(body.n_steps, len(candidates)))
-    steps = [
-        {"attack_id": attack.name, "severity": rng.randint(1, 3)}
-        for attack in selected
-    ]
+    steps = [{"attack_id": attack.name, "severity": rng.randint(1, 3)} for attack in selected]
     recipe_id = f"recipe-random-{uuid.uuid4().hex[:8]}"
     payload = {
         "id": recipe_id,
@@ -617,7 +628,10 @@ async def preview_recipe(body: RecipePreviewIn) -> dict[str, Any]:
     elif body.recipe:
         recipe_data = body.recipe
     else:
-        raise HTTPException(status_code=422, detail={"code": "MISSING_RECIPE", "message": "either recipe_id or recipe payload is required"})
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "MISSING_RECIPE", "message": "either recipe_id or recipe payload is required"},
+        )
 
     steps = recipe_data.get("steps", [])
     return {
@@ -628,7 +642,6 @@ async def preview_recipe(body: RecipePreviewIn) -> dict[str, Any]:
         "estimated_duration_sec_per_sample": round(len(steps) * 0.12, 2),
         "target_modality": "image",
     }
-
 
 
 @router.post("/benchmark/protocols", status_code=201)
@@ -690,7 +703,21 @@ async def lock_benchmark_protocol(protocol_id: str) -> dict[str, Any]:
         )
     record["state"] = "LOCKED"
     record["identity_hash"] = stable_digest(
-        {k: v for k, v in record.items() if k not in {"protocol_id", "state", "identity_hash", "id", "record_type", "created_at", "updated_at", "metadata"}},
+        {
+            k: v
+            for k, v in record.items()
+            if k
+            not in {
+                "protocol_id",
+                "state",
+                "identity_hash",
+                "id",
+                "record_type",
+                "created_at",
+                "updated_at",
+                "metadata",
+            }
+        },
         length=40,
     )
     return _store.update_record("benchmark_protocol", protocol_id, record)
@@ -756,7 +783,6 @@ async def benchmark_run_events(run_id: str, websocket: WebSocket) -> None:
     await run_events(run_id, websocket)
 
 
-
 @router.post("/comparisons")
 async def compare_runs(baseline_run_id: str = Query(...), candidate_run_id: str = Query(...)) -> dict[str, Any]:
     """Compare completed reports without inventing paired scientific evidence."""
@@ -765,9 +791,13 @@ async def compare_runs(baseline_run_id: str = Query(...), candidate_run_id: str 
         raise HTTPException(status_code=409, detail="both runs must complete before comparison")
     left, right = baseline["report"], candidate["report"]
     paired = left["dataset"] == right["dataset"] and left["n_samples"] == right["n_samples"]
-    return {"baseline_run_id": baseline_run_id, "candidate_run_id": candidate_run_id,
-            "paired": paired, "clean_score_delta": right["ap_clean"] - left["ap_clean"],
-            "cell_count": {"baseline": len(left.get("cells", [])), "candidate": len(right.get("cells", []))}}
+    return {
+        "baseline_run_id": baseline_run_id,
+        "candidate_run_id": candidate_run_id,
+        "paired": paired,
+        "clean_score_delta": right["ap_clean"] - left["ap_clean"],
+        "cell_count": {"baseline": len(left.get("cells", [])), "candidate": len(right.get("cells", []))},
+    }
 
 
 @router.get("/model-versions", response_model=list[ModelVersionOut])
@@ -780,28 +810,39 @@ async def list_model_versions() -> list[ModelVersionOut]:
 @router.get("/model-families", response_model=list[ModelFamilyOut])
 async def list_model_families(task_id: str = Query(...)) -> list[ModelFamilyOut]:
     """Families are filtered by perception task; weights are selected later."""
-    return [ModelFamilyOut(
-        id=family.id,
-        display_name=family.display_name,
-        supported_tasks=sorted(family.supported_tasks),
-        checkpoint_extensions=sorted(family.checkpoint_extensions),
-        runnable=family.runnable,
-        blocked_reason=family.blocked_reason,
-    ) for family in FAMILIES.values() if task_id in family.supported_tasks]
+    return [
+        ModelFamilyOut(
+            id=family.id,
+            display_name=family.display_name,
+            supported_tasks=sorted(family.supported_tasks),
+            checkpoint_extensions=sorted(family.checkpoint_extensions),
+            runnable=family.runnable,
+            blocked_reason=family.blocked_reason,
+        )
+        for family in FAMILIES.values()
+        if task_id in family.supported_tasks
+    ]
 
 
 @router.get("/base-checkpoints", response_model=list[ModelVersionOut])
 async def list_base_checkpoints(
-    task_id: str = Query(...), model_family_id: str = Query(...),
+    task_id: str = Query(...),
+    model_family_id: str = Query(...),
 ) -> list[ModelVersionOut]:
-    return [ModelVersionOut.from_domain(version) for version in _registered_model_versions()
-            if version.task == task_id and version.model_family_id == model_family_id and version.checkpoint_role == "base"]
+    return [
+        ModelVersionOut.from_domain(version)
+        for version in _registered_model_versions()
+        if version.task == task_id and version.model_family_id == model_family_id and version.checkpoint_role == "base"
+    ]
 
 
 @router.get("/defence-checkpoints", response_model=list[ModelVersionOut])
 async def list_defence_checkpoints(task_id: str = Query(...)) -> list[ModelVersionOut]:
-    return [ModelVersionOut.from_domain(version) for version in _registered_model_versions()
-            if version.task == task_id and version.checkpoint_role != "base"]
+    return [
+        ModelVersionOut.from_domain(version)
+        for version in _registered_model_versions()
+        if version.task == task_id and version.checkpoint_role != "base"
+    ]
 
 
 @router.get("/model-versions/{version_id}", response_model=ModelVersionOut)
@@ -837,12 +878,14 @@ async def get_model_version_benchmark_history(version_id: str) -> list[dict[str,
     for run in _store.list():
         report = run.get("report")
         if report and (report.get("model") == version_id or report.get("model_version_id") == version_id):
-            history.append({
-                "run_id": run["run_id"],
-                "created_at": run.get("created_at"),
-                "ap_clean": report.get("ap_clean"),
-                "n_samples": report.get("n_samples"),
-            })
+            history.append(
+                {
+                    "run_id": run["run_id"],
+                    "created_at": run.get("created_at"),
+                    "ap_clean": report.get("ap_clean"),
+                    "n_samples": report.get("n_samples"),
+                }
+            )
     return history
 
 
@@ -859,7 +902,6 @@ async def get_model_version_gate_evidence(version_id: str) -> dict[str, Any]:
     if gate is None:
         return {"version_id": version_id, "gate_passed": False, "evidence": None, "status": "NO_GATE_EVALUATED"}
     return {"version_id": version_id, "gate_passed": gate.get("passed", False), "evidence": gate}
-
 
 
 @router.get("/perception-modes", response_model=list[PerceptionModeOut])
@@ -943,24 +985,30 @@ async def create_defence_run(body: DefenceRunIn) -> RunJobOut:
     baseline_config = RunConfig.model_validate(baseline["config"])
     if candidate.task != baseline_config.task_id or candidate.model_family_id != baseline_config.model_family_id:
         raise HTTPException(status_code=422, detail={"code": "DEFENCE_PROTOCOL_TASK_OR_FAMILY_MISMATCH"})
-    config = baseline_config.model_copy(update={
-        "checkpoint_id": candidate.id,
-        "model_version_id": candidate.id,
-        "model": candidate.model_name,
-        "adapter_params": {},
-        "execution_mode": "benchmark",
-    })
+    config = baseline_config.model_copy(
+        update={
+            "checkpoint_id": candidate.id,
+            "model_version_id": candidate.id,
+            "model": candidate.model_name,
+            "adapter_params": {},
+            "execution_mode": "benchmark",
+        }
+    )
     config = _resolve_run_config(config, allow_defence=True)
     preflight = _runner.preflight(config)
     if preflight.fatal_errors:
         raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
     run_id = _store.create(config)
-    _store.put_record("defence_evaluation", run_id, {
-        "run_id": run_id,
-        "baseline_run_id": body.baseline_run_id,
-        "checkpoint_id": candidate.id,
-        "protocol_config": baseline_config.model_dump(mode="json"),
-    })
+    _store.put_record(
+        "defence_evaluation",
+        run_id,
+        {
+            "run_id": run_id,
+            "baseline_run_id": body.baseline_run_id,
+            "checkpoint_id": candidate.id,
+            "protocol_config": baseline_config.model_dump(mode="json"),
+        },
+    )
     _worker.enqueue(run_id, config)
     return _job_out(_store.get(run_id))
 
@@ -971,8 +1019,11 @@ async def create_inference_experiment(body: QuickInferenceIn) -> RunJobOut:
     batch_root = (_upload_root() / body.upload_batch_id).resolve()
     uploads_root = _upload_root()
     if uploads_root not in batch_root.parents or not (batch_root / "images").is_dir():
-        print(f"DEBUG_DEBUG: uploads_root={uploads_root}, batch_root={batch_root}, is_dir={(batch_root / 'images').is_dir()}")
+        print(
+            f"DEBUG_DEBUG: uploads_root={uploads_root}, batch_root={batch_root}, is_dir={(batch_root / 'images').is_dir()}"
+        )
         import os
+
         print(f"DEBUG_DEBUG: {os.listdir(uploads_root) if uploads_root.exists() else 'uploads_root missing'}")
         print(f"DEBUG_DEBUG: {os.listdir(batch_root) if batch_root.exists() else 'batch_root missing'}")
         raise HTTPException(status_code=404, detail="UPLOAD_BATCH_UNKNOWN")
@@ -1006,8 +1057,11 @@ async def run_defence_candidates(run_id: str) -> list[ModelVersionOut]:
     """Fine-tuned/repaired weights are visible only after an attack run."""
     run = _require_run(run_id)
     task_id = (run.get("config") or {}).get("task_id", "detection2d")
-    return [ModelVersionOut.from_domain(version) for version in _registered_model_versions()
-            if version.task == task_id and version.checkpoint_role != "base"]
+    return [
+        ModelVersionOut.from_domain(version)
+        for version in _registered_model_versions()
+        if version.task == task_id and version.checkpoint_role != "base"
+    ]
 
 
 @router.get("/runs/{run_id}/report", response_model=RunReportOut)
@@ -1065,6 +1119,7 @@ async def run_events(run_id: str, websocket: WebSocket) -> None:
 
 
 # ---- Review endpoints ----
+
 
 @router.get("/reviews", response_model=list[ReviewOut])
 async def list_reviews(status: str | None = Query(default=None)) -> list[ReviewOut]:
@@ -1149,8 +1204,8 @@ async def get_failure_cluster(cluster_id: str) -> dict[str, Any]:
     return cluster
 
 
-
 # ---- Closed-Loop Training ----
+
 
 @router.post("/closed-loop/start", status_code=201, response_model=ClosedLoopSnapshotOut)
 async def start_closed_loop(body: ClosedLoopStartIn) -> dict[str, Any]:
@@ -1170,11 +1225,7 @@ async def start_closed_loop(body: ClosedLoopStartIn) -> dict[str, Any]:
         )
 
     reported_cases = item["report"].get("worst_cases", [])
-    failures = [
-        failure
-        for failure in reported_cases
-        if isinstance(failure, dict) and _is_failure_case(failure)
-    ]
+    failures = [failure for failure in reported_cases if isinstance(failure, dict) and _is_failure_case(failure)]
     if not failures:
         raise HTTPException(
             status_code=409,
@@ -1203,9 +1254,7 @@ async def start_closed_loop(body: ClosedLoopStartIn) -> dict[str, Any]:
             }
         )
 
-    loop_id = _workflow_store.create_job(
-        "closed_loop", {"source_run_id": body.run_id}
-    )
+    loop_id = _workflow_store.create_job("closed_loop", {"source_run_id": body.run_id})
     tracker = ClosedLoopTracker(loop_id=loop_id)
     _workflow_store.append_event(
         loop_id,
@@ -1342,7 +1391,12 @@ async def advance_closed_loop(loop_id: str, body: ClosedLoopAdvanceIn) -> dict[s
     if not valid_evidence:
         raise HTTPException(
             status_code=409,
-            detail={"code": "INVALID_CLOSED_LOOP_TRANSITION", "current": current_state, "target": body.target, "artifact_id": body.artifact_id},
+            detail={
+                "code": "INVALID_CLOSED_LOOP_TRANSITION",
+                "current": current_state,
+                "target": body.target,
+                "artifact_id": body.artifact_id,
+            },
         )
 
     # Reconstruct audit list
@@ -1396,8 +1450,8 @@ async def advance_closed_loop(loop_id: str, body: ClosedLoopAdvanceIn) -> dict[s
     return updated_payload
 
 
-
 # ---- Evidence Status ----
+
 
 @router.get("/status/evidence", response_model=EvidenceStatusOut)
 async def get_evidence_status() -> dict[str, Any]:
@@ -1406,9 +1460,7 @@ async def get_evidence_status() -> dict[str, Any]:
     Single source of truth for which components have passed which evidence tiers.
     """
     placeholders = list_known_versions()
-    discovered = await asyncio.to_thread(
-        scan_model_artifacts, Path(get_settings().runs_root)
-    )
+    discovered = await asyncio.to_thread(scan_model_artifacts, Path(get_settings().runs_root))
     model_versions_by_id = {version.id: version for version in placeholders}
     placeholders_by_role = {
         str(version.training_metadata.get("role")): version
@@ -1442,10 +1494,7 @@ async def get_evidence_status() -> dict[str, Any]:
             "gate_outcome": v.gate_outcome,
             "evidence_tier": v.evidence_tier,
             "parent_id": v.parent_id or (placeholder.parent_id if placeholder else None),
-            "parent_lineage": list(
-                v.parent_lineage
-                or (placeholder.parent_lineage if placeholder else ())
-            ),
+            "parent_lineage": list(v.parent_lineage or (placeholder.parent_lineage if placeholder else ())),
         }
 
     # Aggregate summary
@@ -1475,6 +1524,7 @@ async def get_evidence_status() -> dict[str, Any]:
 
 
 # ---- Helpers ----
+
 
 def _sample_with_artifact_urls(sample: dict[str, Any]) -> dict[str, Any]:
     """Expose only browser-readable artifact URIs; never leak filesystem paths."""
@@ -1536,6 +1586,7 @@ def _registered_model_versions() -> list[Any]:
             parent_id=record.get("parent_checkpoint_id"),
             training_metadata={
                 "source": "user_upload",
+                "model_config": record.get("model_config"),
                 "validation": record.get("validation", {}),
                 "training_dataset_version_id": record.get("training_dataset_version_id"),
             },
@@ -1653,7 +1704,14 @@ def _resolve_run_config(config: RunConfig, *, allow_defence: bool = False) -> Ru
     if version is None:
         raise HTTPException(status_code=404, detail={"code": "CHECKPOINT_UNKNOWN", "checkpoint_id": checkpoint_id})
     if config.model_family_id is not None and config.model_family_id != version.model_family_id:
-        raise HTTPException(status_code=422, detail={"code": "CHECKPOINT_FAMILY_MISMATCH", "model_family_id": config.model_family_id, "checkpoint_id": checkpoint_id})
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "CHECKPOINT_FAMILY_MISMATCH",
+                "model_family_id": config.model_family_id,
+                "checkpoint_id": checkpoint_id,
+            },
+        )
     if config.task_id is not None and config.task_id != version.task:
         raise HTTPException(
             status_code=422,
@@ -1665,31 +1723,68 @@ def _resolve_run_config(config: RunConfig, *, allow_defence: bool = False) -> Ru
             },
         )
     if version.checkpoint_role != "base" and not allow_defence:
-        raise HTTPException(status_code=422, detail={"code": "DEFENCE_CHECKPOINT_NOT_ALLOWED_IN_ATTACK", "checkpoint_id": checkpoint_id, "checkpoint_role": version.checkpoint_role})
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "DEFENCE_CHECKPOINT_NOT_ALLOWED_IN_ATTACK",
+                "checkpoint_id": checkpoint_id,
+                "checkpoint_role": version.checkpoint_role,
+            },
+        )
     try:
         dataset_cls = load_datasets().get(config.dataset)
     except KeyError:
         dataset_cls = None
     if dataset_cls is not None and config.task_id is not None and dataset_cls.task_id != config.task_id:
-        raise HTTPException(status_code=422, detail={"code": "TASK_DATASET_MISMATCH", "task_id": config.task_id, "dataset": config.dataset, "dataset_task_id": dataset_cls.task_id})
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "TASK_DATASET_MISMATCH",
+                "task_id": config.task_id,
+                "dataset": config.dataset,
+                "dataset_task_id": dataset_cls.task_id,
+            },
+        )
     for attack_name in config.attacks:
         attack = load_attacks().get(attack_name)
         allowed = attack.required_tasks or frozenset({"detection2d", "segmentation"})
         if version.task not in allowed:
-            raise HTTPException(status_code=422, detail={"code": "ATTACK_NOT_COMPATIBLE", "attack": attack_name, "task_id": version.task})
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "ATTACK_NOT_COMPATIBLE", "attack": attack_name, "task_id": version.task},
+            )
     if not version.runnable or not version.checkpoint_path:
-        raise HTTPException(status_code=409, detail={"code": "MODEL_NOT_RUNNABLE", "model_version_id": config.model_version_id, "reason": version.blocked_reason})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "MODEL_NOT_RUNNABLE",
+                "model_version_id": config.model_version_id,
+                "reason": version.blocked_reason,
+            },
+        )
     checkpoint = Path(version.checkpoint_path).resolve()
     if not checkpoint.is_file():
-        raise HTTPException(status_code=409, detail={"code": "CHECKPOINT_MISSING", "model_version_id": config.model_version_id})
+        raise HTTPException(
+            status_code=409, detail={"code": "CHECKPOINT_MISSING", "model_version_id": config.model_version_id}
+        )
     settings = get_settings()
     try:
         adapter_name, adapter_params = adapter_request(
             version, checkpoint=str(checkpoint), config=config, settings=settings
         )
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail={"code": str(exc), "model_version_id": config.model_version_id}) from exc
-    return config.model_copy(update={"model": adapter_name, "adapter_params": adapter_params, "task_id": version.task, "model_family_id": version.model_family_id, "checkpoint_id": version.id})
+        raise HTTPException(
+            status_code=409, detail={"code": str(exc), "model_version_id": config.model_version_id}
+        ) from exc
+    return config.model_copy(
+        update={
+            "model": adapter_name,
+            "adapter_params": adapter_params,
+            "task_id": version.task,
+            "model_family_id": version.model_family_id,
+            "checkpoint_id": version.id,
+        }
+    )
 
 
 def _comparison_signature(report: dict[str, Any]) -> dict[str, Any]:
@@ -1698,7 +1793,9 @@ def _comparison_signature(report: dict[str, Any]) -> dict[str, Any]:
     run_config = provenance.get("run_config") or {}
     samples = report.get("sample_results") or []
     return {
-        "dataset_version_id": provenance.get("dataset_version_id") or run_config.get("dataset_version_id") or report.get("dataset"),
+        "dataset_version_id": provenance.get("dataset_version_id")
+        or run_config.get("dataset_version_id")
+        or report.get("dataset"),
         "benchmark_protocol_id": provenance.get("benchmark_protocol_id") or run_config.get("benchmark_protocol_id"),
         "recipe_hash": (provenance.get("recipe") or {}).get("recipe_hash"),
         "sample_ids": sorted(str(item.get("sample_id")) for item in samples if item.get("sample_id")),
@@ -1710,19 +1807,18 @@ def _comparison_signature(report: dict[str, Any]) -> dict[str, Any]:
         "image_size": run_config.get("image_size"),
     }
 
+
 def _is_failure_case(payload: dict[str, Any]) -> bool:
     """Accept only benchmark samples carrying an explicit failure signal."""
     degradation = payload.get("degradation_hint")
     has_positive_degradation = (
-        isinstance(degradation, (int, float))
-        and not isinstance(degradation, bool)
-        and degradation > 0.0
+        isinstance(degradation, (int, float)) and not isinstance(degradation, bool) and degradation > 0.0
     )
     has_reason = any(
-        isinstance(payload.get(field), str) and bool(payload[field].strip())
-        for field in ("reason", "failure_reason")
+        isinstance(payload.get(field), str) and bool(payload[field].strip()) for field in ("reason", "failure_reason")
     )
     return has_positive_degradation or has_reason or payload.get("failed") is True
+
 
 def _mean_attack_score(report: dict[str, Any]) -> float:
     cells = report.get("cells", [])

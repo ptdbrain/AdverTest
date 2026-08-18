@@ -93,8 +93,6 @@ def _validate_quarantine_record(record: dict[str, Any]) -> str | None:
         members = archive.namelist()
     if not any(member.endswith("data.pkl") for member in members):
         return "CHECKPOINT_FORMAT_INVALID"
-    if not family.runnable:
-        return "WAITING_FOR_ARTIFACTS"
     return None
 
 

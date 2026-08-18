@@ -54,6 +54,11 @@ def test_pointpillars_family_requires_detection3d_and_waits_for_gpu_validation()
     assert family.blocked_reason == "WAITING_FOR_GPU_VALIDATION"
 
 
+def test_pointpillars_rejects_non_detection3d_versions() -> None:
+    with pytest.raises(ValueError, match="MODEL_FAMILY_TASK_MISMATCH: pointpillars3d does not support detection2d"):
+        family_for_version(_version("pointpillars", "detection2d"))
+
+
 def test_pointpillars_adapter_request_contains_config_and_checkpoint() -> None:
     adapter, params = adapter_request(
         _version("pointpillars", "detection3d", {"model_config": "pointpillars_kitti.py"}),

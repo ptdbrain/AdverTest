@@ -63,6 +63,19 @@ FAMILIES = {
     ),
 }
 
+# Uploads name a deployment-owned config reference; callers never submit an
+# arbitrary filesystem path that a later GPU worker could load.
+APPROVED_MODEL_CONFIGS: dict[str, dict[str, str]] = {
+    "pointpillars3d": {
+        "pointpillars-kitti-3class": "configs/mmdet3d/pointpillars_hv_secfpn_6x8_160e_kitti-3d-3class.py",
+    },
+}
+
+
+def approved_model_config(family_id: str, config_id: str) -> str | None:
+    """Return a deployment-approved model config reference for an upload."""
+    return APPROVED_MODEL_CONFIGS.get(family_id, {}).get(config_id)
+
 
 def family_for_version(version: ModelVersion) -> ModelFamilySpec:
     model_name = version.model_name.lower()
