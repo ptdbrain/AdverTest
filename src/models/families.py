@@ -22,16 +22,59 @@ class ModelFamilySpec:
 
 FAMILIES = {
     "yolo11": ModelFamilySpec("yolo11", "YOLO11", frozenset({"detection2d"}), frozenset({".pt"}), "yolo11", True),
-    "sam2": ModelFamilySpec("sam2", "SAM2.1", frozenset({"segmentation"}), frozenset({".pt"}), "sam2", False, "WAITING_FOR_ARTIFACTS"),
-    "rtdetr": ModelFamilySpec("rtdetr", "RT-DETR", frozenset({"detection2d"}), frozenset({".pt"}), "rtdetr", False, "BASE_CHECKPOINT_UNAVAILABLE"),
-    "faster_rcnn": ModelFamilySpec("faster_rcnn", "Faster R-CNN", frozenset({"detection2d"}), frozenset({".pt", ".pth"}), "faster_rcnn", False, "BASE_CHECKPOINT_UNAVAILABLE"),
-    "centerpoint3d": ModelFamilySpec("centerpoint3d", "CenterPoint", frozenset({"detection3d"}), frozenset({".pt", ".pth"}), "centerpoint3d", False, "WAITING_FOR_ARTIFACTS"),
+    "sam2": ModelFamilySpec(
+        "sam2", "SAM2.1", frozenset({"segmentation"}), frozenset({".pt"}), "sam2", False, "WAITING_FOR_ARTIFACTS"
+    ),
+    "rtdetr": ModelFamilySpec(
+        "rtdetr",
+        "RT-DETR",
+        frozenset({"detection2d"}),
+        frozenset({".pt"}),
+        "rtdetr",
+        False,
+        "BASE_CHECKPOINT_UNAVAILABLE",
+    ),
+    "faster_rcnn": ModelFamilySpec(
+        "faster_rcnn",
+        "Faster R-CNN",
+        frozenset({"detection2d"}),
+        frozenset({".pt", ".pth"}),
+        "faster_rcnn",
+        False,
+        "BASE_CHECKPOINT_UNAVAILABLE",
+    ),
+    "centerpoint3d": ModelFamilySpec(
+        "centerpoint3d",
+        "CenterPoint",
+        frozenset({"detection3d"}),
+        frozenset({".pt", ".pth"}),
+        "centerpoint3d",
+        False,
+        "WAITING_FOR_ARTIFACTS",
+    ),
+    "pointpillars3d": ModelFamilySpec(
+        "pointpillars3d",
+        "PointPillars",
+        frozenset({"detection3d"}),
+        frozenset({".pth"}),
+        "pointpillars",
+        False,
+        "WAITING_FOR_GPU_VALIDATION",
+    ),
 }
 
 
 def family_for_version(version: ModelVersion) -> ModelFamilySpec:
     model_name = version.model_name.lower()
-    family_id = version.model_family_id or ("yolo11" if model_name.startswith("yolo") else "sam2" if model_name.startswith("sam") else model_name)
+    family_id = version.model_family_id or (
+        "yolo11"
+        if model_name.startswith("yolo")
+        else "sam2"
+        if model_name.startswith("sam")
+        else "pointpillars3d"
+        if model_name.startswith("pointpillars")
+        else model_name
+    )
     try:
         family = FAMILIES[family_id]
     except KeyError as exc:
@@ -41,7 +84,9 @@ def family_for_version(version: ModelVersion) -> ModelFamilySpec:
     return family
 
 
-def adapter_request(version: ModelVersion, *, checkpoint: str, config: Any, settings: Settings) -> tuple[str, dict[str, Any]]:
+def adapter_request(
+    version: ModelVersion, *, checkpoint: str, config: Any, settings: Settings
+) -> tuple[str, dict[str, Any]]:
     """Return only constructor arguments owned by the selected model family."""
     family = family_for_version(version)
     if family.id == "yolo11":
@@ -61,5 +106,15 @@ def adapter_request(version: ModelVersion, *, checkpoint: str, config: Any, sett
             "config": str(sam_config),
             "device": settings.model_device,
             "mask_threshold": config.confidence_threshold,
+        }
+    if family.id == "pointpillars3d":
+        model_config = version.training_metadata.get("model_config")
+        if not model_config:
+            raise ValueError("MODEL_FAMILY_CONFIG_MISSING: PointPillars requires MMDetection3D config")
+        return family.adapter_name, {
+            "weights": checkpoint,
+            "config": str(model_config),
+            "device": settings.model_device,
+            "score_threshold": config.confidence_threshold,
         }
     raise ValueError(f"MODEL_FAMILY_NOT_RUNNABLE: {family.id}")
