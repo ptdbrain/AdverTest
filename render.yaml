@@ -3,7 +3,9 @@
 # API process, so it is not suitable for production workloads.
 services:
   - type: web
-    name: advertest-frontend-free
+    # Keep the existing frontend service during the transition. Render creates
+    # this demo endpoint under the service name when the Blueprint is synced.
+    name: c4-app-advertest
     runtime: docker
     region: singapore
     plan: free
