@@ -59,15 +59,17 @@ export default function HomePage() {
   const isDraggingRef = React.useRef(false);
 
   React.useEffect(() => {
+    let updateTimer;
     try {
       const saved = localStorage.getItem("advertest-config-width");
       if (saved) {
         const parsed = Number(saved);
         if (parsed >= 15 && parsed <= 30) {
-          setConfigWidth(parsed);
+          updateTimer = window.setTimeout(() => setConfigWidth(parsed), 0);
         }
       }
     } catch {}
+    return () => window.clearTimeout(updateTimer);
   }, []);
 
   const handleMouseDown = (e) => {

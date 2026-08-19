@@ -6,14 +6,18 @@ export default function ThemeToggle({ className = "", compact = false }) {
   const [theme, setTheme] = useState("dark");
 
   useEffect(() => {
+    let updateTimer;
     try {
       const saved = localStorage.getItem("theme");
       const initial = saved || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-      setTheme(initial);
       document.documentElement.setAttribute("data-theme", initial);
+      // Defer the UI state sync: React's effect rule intentionally rejects
+      // a synchronous setState here because it causes an extra render pass.
+      updateTimer = window.setTimeout(() => setTheme(initial), 0);
     } catch {
       // ignore
     }
+    return () => window.clearTimeout(updateTimer);
   }, []);
 
   const toggleTheme = () => {

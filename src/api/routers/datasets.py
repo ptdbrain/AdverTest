@@ -1,32 +1,32 @@
 import json
 import re
 import uuid
-from typing import Any
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from src.api.dependencies import get_dataset_import_workers, get_generated_datasets, get_store, get_workflow_store
+from src.api.generated_dataset_service import GeneratedDatasetService
+from src.api.ingestion_validation import summarize_batch, validate_annotation
+from src.api.jobs import SqliteRunStore
+from src.api.schemas import AnnotationDocument
+from src.api.schemas.dataset import (
+    DatasetImportIn,
+    GeneratedDatasetCreateIn,
+    GeneratedDatasetEventsOut,
+    GeneratedDatasetJobOut,
+    GeneratedDatasetManifestOut,
+    GeneratedDatasetValidationOut,
+    GeneratedDatasetVariantsOut,
+    UploadBatchCreateIn,
+)
+from src.api.workflow_store import WorkflowJobStore
 from src.config import get_settings
 from src.core.hashing import stable_digest
 from src.datasets.folder import FolderDataset
 from src.datasets.versioning import DatasetIngestor, IngestConfig
-from src.api.schemas.dataset import (
-    UploadBatchCreateIn,
-    UploadBatchOut,
-    DatasetImportIn,
-    GeneratedDatasetCreateIn,
-    GeneratedDatasetJobOut,
-    GeneratedDatasetManifestOut,
-    GeneratedDatasetVariantsOut,
-    GeneratedDatasetEventsOut,
-    GeneratedDatasetValidationOut,
-)
-from src.api.schemas import AnnotationDocument
-from src.api.ingestion_validation import summarize_batch, validate_annotation
-from src.api.jobs import SqliteRunStore
-from src.api.workflow_store import WorkflowJobStore
-from src.api.generated_dataset_service import GeneratedDatasetService
-from src.api.dependencies import get_store, get_workflow_store, get_generated_datasets, get_dataset_import_workers
 
 router = APIRouter(tags=["Datasets"])
 
@@ -274,8 +274,9 @@ async def finalize_upload_batch(
     return {**stored, "dataset_version": dataset_record, "benchmark_ready": True}
 
 def _validate_uploaded_image(payload: bytes) -> tuple[str, tuple[int, int]]:
-    from PIL import Image, UnidentifiedImageError
     from io import BytesIO
+
+    from PIL import Image, UnidentifiedImageError
     try:
         with Image.open(BytesIO(payload)) as image:
             image.verify()
