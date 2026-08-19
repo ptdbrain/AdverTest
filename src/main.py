@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from src.adapters import load_adapters
+from src.api.routers import artifacts, catalog, checkpoints, datasets, exports, jobs, runs
 from src.api.routes import router
 from src.attacks import load_attacks
 from src.config import get_settings
@@ -60,11 +61,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from src.api.routers import catalog, runs, datasets
-
 app.include_router(catalog.router, prefix="/api/v1")
 app.include_router(runs.router, prefix="/api/v1")
 app.include_router(datasets.router, prefix="/api/v1")
+app.include_router(artifacts.router, prefix="/api/v1")
+app.include_router(checkpoints.router, prefix="/api/v1")
+app.include_router(jobs.router, prefix="/api/v1")
+app.include_router(exports.router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")
 app.mount("/data", StaticFiles(directory=str(data_root)), name="data")
 

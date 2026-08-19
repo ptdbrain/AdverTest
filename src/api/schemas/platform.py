@@ -45,6 +45,25 @@ class ImportUltralyticsIn(_PlatformApiSchemaV1):
     model_id: str = Field(pattern=r"^yolo11[nsmlx]$")
 
 
+class RegisterCheckpointIn(_PlatformApiSchemaV1):
+    artifact_id: UUID
+    task_id: str = Field(min_length=1, max_length=100)
+    model_family_id: str = Field(min_length=1, max_length=100)
+
+
+class ExportAttackedDatasetIn(_PlatformApiSchemaV1):
+    source_dataset_version_id: UUID
+    task: str = Field(min_length=1, max_length=100)
+    attack_method: str = Field(min_length=1, max_length=255)
+    severity: int = Field(ge=0, le=5)
+    seed: int = Field(ge=0)
+    implementation_version: str = Field(min_length=1, max_length=100)
+    media_artifact_ids: tuple[UUID, ...] = ()
+    label_artifact_ids: tuple[UUID, ...] = ()
+    manifest: dict[str, object] = Field(default_factory=dict)
+    recipe: dict[str, object] = Field(default_factory=dict)
+
+
 class JobOutV1(_PlatformApiSchemaV1):
     id: UUID
     status: JobStatus

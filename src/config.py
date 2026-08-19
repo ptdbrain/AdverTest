@@ -43,6 +43,28 @@ class Settings(BaseSettings):
     artifact_root: str = str(PROJECT_ROOT / "data" / "artifacts")
     checkpoint_root: str = str(PROJECT_ROOT / "data" / "checkpoints")
 
+    # Platform persistence, object storage, and worker dispatch.  The legacy
+    # SQLite stores continue to support existing local product routes while
+    # these settings drive the project-scoped production platform.
+    platform_database_url: str | None = None
+    object_storage_backend: Literal["local", "s3"] = "local"
+    object_storage_bucket: str = "advertest-artifacts"
+    object_storage_endpoint_url: str | None = None
+    object_storage_region: str = "auto"
+    object_storage_access_key_id: str | None = None
+    object_storage_secret_access_key: str | None = None
+    object_storage_signed_url_ttl_seconds: int = Field(default=900, ge=60, le=86_400)
+    queue_backend: Literal["local", "redis"] = "local"
+    redis_url: str | None = None
+    platform_worker_poll_seconds: float = Field(default=1.0, gt=0.0, le=60.0)
+    checkpoint_validation_timeout_seconds: int = Field(default=120, ge=5, le=3600)
+    checkpoint_validation_memory_mb: int = Field(default=2048, ge=128, le=65_536)
+    checkpoint_validation_cpu_seconds: int = Field(default=90, ge=1, le=3600)
+    checkpoint_sandbox_url: str | None = None
+    checkpoint_sandbox_token: str | None = None
+    external_gpu_worker_url: str | None = None
+    external_gpu_worker_token: str | None = None
+
     # Execution hardware defaults
     model_device: str = "cpu"
     model_half_precision: bool = False
@@ -52,6 +74,10 @@ class Settings(BaseSettings):
     def severity_list(self) -> list[int]:
         """``default_severities`` parsed into integers."""
         return [int(part) for part in self.default_severities.split(",") if part.strip()]
+
+    @property
+    def resolved_platform_database_url(self) -> str:
+        return self.platform_database_url or self.database_url
 
 
 @lru_cache
