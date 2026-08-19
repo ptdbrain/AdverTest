@@ -80,6 +80,26 @@ class CheckpointValidationRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class DatasetVersionRecord(Base):
+    """Immutable dataset bundle registration backed by a finalized artifact."""
+
+    __tablename__ = "dataset_versions"
+    __table_args__ = (UniqueConstraint("project_id", "artifact_id", name="uq_dataset_versions_project_artifact"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    dataset_id: Mapped[str] = mapped_column(String(36), index=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True)
+    created_by_user_id: Mapped[str] = mapped_column(String(36), index=True)
+    artifact_id: Mapped[str] = mapped_column(ForeignKey("artifacts.id", ondelete="RESTRICT"), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200))
+    task_id: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    schema_hash: Mapped[str] = mapped_column(String(64))
+    sample_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    manifest_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class PlatformJobRecord(Base):
     __tablename__ = "jobs"
     __table_args__ = (
