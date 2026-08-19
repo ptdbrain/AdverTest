@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from src.adapters import load_adapters
+from src.api.platform_dependencies import get_platform_storage
 from src.api.routers import artifacts, catalog, checkpoints, datasets, exports, jobs, platform_datasets, runs
 from src.api.routes import router
 from src.attacks import load_attacks
@@ -25,7 +26,7 @@ from src.config import get_settings
 from src.core.registry import UnknownPluginError
 from src.datasets import load_datasets
 from src.datasets.base import AnonymizationRequiredError
-from src.demo_bootstrap import ensure_demo_checkpoint
+from src.demo_bootstrap import ensure_demo_checkpoint, ensure_demo_kitti
 
 SIMULATION_BANNER = "SIMULATION ONLY — chưa validate, không dùng để quyết định triển khai"
 
@@ -41,6 +42,16 @@ async def lifespan(app: FastAPI):
             model_id=settings.bootstrap_demo_model_id,
         )
         print(f"Demo checkpoint ready: {checkpoint}")
+    if settings.bootstrap_demo_kitti:
+        kitti_root = ensure_demo_kitti(
+            enabled=True,
+            storage=get_platform_storage(),
+            storage_prefix=settings.demo_kitti_storage_prefix,
+            data_root=settings.data_root,
+        )
+        if kitti_root is not None:
+            os.environ["ADVERTEST_KITTI_ROOT"] = str(kitti_root)
+            print(f"Demo KITTI ready: {kitti_root}")
     attacks, models, datasets = load_attacks(), load_adapters(), load_datasets()
     print(
         f"Starting {settings.app_name} in {settings.app_env} mode — "

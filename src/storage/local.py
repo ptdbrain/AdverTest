@@ -44,6 +44,14 @@ class LocalArtifactStorage:
             sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
         )
 
+    def list_keys(self, prefix: str) -> list[str]:
+        root = self._path_for(prefix)
+        if root.is_file():
+            return [prefix]
+        if not root.is_dir():
+            return []
+        return [path.relative_to(self._root).as_posix() for path in root.rglob("*") if path.is_file()]
+
     def signed_download_url(self, key: str, expires_seconds: int) -> str:
         del expires_seconds
         return f"local://{key}"

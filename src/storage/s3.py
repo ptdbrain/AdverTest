@@ -69,6 +69,13 @@ class S3CompatibleStorage:
             sha256=response.get("Metadata", {}).get("sha256"),
         )
 
+    def list_keys(self, prefix: str) -> list[str]:
+        keys: list[str] = []
+        paginator = self._client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+            keys.extend(item["Key"] for item in page.get("Contents", []))
+        return keys
+
     def signed_download_url(self, key: str, expires_seconds: int) -> str:
         return self._client.generate_presigned_url(
             "get_object", Params={"Bucket": self._bucket, "Key": key}, ExpiresIn=expires_seconds

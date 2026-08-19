@@ -1,6 +1,8 @@
 from pathlib import Path
 
+from src.demo_bootstrap import ensure_demo_kitti
 from src.models.versions import scan_base_checkpoints
+from src.storage.local import LocalArtifactStorage
 
 
 def test_scan_base_checkpoints_accepts_yolo11n(tmp_path: Path) -> None:
@@ -13,3 +15,20 @@ def test_scan_base_checkpoints_accepts_yolo11n(tmp_path: Path) -> None:
     assert [(item.id, item.model_name, item.model_family_id) for item in versions] == [
         ("yolo11n-base", "yolo11n", "yolo11")
     ]
+
+
+def test_bootstrap_demo_kitti_requires_and_materializes_anonymized_export(tmp_path: Path) -> None:
+    storage = LocalArtifactStorage(str(tmp_path / "objects"))
+    prefix = "catalog/datasets/kitti/v1/anonymized/kitti-de/"
+    storage.put_bytes(f"{prefix}dataset.json", b'{"anonymized": true}', mime_type="application/json")
+    storage.put_bytes(f"{prefix}manifest.jsonl", b'{"sample_id": "000000"}\n', mime_type="application/json")
+    storage.put_bytes(f"{prefix}image_2/000000.png", b"demo-image", mime_type="image/png")
+    storage.put_bytes(f"{prefix}label_2/000000.txt", b"", mime_type="text/plain")
+
+    root = ensure_demo_kitti(
+        enabled=True, storage=storage, storage_prefix=prefix, data_root=str(tmp_path / "data")
+    )
+
+    assert root == tmp_path / "data" / "anonymized" / "kitti-de"
+    assert (root / "manifest.jsonl").is_file()
+    assert (root / "image_2" / "000000.png").read_bytes() == b"demo-image"
