@@ -9,7 +9,7 @@ services:
     plan: free
     dockerfilePath: ./frontend/Dockerfile
     dockerContext: ./frontend
-    dockerCommand: sh -c 'npm run start -- -p ${PORT:-10000}'
+    dockerCommand: npm run start -- -p 10000
     healthCheckPath: /
     envVars:
       - key: NEXT_PUBLIC_API_URL
@@ -24,7 +24,7 @@ services:
     dockerContext: .
     # Free Render services cannot use preDeployCommand. The single demo API
     # instance applies migrations before serving requests instead.
-    dockerCommand: sh -c 'alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 10000'
+    dockerCommand: sh deploy/start-api-free.sh
     healthCheckPath: /health
     envVars:
       - key: APP_ENV
