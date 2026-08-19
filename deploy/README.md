@@ -1,13 +1,13 @@
 # Platform deployment
 
-`render.yaml` provisions a frontend web service, an API web service, a
-Redis-compatible background worker queue, a persistent PostgreSQL database,
-and a separate worker process. The API and worker reference the same private
-Render Postgres/Key Value URLs.
+`render-production.yaml` provisions a frontend web service, an API web
+service, a Redis-compatible background worker queue, a persistent PostgreSQL
+database, and a separate worker process. The API and worker reference the
+same private Render Postgres/Key Value URLs.
 
 ## Free Render preview
 
-Use `render-free.yaml` for a short-lived, no-card preview. It provisions only
+`render.yaml` is a short-lived, no-card preview configuration. It provisions only
 Free-supported services: the frontend, one API instance, and a Free Postgres
 database. The API runs platform jobs in a bounded in-process queue, so a job
 only runs while the API is awake; it is not a production worker replacement.
@@ -15,7 +15,8 @@ It does not provision Redis or a background worker. Free Postgres expires
 after 30 days, and Free web services can spin down when idle. Keep artifacts
 in the configured object bucket, never on Render's local filesystem.
 
-When creating the Blueprint, select `render-free.yaml` and supply:
+When creating the Blueprint, use the repository's default `render.yaml` and
+supply:
 
 ```text
 OBJECT_STORAGE_BUCKET=<your private GCS bucket>
