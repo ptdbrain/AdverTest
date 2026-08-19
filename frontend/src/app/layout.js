@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Script from "next/script";
 import ThemeToggle from "@/components/ThemeToggle";
 import "./globals.css";
 
@@ -12,6 +13,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="vi" suppressHydrationWarning>
       <head>
+        <Script src="/runtime-config.js" strategy="beforeInteractive" />
         <script
           dangerouslySetInnerHTML={{
             __html: `

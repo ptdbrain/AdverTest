@@ -9,6 +9,7 @@ import {
   getFailureClusters,
   createFailureCluster,
   createDefenseProfile,
+  getApiBase,
 } from "@/lib/api";
 
 export default function ReviewPage() {
@@ -68,7 +69,7 @@ export default function ReviewPage() {
     getRunSamples(selectedReview.run_id)
       .then((samples) => {
         if (ignore) return;
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+        const apiBase = getApiBase();
         const artifactUrl = (value) => value ? new URL(value, `${apiBase.replace(/\/$/, "")}/`).href : null;
         setReviewSamples(
           samples.map((s) => ({

@@ -12,4 +12,4 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app ./
 EXPOSE 3000
-CMD ["npm", "run", "start", "--", "-p", "3000"]
+CMD ["sh", "deploy/start-frontend.sh"]

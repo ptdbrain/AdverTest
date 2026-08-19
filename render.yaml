@@ -11,7 +11,7 @@ services:
     plan: free
     dockerfilePath: ./frontend/Dockerfile
     dockerContext: ./frontend
-    dockerCommand: npm run start -- -p 10000
+    dockerCommand: sh deploy/start-frontend.sh
     healthCheckPath: /
     envVars:
       - key: NEXT_PUBLIC_API_URL
