@@ -25,6 +25,7 @@ from src.config import get_settings
 from src.core.registry import UnknownPluginError
 from src.datasets import load_datasets
 from src.datasets.base import AnonymizationRequiredError
+from src.demo_bootstrap import ensure_demo_checkpoint
 
 SIMULATION_BANNER = "SIMULATION ONLY — chưa validate, không dùng để quyết định triển khai"
 
@@ -33,6 +34,13 @@ SIMULATION_BANNER = "SIMULATION ONLY — chưa validate, không dùng để quy�
 async def lifespan(app: FastAPI):
     """Load every plugin once at start-up so the catalog is ready to serve."""
     settings = get_settings()
+    if settings.bootstrap_demo_model:
+        checkpoint = ensure_demo_checkpoint(
+            enabled=True,
+            checkpoint_root=settings.checkpoint_root,
+            model_id=settings.bootstrap_demo_model_id,
+        )
+        print(f"Demo checkpoint ready: {checkpoint}")
     attacks, models, datasets = load_attacks(), load_adapters(), load_datasets()
     print(
         f"Starting {settings.app_name} in {settings.app_env} mode — "

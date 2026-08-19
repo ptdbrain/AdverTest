@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     checkpoint_sandbox_token: str | None = None
     external_gpu_worker_url: str | None = None
     external_gpu_worker_token: str | None = None
+    # Demo-only bootstrap: downloads a fixed, vendor-maintained checkpoint into
+    # the disposable runtime filesystem. User uploads never use this path.
+    bootstrap_demo_model: bool = False
+    bootstrap_demo_model_id: Literal["yolo11n"] = "yolo11n"
 
     # Execution hardware defaults
     model_device: str = "cpu"

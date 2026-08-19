@@ -298,18 +298,21 @@ def list_known_versions() -> list[ModelVersion]:
 
 def scan_base_checkpoints(root: Path) -> list[ModelVersion]:
     """Register only vendor/base weights kept outside training-run lineage."""
-    checkpoint = root / "surrogates" / "yolo11s.pt"
-    if not checkpoint.is_file():
-        return []
-    return [ModelVersion(
-        id="yolo11s-base",
-        model_name="yolo11s",
-        task="detection2d",
-        checkpoint_path=str(checkpoint.resolve()),
-        checkpoint_hash=_file_sha256(checkpoint),
-        parent_id=None,
-        training_metadata={"source": "vendor_base", "role": "base"},
-        runnable=True,
-        model_family_id="yolo11",
-        checkpoint_role="base",
-    )]
+    versions: list[ModelVersion] = []
+    for model_id in ("yolo11n", "yolo11s"):
+        checkpoint = root / "surrogates" / f"{model_id}.pt"
+        if not checkpoint.is_file():
+            continue
+        versions.append(ModelVersion(
+            id=f"{model_id}-base",
+            model_name=model_id,
+            task="detection2d",
+            checkpoint_path=str(checkpoint.resolve()),
+            checkpoint_hash=_file_sha256(checkpoint),
+            parent_id=None,
+            training_metadata={"source": "vendor_base", "role": "base"},
+            runnable=True,
+            model_family_id="yolo11",
+            checkpoint_role="base",
+        ))
+    return versions
