@@ -204,6 +204,8 @@ class YoloTrainer(ModelTrainer):
                 resolved = None
                 search_roots = [
                     base_weights_path.parent,
+                    Path("checkpoints/surrogates"),
+                    Path("data/checkpoints/surrogates"),
                     Path("runs/train/yolo_b0"),
                     Path("runs/train"),
                     Path("runs"),

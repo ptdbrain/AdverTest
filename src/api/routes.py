@@ -832,7 +832,9 @@ async def list_base_checkpoints(
     return [
         ModelVersionOut.from_domain(version)
         for version in _registered_model_versions()
-        if version.task == task_id and version.model_family_id == model_family_id and version.checkpoint_role == "base"
+        if version.task == task_id
+        and version.model_family_id == model_family_id
+        and (version.runnable or version.checkpoint_role == "base")
     ]
 
 

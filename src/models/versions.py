@@ -300,6 +300,14 @@ def scan_base_checkpoints(root: Path) -> list[ModelVersion]:
     """Register only vendor/base weights kept outside training-run lineage."""
     checkpoint = root / "surrogates" / "yolo11s.pt"
     if not checkpoint.is_file():
+        alt = root.parent / "checkpoints" / "surrogates" / "yolo11s.pt"
+        if alt.is_file():
+            checkpoint = alt
+        else:
+            alt2 = Path("checkpoints/surrogates/yolo11s.pt").resolve()
+            if alt2.is_file():
+                checkpoint = alt2
+    if not checkpoint.is_file():
         return []
     return [ModelVersion(
         id="yolo11s-base",
