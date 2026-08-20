@@ -9,6 +9,7 @@ export default function ThemeToggle({ className = "", compact = false }) {
     try {
       const saved = localStorage.getItem("theme");
       const initial = saved || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTheme(initial);
       document.documentElement.setAttribute("data-theme", initial);
     } catch {

@@ -64,6 +64,7 @@ export default function HomePage() {
       if (saved) {
         const parsed = Number(saved);
         if (parsed >= 15 && parsed <= 30) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setConfigWidth(parsed);
         }
       }
