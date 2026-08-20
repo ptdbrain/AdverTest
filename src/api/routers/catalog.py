@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Query
+
 from src.adapters import load_adapters
-from src.datasets import load_datasets
-from src.attacks import load_attacks
-from src.api.schemas.catalog import ModelCatalogItem, AttackCatalogItem, DatasetCatalogItem
 from src.api.routes import _attack_catalog_availability
+from src.api.schemas.catalog import AttackCatalogItem, DatasetCatalogItem, ModelCatalogItem
+from src.attacks import load_attacks
+from src.datasets import load_datasets
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
 
@@ -29,7 +30,7 @@ async def list_attacks(
     for field, wanted in (("threat_model", threat_model), ("attack_type", attack_type), ("scenario_kind", scenario_kind)):
         if wanted is not None:
             items = [item for item in items if item.get(field) == wanted]
-    
+
     availability = _attack_catalog_availability(
         task_id=task_id,
         model_family_id=model_family_id,
@@ -42,7 +43,7 @@ async def list_attacks(
             reasons = (unavailable_reason,) if unavailable_reason else exclusions.get(item["name"], ())
             item["available"] = not reasons
             item["reason"] = ", ".join(reasons) if reasons else None
-            
+
     return [AttackCatalogItem(**item) for item in items]
 
 @router.get("/models", response_model=list[ModelCatalogItem])

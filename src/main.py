@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from src.adapters import load_adapters
+from src.api.routers import catalog, datasets, runs
 from src.api.routes import router
 from src.attacks import load_attacks
 from src.config import get_settings
@@ -60,7 +61,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from src.api.routers import catalog, runs, datasets
 
 app.include_router(catalog.router, prefix="/api/v1")
 app.include_router(runs.router, prefix="/api/v1")
