@@ -323,9 +323,7 @@ def scan_base_checkpoints(root: Path) -> list[ModelVersion]:
 def _resolve_surrogate_checkpoint(root: Path, model_id: str) -> Path | None:
     candidates = (
         root / "surrogates" / f"{model_id}.pt",
-        root.parent / "checkpoints" / "surrogates" / f"{model_id}.pt",
-        Path("checkpoints/surrogates") / f"{model_id}.pt",
-        Path("checkpoints") / f"{model_id}.pt",
+        root / f"{model_id}.pt",
     )
     for candidate in candidates:
         if candidate.is_file():

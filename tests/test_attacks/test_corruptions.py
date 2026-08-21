@@ -36,7 +36,8 @@ CORRUPTIONS = (
 def test_all_group_a_plugins_are_registered() -> None:
     catalog = load_attacks()
     assert all(name in catalog for name in CORRUPTIONS)
-    assert len([attack for attack in catalog.values() if attack.group == "A"]) == 19
+    assert "lidar_xyz_noise" in catalog
+    assert len([attack for attack in catalog.values() if attack.group == "A"]) == len(CORRUPTIONS) + 1
 
 
 def test_imagecorruptions_restores_global_rng_state() -> None:
