@@ -1,6 +1,46 @@
 version: "3.8"
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: advertest
+      POSTGRES_USER: advertest
+      POSTGRES_PASSWORD: advertest-local-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U advertest -d advertest"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: advertest-local
+      MINIO_ROOT_PASSWORD: advertest-local-only
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "until mc alias set local http://minio:9000 advertest-local advertest-local-only; do sleep 1; done &&
+      mc mb --ignore-existing local/advertest-artifacts"
+
   backend:
     build:
       context: .
@@ -9,12 +49,54 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      PLATFORM_DATABASE_URL: postgresql+psycopg://advertest:advertest-local-only@postgres:5432/advertest
+      QUEUE_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+      OBJECT_STORAGE_BACKEND: s3
+      OBJECT_STORAGE_BUCKET: advertest-artifacts
+      OBJECT_STORAGE_ENDPOINT_URL: http://minio:9000
+      OBJECT_STORAGE_REGION: us-east-1
+      OBJECT_STORAGE_ACCESS_KEY_ID: advertest-local
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: advertest-local-only
     volumes:
       - ./data:/app/data
       - ./runs:/app/runs:ro
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m src.platform_worker
+    environment:
+      APP_ENV: development
+      PLATFORM_DATABASE_URL: postgresql+psycopg://advertest:advertest-local-only@postgres:5432/advertest
+      QUEUE_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+      OBJECT_STORAGE_BACKEND: s3
+      OBJECT_STORAGE_BUCKET: advertest-artifacts
+      OBJECT_STORAGE_ENDPOINT_URL: http://minio:9000
+      OBJECT_STORAGE_REGION: us-east-1
+      OBJECT_STORAGE_ACCESS_KEY_ID: advertest-local
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: advertest-local-only
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    restart: unless-stopped

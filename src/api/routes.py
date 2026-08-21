@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
-import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -16,37 +14,24 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from PIL import Image, UnidentifiedImageError
 
-from src.adapters import get_adapter, load_adapters
+from src.adapters import get_adapter
 from src.api.checkpoint_service import CheckpointValidationService
 from src.api.generated_dataset_service import GeneratedDatasetService
-from src.api.ingestion_validation import summarize_batch, validate_annotation
 from src.api.jobs import LocalRunWorker, SqliteRunStore
 from src.api.schemas import (
-    AnnotationDocument,
-    AttackCatalogItem,
     ClosedLoopAdvanceIn,
     ClosedLoopSnapshotOut,
     ClosedLoopStartIn,
-    CostEstimateOut,
     CreateReviewIn,
-    DatasetCatalogItem,
-    DatasetImportIn,
     DefenceRunIn,
     EvidenceStatusOut,
     FailureClusterCreateIn,
-    GeneratedDatasetCreateIn,
-    GeneratedDatasetEventsOut,
     GeneratedDatasetJobOut,
-    GeneratedDatasetManifestOut,
-    GeneratedDatasetValidationOut,
-    GeneratedDatasetVariantsOut,
     LineageGraphOut,
-    ModelCatalogItem,
     ModelComparisonIn,
     ModelFamilyOut,
     ModelVersionOut,
     PerceptionModeOut,
-    PreflightOut,
     QuickInferenceIn,
     RecipePreviewIn,
     RecipeRandomizeIn,
@@ -61,18 +46,14 @@ from src.api.schemas import (
     RunJobOut,
     RunReportOut,
     TrainingRunIn,
-    UploadBatchCreateIn,
-    ValidationSummary,
 )
 from src.api.training_service import TrainingJobService
 from src.api.workflow_store import WorkflowJobStore
 from src.attacks import ATTACK_CATALOG, load_attacks
 from src.attacks.recipes import RecipeBuilder
-from src.config import PROJECT_ROOT, get_settings
+from src.config import get_settings
 from src.core.hashing import stable_digest
 from src.datasets import load_datasets
-from src.datasets.folder import FolderDataset
-from src.datasets.versioning import DatasetIngestor, IngestConfig
 from src.evaluation.export import export_comparison
 from src.models import list_known_versions, scan_base_checkpoints, scan_model_artifacts
 from src.models.families import FAMILIES, adapter_request, approved_model_config
@@ -774,7 +755,12 @@ async def get_benchmark_failures(run_id: str) -> dict[str, Any]:
 @router.post("/benchmark-runs/{run_id}/cancel", response_model=RunJobOut)
 async def cancel_benchmark_run(run_id: str) -> RunJobOut:
     """Cancel a running benchmark job."""
-    return await cancel_run(run_id)
+    record = _require_run(run_id)
+    if record["status"] not in ("COMPLETED", "FAILED", "CANCELLED"):
+        _store.request_cancel(run_id)
+        if record["status"] == "QUEUED":
+            _store.fail(run_id, "Cancelled by user", cancelled=True)
+    return _job_out(_store.get(run_id))
 
 
 @router.websocket("/benchmark-runs/{run_id}/events/ws")

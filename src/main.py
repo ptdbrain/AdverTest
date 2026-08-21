@@ -18,12 +18,15 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from src.adapters import load_adapters
+from src.api.platform_dependencies import get_platform_storage
+from src.api.routers import artifacts, catalog, checkpoints, datasets, exports, jobs, platform_datasets, runs
 from src.api.routes import router
 from src.attacks import load_attacks
 from src.config import get_settings
 from src.core.registry import UnknownPluginError
 from src.datasets import load_datasets
 from src.datasets.base import AnonymizationRequiredError
+from src.demo_bootstrap import ensure_demo_checkpoint, ensure_demo_kitti
 
 SIMULATION_BANNER = "SIMULATION ONLY — chưa validate, không dùng để quyết định triển khai"
 
@@ -32,6 +35,27 @@ SIMULATION_BANNER = "SIMULATION ONLY — chưa validate, không dùng để quy�
 async def lifespan(app: FastAPI):
     """Load every plugin once at start-up so the catalog is ready to serve."""
     settings = get_settings()
+    storage = None
+    if settings.bootstrap_demo_model:
+        storage = get_platform_storage()
+        checkpoint = ensure_demo_checkpoint(
+            enabled=True,
+            checkpoint_root=settings.checkpoint_root,
+            model_id=settings.bootstrap_demo_model_id,
+            storage=storage,
+            storage_key=settings.demo_model_storage_key,
+        )
+        print(f"Demo checkpoint ready: {checkpoint}")
+    if settings.bootstrap_demo_kitti:
+        kitti_root = ensure_demo_kitti(
+            enabled=True,
+            storage=storage or get_platform_storage(),
+            storage_prefix=settings.demo_kitti_storage_prefix,
+            data_root=settings.data_root,
+        )
+        if kitti_root is not None:
+            os.environ["ADVERTEST_KITTI_ROOT"] = str(kitti_root)
+            print(f"Demo KITTI ready: {kitti_root}")
     attacks, models, datasets = load_attacks(), load_adapters(), load_datasets()
     print(
         f"Starting {settings.app_name} in {settings.app_env} mode — "
@@ -60,11 +84,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from src.api.routers import catalog, runs, datasets
-
 app.include_router(catalog.router, prefix="/api/v1")
 app.include_router(runs.router, prefix="/api/v1")
 app.include_router(datasets.router, prefix="/api/v1")
+app.include_router(artifacts.router, prefix="/api/v1")
+app.include_router(checkpoints.router, prefix="/api/v1")
+app.include_router(jobs.router, prefix="/api/v1")
+app.include_router(exports.router, prefix="/api/v1")
+app.include_router(platform_datasets.router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")
 app.mount("/data", StaticFiles(directory=str(data_root)), name="data")
 

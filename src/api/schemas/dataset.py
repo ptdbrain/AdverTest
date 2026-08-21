@@ -1,8 +1,10 @@
-from pydantic import BaseModel, Field, ConfigDict
 from typing import Any, Literal
-from src.core.types import Task, Modality
-from src.pipeline.generator import SurrogateConfig
+
+from pydantic import BaseModel, ConfigDict, Field
+
 from src.api.schemas import ValidationSummary
+from src.core.types import Modality, Task
+from src.pipeline.generator import SurrogateConfig
 
 DatasetKind = Literal["clean", "attacked_standalone", "attacked_paired"]
 

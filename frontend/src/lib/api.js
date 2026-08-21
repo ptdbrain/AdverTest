@@ -1,7 +1,19 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const BUILD_TIME_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+// `NEXT_PUBLIC_*` is normally inlined by Next.js at build time.  The Render
+// Docker service is configured at runtime, so let its entrypoint provide an
+// optional public runtime value instead.  This also keeps local development
+// working without a runtime-config.js file.
+export function getApiBase() {
+  if (typeof window !== "undefined") {
+    const runtimeBase = window.__ADVERTEST_RUNTIME_CONFIG__?.apiUrl;
+    if (runtimeBase) return runtimeBase.replace(/\/$/, "");
+  }
+  return BUILD_TIME_API_BASE.replace(/\/$/, "");
+}
 
 export async function apiFetch(path, options = {}) {
-  const url = `${API_BASE}${path}`;
+  const url = `${getApiBase()}${path}`;
   const res = await fetch(url, {
     headers: { "Content-Type": "application/json", ...options.headers },
     ...options,
@@ -92,7 +104,7 @@ export function cancelRun(runId) {
 }
 
 export function connectRunWebSocket(runId, onEvent) {
-  const wsBase = API_BASE.replace(/^http/, "ws");
+  const wsBase = getApiBase().replace(/^http/, "ws");
   const ws = new WebSocket(`${wsBase}/api/v1/runs/${runId}/events/ws`);
   ws.onmessage = (e) => {
     try {
@@ -282,7 +294,7 @@ export function finalizeUploadBatch(batchId) {
 export function uploadImage(file, batchId = null, taskId = "detection2d", sampleId = null, onProgress = null) {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
-    request.open("POST", `${API_BASE}/api/v1/uploads/images`);
+    request.open("POST", `${getApiBase()}/api/v1/uploads/images`);
     request.setRequestHeader("Content-Type", "application/octet-stream");
     request.setRequestHeader("x-filename", file.name);
     request.setRequestHeader("x-task-id", taskId);
@@ -305,7 +317,7 @@ export function uploadImage(file, batchId = null, taskId = "detection2d", sample
 export function uploadCheckpoint(file, { taskId, familyId, displayName, role = "base", parentCheckpointId = null, trainingDatasetVersionId = null } = {}, onProgress = null) {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
-    request.open("POST", `${API_BASE}/api/v1/checkpoints/uploads`);
+    request.open("POST", `${getApiBase()}/api/v1/checkpoints/uploads`);
     request.setRequestHeader("Content-Type", "application/octet-stream");
     request.setRequestHeader("x-filename", file.name);
     request.setRequestHeader("x-task-id", taskId || "");

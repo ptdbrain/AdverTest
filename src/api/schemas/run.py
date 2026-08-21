@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, ConfigDict, model_validator
 from typing import Any
-from src.core.types import Task
+
+from pydantic import BaseModel, Field
+
 
 class CostEstimateOut(BaseModel):
     n_cells: int

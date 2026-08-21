@@ -298,26 +298,36 @@ def list_known_versions() -> list[ModelVersion]:
 
 def scan_base_checkpoints(root: Path) -> list[ModelVersion]:
     """Register only vendor/base weights kept outside training-run lineage."""
-    checkpoint = root / "surrogates" / "yolo11s.pt"
-    if not checkpoint.is_file():
-        alt = root.parent / "checkpoints" / "surrogates" / "yolo11s.pt"
-        if alt.is_file():
-            checkpoint = alt
-        else:
-            alt2 = Path("checkpoints/surrogates/yolo11s.pt").resolve()
-            if alt2.is_file():
-                checkpoint = alt2
-    if not checkpoint.is_file():
-        return []
-    return [ModelVersion(
-        id="yolo11s-base",
-        model_name="yolo11s",
-        task="detection2d",
-        checkpoint_path=str(checkpoint.resolve()),
-        checkpoint_hash=_file_sha256(checkpoint),
-        parent_id=None,
-        training_metadata={"source": "vendor_base", "role": "base"},
-        runnable=True,
-        model_family_id="yolo11",
-        checkpoint_role="base",
-    )]
+    versions: list[ModelVersion] = []
+    for model_id in ("yolo11n", "yolo11s"):
+        checkpoint = _resolve_surrogate_checkpoint(root, model_id)
+        if checkpoint is None:
+            continue
+        versions.append(
+            ModelVersion(
+                id=f"{model_id}-base",
+                model_name=model_id,
+                task="detection2d",
+                checkpoint_path=str(checkpoint.resolve()),
+                checkpoint_hash=_file_sha256(checkpoint),
+                parent_id=None,
+                training_metadata={"source": "vendor_base", "role": "base"},
+                runnable=True,
+                model_family_id="yolo11",
+                checkpoint_role="base",
+            )
+        )
+    return versions
+
+
+def _resolve_surrogate_checkpoint(root: Path, model_id: str) -> Path | None:
+    candidates = (
+        root / "surrogates" / f"{model_id}.pt",
+        root.parent / "checkpoints" / "surrogates" / f"{model_id}.pt",
+        Path("checkpoints/surrogates") / f"{model_id}.pt",
+        Path("checkpoints") / f"{model_id}.pt",
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    return None

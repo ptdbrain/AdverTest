@@ -5,6 +5,7 @@ import {
   createRetrainingBacklog, addRetrainingBacklogItem,
   estimateRun, preflightRun, randomizeRecipe as randomizeRecipeRequest,
   sweepRecipe as sweepRecipeRequest, previewRecipe as previewRecipeRequest, getRecipePresets, createModelComparison,
+  getApiBase,
 } from "@/lib/api";
 
 const TERMINAL_STATES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
@@ -66,7 +67,7 @@ const FALLBACK_REPORT = {
 function artifactUrl(value) {
   if (!value) return null;
   if (/^https?:\/\//i.test(value)) return value;
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiBase = getApiBase();
   return new URL(value, `${apiBase.replace(/\/$/, "")}/`).href;
 }
 

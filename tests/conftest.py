@@ -29,7 +29,7 @@ async def client(tmp_path, monkeypatch):
 
     for path in (artifact_root, runs_root, temp_root, static_root, checkpoint_root):
         path.mkdir(parents=True, exist_ok=True)
-    
+
     surrogates_dir = checkpoint_root / "surrogates"
     surrogates_dir.mkdir(parents=True, exist_ok=True)
     (surrogates_dir / "yolo11s.pt").write_bytes(b"mock weights")
@@ -47,12 +47,12 @@ async def client(tmp_path, monkeypatch):
     monkeypatch.setenv("CORS_ORIGINS", "http://test,http://127.0.0.1:3000")
     get_settings.cache_clear()
 
-    import src.api.routes as routes_module
-    import src.main as main_module
     import src.api.dependencies as deps_module
     import src.api.routers.catalog as catalog_module
-    import src.api.routers.runs as runs_module
     import src.api.routers.datasets as datasets_module
+    import src.api.routers.runs as runs_module
+    import src.api.routes as routes_module
+    import src.main as main_module
 
     deps_module.get_store.cache_clear()
     deps_module.get_worker.cache_clear()
