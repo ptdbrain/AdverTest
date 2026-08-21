@@ -54,8 +54,11 @@ class Settings(BaseSettings):
     object_storage_access_key_id: str | None = None
     object_storage_secret_access_key: str | None = None
     object_storage_signed_url_ttl_seconds: int = Field(default=900, ge=60, le=86_400)
-    queue_backend: Literal["local", "redis"] = "local"
+    queue_backend: Literal["local", "redis", "http_dispatcher"] = "local"
     redis_url: str | None = None
+    external_queue_dispatch_url: str | None = None
+    external_queue_dispatch_token: str | None = None
+    gcp_pubsub_subscription: str | None = None
     platform_worker_poll_seconds: float = Field(default=1.0, gt=0.0, le=60.0)
     checkpoint_validation_timeout_seconds: int = Field(default=120, ge=5, le=3600)
     checkpoint_validation_memory_mb: int = Field(default=2048, ge=128, le=65_536)

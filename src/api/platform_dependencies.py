@@ -9,7 +9,7 @@ from fastapi import Header, HTTPException
 from src.api.checkpoint_service import PlatformCheckpointService
 from src.compute.backends import ExternalGPUWorker, LocalWorker, RenderWorker
 from src.config import get_settings
-from src.jobs.queue import LocalJobQueue, RedisJobQueue
+from src.jobs.queue import HttpDispatcherQueue, LocalJobQueue, RedisJobQueue
 from src.jobs.service import PlatformJobService
 from src.jobs.worker import PlatformWorker
 from src.persistence.database import PlatformDatabase
@@ -91,6 +91,10 @@ def get_platform_queue():
         if not settings.redis_url:
             raise RuntimeError("REDIS_URL is required when QUEUE_BACKEND=redis")
         return RedisJobQueue(settings.redis_url)
+    if settings.queue_backend == "http_dispatcher":
+        if not settings.external_queue_dispatch_url:
+            raise RuntimeError("EXTERNAL_QUEUE_DISPATCH_URL is required when QUEUE_BACKEND=http_dispatcher")
+        return HttpDispatcherQueue(settings.external_queue_dispatch_url, settings.external_queue_dispatch_token)
     return LocalJobQueue(get_platform_worker().process, settings.worker_max_concurrency)
 
 
@@ -98,7 +102,7 @@ def get_platform_queue():
 def get_platform_compute():
     settings = get_settings()
     queue = get_platform_queue()
-    if settings.external_gpu_worker_url:
+    if settings.external_gpu_worker_url or settings.queue_backend == "http_dispatcher":
         return ExternalGPUWorker(queue)
     if settings.queue_backend == "redis":
         return RenderWorker(queue)
