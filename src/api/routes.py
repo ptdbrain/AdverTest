@@ -58,40 +58,37 @@ from src.evaluation.export import export_comparison
 from src.models import list_known_versions, scan_base_checkpoints, scan_model_artifacts
 from src.models.families import FAMILIES, adapter_request, approved_model_config
 from src.models.versions import ModelVersion
+from src.api.dependencies import (
+    get_checkpoint_validations,
+    get_dataset_import_workers,
+    get_generated_datasets,
+    get_runner,
+    get_store,
+    get_training_jobs,
+    get_worker,
+    get_workflow_store,
+)
 from src.pipeline import RunConfig, TestRunner
 from src.services.person_d import PersonDServices
-from src.training.contracts import DefenseProfile, TrainingRunConfig
-
 router = APIRouter()
-_runner = TestRunner()
-_store = SqliteRunStore(get_settings().database_url)
-_worker = LocalRunWorker(_store, max_workers=get_settings().worker_max_concurrency)
-_workflow_store = WorkflowJobStore(get_settings().database_url)
-_training_jobs = TrainingJobService(
-    _workflow_store,
-    PersonDServices.default().training.registry,
-    max_workers=get_settings().worker_max_concurrency,
-)
-_generated_datasets = GeneratedDatasetService(
-    _workflow_store,
-    _store,
-    get_settings().artifact_root,
-    max_workers=get_settings().worker_max_concurrency,
-)
-_checkpoint_validations = CheckpointValidationService(
-    _store,
-    _workflow_store,
-    max_workers=get_settings().worker_max_concurrency,
-)
-_dataset_import_workers = ThreadPoolExecutor(
-    max_workers=get_settings().worker_max_concurrency,
-    thread_name_prefix="dataset-import",
-)
-_generated_datasets.recover()
-for _run_id, _config in _store.recoverable():
-    _worker.enqueue(_run_id, _config)
-_training_jobs.recover()
-_checkpoint_validations.recover()
+
+
+class _DynamicDependencyProxy:
+    def __init__(self, getter):
+        self._getter = getter
+
+    def __getattr__(self, name: str):
+        return getattr(self._getter(), name)
+
+
+_runner = _DynamicDependencyProxy(get_runner)
+_store = _DynamicDependencyProxy(get_store)
+_worker = _DynamicDependencyProxy(get_worker)
+_workflow_store = _DynamicDependencyProxy(get_workflow_store)
+_training_jobs = _DynamicDependencyProxy(get_training_jobs)
+_generated_datasets = _DynamicDependencyProxy(get_generated_datasets)
+_checkpoint_validations = _DynamicDependencyProxy(get_checkpoint_validations)
+_dataset_import_workers = _DynamicDependencyProxy(get_dataset_import_workers)
 
 
 def _validate_uploaded_image(payload: bytes) -> tuple[str, tuple[int, int]]:

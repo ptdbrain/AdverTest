@@ -51,6 +51,8 @@ async def client(tmp_path, monkeypatch):
     import src.api.routers.catalog as catalog_module
     import src.api.routers.datasets as datasets_module
     import src.api.routers.runs as runs_module
+    import src.api.routers.defence as defence_module
+    import src.api.routers.analytics as analytics_module
     import src.api.routes as routes_module
     import src.main as main_module
 
@@ -60,12 +62,18 @@ async def client(tmp_path, monkeypatch):
         deps_module.get_workflow_store.cache_clear()
     if hasattr(deps_module, 'get_generated_datasets'):
         deps_module.get_generated_datasets.cache_clear()
+    if hasattr(deps_module, 'get_training_jobs'):
+        deps_module.get_training_jobs.cache_clear()
+    if hasattr(deps_module, 'get_checkpoint_validations'):
+        deps_module.get_checkpoint_validations.cache_clear()
 
     importlib.reload(deps_module)
     importlib.reload(routes_module)
     importlib.reload(catalog_module)
     importlib.reload(runs_module)
     importlib.reload(datasets_module)
+    importlib.reload(defence_module)
+    importlib.reload(analytics_module)
     main_module = importlib.reload(main_module)
 
     app = main_module.app
