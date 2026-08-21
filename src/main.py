@@ -60,11 +60,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from src.api.routers import catalog, runs, datasets
+from src.api.routers import analytics, catalog, datasets, defence, runs
 
 app.include_router(catalog.router, prefix="/api/v1")
 app.include_router(runs.router, prefix="/api/v1")
 app.include_router(datasets.router, prefix="/api/v1")
+app.include_router(defence.router, prefix="/api/v1")
+app.include_router(analytics.router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")
 app.mount("/data", StaticFiles(directory=str(data_root)), name="data")
 
