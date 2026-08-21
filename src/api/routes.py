@@ -70,6 +70,8 @@ from src.api.dependencies import (
 )
 from src.pipeline import RunConfig, TestRunner
 from src.services.person_d import PersonDServices
+from src.training.contracts import DefenseProfile, TrainingRunConfig
+
 router = APIRouter()
 
 

@@ -17,6 +17,8 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
+from src.adapters import load_adapters
+from src.api.platform_dependencies import get_platform_storage
 from src.api.routers import (
     analytics,
     artifacts,
@@ -29,6 +31,7 @@ from src.api.routers import (
     platform_datasets,
     runs,
 )
+from src.api.routes import router
 from src.attacks import load_attacks
 from src.config import get_settings
 from src.core.registry import UnknownPluginError
