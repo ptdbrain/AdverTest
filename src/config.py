@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     # the disposable runtime filesystem. User uploads never use this path.
     bootstrap_demo_model: bool = False
     bootstrap_demo_model_id: Literal["yolo11n"] = "yolo11n"
+    demo_model_storage_key: str = "catalog/models/yolo11n/v1/yolo11n.pt"
     bootstrap_demo_kitti: bool = False
     demo_kitti_storage_prefix: str = "catalog/datasets/kitti/v1/anonymized/kitti-de/"
 

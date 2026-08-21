@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.demo_bootstrap import ensure_demo_kitti
+from src.demo_bootstrap import ensure_demo_checkpoint, ensure_demo_kitti
 from src.models.versions import scan_base_checkpoints
 from src.storage.local import LocalArtifactStorage
 
@@ -15,6 +15,22 @@ def test_scan_base_checkpoints_accepts_yolo11n(tmp_path: Path) -> None:
     assert [(item.id, item.model_name, item.model_family_id) for item in versions] == [
         ("yolo11n-base", "yolo11n", "yolo11")
     ]
+
+
+def test_bootstrap_demo_checkpoint_fetches_fixed_storage_object(tmp_path: Path) -> None:
+    storage = LocalArtifactStorage(str(tmp_path / "objects"))
+    storage.put_bytes("catalog/models/yolo11n/v1/yolo11n.pt", b"trusted-weight", mime_type="application/octet-stream")
+
+    checkpoint = ensure_demo_checkpoint(
+        enabled=True,
+        checkpoint_root=str(tmp_path / "data" / "checkpoints"),
+        model_id="yolo11n",
+        storage=storage,
+        storage_key="catalog/models/yolo11n/v1/yolo11n.pt",
+    )
+
+    assert checkpoint is not None
+    assert checkpoint.read_bytes() == b"trusted-weight"
 
 
 def test_bootstrap_demo_kitti_requires_and_materializes_anonymized_export(tmp_path: Path) -> None:

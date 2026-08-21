@@ -8,29 +8,28 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import tempfile
 from pathlib import Path
 
 from src.storage.base import ArtifactStorage
 
 
-def ensure_demo_checkpoint(*, enabled: bool, checkpoint_root: str, model_id: str) -> Path | None:
+def ensure_demo_checkpoint(
+    *, enabled: bool, checkpoint_root: str, model_id: str, storage: ArtifactStorage, storage_key: str
+) -> Path | None:
+    """Fetch the fixed public checkpoint without importing a model framework."""
     if not enabled:
         return None
     target = Path(checkpoint_root).expanduser().resolve() / "surrogates" / f"{model_id}.pt"
     if target.is_file() and target.stat().st_size > 0:
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
-    # This identifier is a fixed allow-list entry, not caller controlled.
-    from ultralytics import YOLO
-
-    model = YOLO(f"{model_id}.pt")
-    source = Path(str(model.ckpt_path)).expanduser().resolve()
-    if not source.is_file() or source.stat().st_size <= 0:
+    # This fixed storage key is server configuration, never a user-supplied
+    # upload.  Avoid importing Ultralytics/PyTorch in the 512 MB API instance.
+    payload = storage.get_bytes(storage_key)
+    if not payload:
         raise RuntimeError("DEMO_CHECKPOINT_DOWNLOAD_FAILED")
-    if source != target:
-        shutil.copyfile(source, target)
+    target.write_bytes(payload)
     return target
 
 

@@ -35,17 +35,21 @@ SIMULATION_BANNER = "SIMULATION ONLY — chưa validate, không dùng để quy�
 async def lifespan(app: FastAPI):
     """Load every plugin once at start-up so the catalog is ready to serve."""
     settings = get_settings()
+    storage = None
     if settings.bootstrap_demo_model:
+        storage = get_platform_storage()
         checkpoint = ensure_demo_checkpoint(
             enabled=True,
             checkpoint_root=settings.checkpoint_root,
             model_id=settings.bootstrap_demo_model_id,
+            storage=storage,
+            storage_key=settings.demo_model_storage_key,
         )
         print(f"Demo checkpoint ready: {checkpoint}")
     if settings.bootstrap_demo_kitti:
         kitti_root = ensure_demo_kitti(
             enabled=True,
-            storage=get_platform_storage(),
+            storage=storage or get_platform_storage(),
             storage_prefix=settings.demo_kitti_storage_prefix,
             data_root=settings.data_root,
         )
