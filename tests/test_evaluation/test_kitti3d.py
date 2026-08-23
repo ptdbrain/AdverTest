@@ -1,7 +1,7 @@
 """Unit tests for the KITTI 3D evaluator."""
 
-import pytest
 import numpy as np
+import pytest
 
 from src.core.types import Box3D, DetectionPrediction, Sample
 from src.evaluation.kitti3d import Kitti3DEvaluator

@@ -1,7 +1,9 @@
 import numpy as np
 import pytest
+
 from src.core.types import Box3D
 from src.visualization.bev3d import render_bev
+
 
 @pytest.fixture
 def sample_points():

@@ -7,8 +7,9 @@ leakage-safe distributions (R1 Robust Mix, R2 Targeted Repair).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from src.training.contracts import DefenseProfile, SamplingStrategy
 

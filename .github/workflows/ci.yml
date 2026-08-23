@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
   pull_request:
-    branches: [main]
 
 jobs:
   lint-and-test:
@@ -33,7 +31,9 @@ jobs:
           APP_ENV: test
 
       - name: Run tests
-        run: uv run pytest tests/ -v --tb=short
+        # sys capture keeps pytest's capsys fixture available and avoids the
+        # temporary-file capture issue seen on mounted development volumes.
+        run: uv run pytest --capture=sys tests/ -v --tb=short
         env:
           APP_ENV: test
 

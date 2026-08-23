@@ -7,9 +7,8 @@ Computes recovery curves, class migrations, and granular failure state transitio
 
 from __future__ import annotations
 
-import math
-from collections import defaultdict
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from src.analytics.run_analytics import compute_run_classes_breakdown
 

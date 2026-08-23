@@ -13,7 +13,7 @@ from PIL import Image, UnidentifiedImageError
 from src.adapters import get_adapter
 from src.api.dependencies import get_store
 from src.api.jobs import SqliteRunStore
-from src.api.schemas import GeneratedDatasetJobOut, RunJobOut, RunReportOut
+from src.api.schemas import RunJobOut, RunReportOut
 from src.attacks import ATTACK_CATALOG, load_attacks
 from src.config import get_settings
 from src.datasets import load_datasets

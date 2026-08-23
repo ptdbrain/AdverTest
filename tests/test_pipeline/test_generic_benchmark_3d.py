@@ -24,7 +24,6 @@ from src.evaluation.kitti3d import Kitti3DEvaluator
 from src.pipeline.generic_benchmark import BenchmarkRunner
 from src.pipeline.protocol import BenchmarkProtocol
 
-
 # ---------------------------------------------------------------------------
 # Fake adapter that echoes GT as predictions
 # ---------------------------------------------------------------------------
