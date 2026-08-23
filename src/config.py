@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     checkpoint_sandbox_token: str | None = None
     external_gpu_worker_url: str | None = None
     external_gpu_worker_token: str | None = None
+    # Benchmark jobs normally use the lightweight local worker. Production can
+    # opt into the durable Postgres + dispatcher + GCE execution plane.
+    run_execution_backend: Literal["local", "platform"] = "local"
+    platform_default_project_id: str = "advertest-demo"
+    platform_default_user_id: str = "demo-user"
     # Demo-only bootstrap: downloads a fixed, vendor-maintained checkpoint into
     # the disposable runtime filesystem. User uploads never use this path.
     bootstrap_demo_model: bool = False

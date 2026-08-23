@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from src.api.checkpoint_service import PlatformCheckpointService
+from src.config import get_settings
 from src.jobs.service import PlatformJobService
+from src.pipeline.runner import RunConfig, TestRunner
 from src.storage.export_service import AttackedDatasetExportService
 
 
@@ -21,6 +23,7 @@ class PlatformWorker:
         self._jobs = jobs
         self._checkpoints = checkpoints
         self._exports = exports
+        self._runner = TestRunner()
 
     def process(self, job_id: str) -> None:
         job = self._jobs.request_for_worker(job_id)
@@ -57,4 +60,37 @@ class PlatformWorker:
             result = self._exports.run(project_id=job["project_id"], actor_id=job["owner_user_id"], request=job["request"])
             progress(stage="PERSISTING", completed=2, total=2, message="Export artifact stored")
             return result
+        if job["type"] == "benchmark_run":
+            config = RunConfig.model_validate(job["request"])
+            settings = get_settings()
+            if config.model == "yolo11":
+                adapter_params = dict(config.adapter_params)
+                adapter_params.update(
+                    {
+                        "device": settings.model_device,
+                        "half": settings.model_half_precision,
+                        "batch_size": settings.model_batch_size,
+                    }
+                )
+                config = config.model_copy(update={"adapter_params": adapter_params})
+
+            estimate = self._runner.estimate(config)
+            total = max(1, estimate.n_cells)
+
+            def run_progress(stage: str, detail: dict[str, Any]) -> None:
+                completed = int(detail.get("completed_cells", 0))
+                progress(
+                    stage=stage,
+                    completed=min(completed, total),
+                    total=total,
+                    message=str(detail.get("attack") or detail.get("phase") or stage),
+                )
+
+            report = self._runner.run(
+                config,
+                progress=run_progress,
+                should_cancel=lambda: self._jobs.cancel_requested(job["id"]),
+                run_id=job["id"],
+            )
+            return report.as_dict()
         raise ValueError("JOB_TYPE_UNSUPPORTED")

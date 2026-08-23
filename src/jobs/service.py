@@ -73,6 +73,20 @@ class PlatformJobService:
             )
             return _job_payload(record) if record else None
 
+    def list(self, project_id: str, *, job_type: str | None = None) -> list[dict[str, Any]]:
+        """List jobs for one project without exposing records from another."""
+        with self._database.session() as session:
+            statement = select(PlatformJobRecord).where(PlatformJobRecord.project_id == project_id)
+            if job_type is not None:
+                statement = statement.where(PlatformJobRecord.type == job_type)
+            records = session.scalars(statement.order_by(PlatformJobRecord.created_at.desc())).all()
+            return [_job_payload(record) for record in records]
+
+    def cancel_requested(self, job_id: str) -> bool:
+        with self._database.session() as session:
+            record = session.get(PlatformJobRecord, job_id)
+            return bool(record and record.cancel_requested)
+
     def request_for_worker(self, job_id: str) -> dict[str, Any] | None:
         with self._database.session() as session:
             record = session.get(PlatformJobRecord, job_id)

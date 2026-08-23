@@ -36,7 +36,7 @@
       {"key": "install-nvidia-driver", "value": "True"},
       {
         "key": "gce-container-declaration",
-        "value": "spec:\n  containers:\n  - name: advertest-gpu-worker\n    image: asia-southeast1-docker.pkg.dev/ai20k-build/advertest/gce-worker:4ec7e8c\n    env:\n    - name: GOOGLE_CLOUD_PROJECT\n      value: ai20k-build\n    - name: GCP_PUBSUB_SUBSCRIPTION\n      value: projects/ai20k-build/subscriptions/advertest-gce-worker\n    - name: OBJECT_STORAGE_BACKEND\n      value: s3\n    - name: OBJECT_STORAGE_BUCKET\n      value: advertest-prod-artifacts\n    - name: OBJECT_STORAGE_ENDPOINT_URL\n      value: https://storage.googleapis.com\n    - name: OBJECT_STORAGE_REGION\n      value: auto\n  restartPolicy: Always\n"
+        "value": "spec:\n  containers:\n  - name: advertest-gpu-worker\n    image: asia-southeast1-docker.pkg.dev/ai20k-build/advertest/gce-worker:gpu-dispatch-v1\n    env:\n    - name: GOOGLE_CLOUD_PROJECT\n      value: ai20k-build\n    - name: GCP_PUBSUB_SUBSCRIPTION\n      value: projects/ai20k-build/subscriptions/advertest-gce-worker\n    - name: MODEL_DEVICE\n      value: cuda:0\n    - name: MODEL_HALF_PRECISION\n      value: 'true'\n    - name: OBJECT_STORAGE_BACKEND\n      value: s3\n    - name: OBJECT_STORAGE_BUCKET\n      value: advertest-prod-artifacts\n    - name: OBJECT_STORAGE_ENDPOINT_URL\n      value: https://storage.googleapis.com\n    - name: OBJECT_STORAGE_REGION\n      value: auto\n  restartPolicy: Always\n"
       }
     ]
   }

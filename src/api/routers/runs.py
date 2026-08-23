@@ -3,14 +3,35 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.dependencies import get_runner, get_store, get_worker
 from src.api.jobs import LocalRunWorker, SqliteRunStore
+from src.api.platform_dependencies import get_platform_compute, get_platform_jobs
 from src.api.routes import _resolve_run_config
 from src.api.schemas.run import CostEstimateOut, PreflightOut, RunJobOut, RunReportOut
+from src.compute.backends import ComputeBackend
+from src.config import get_settings
+from src.jobs.service import PlatformJobService
 from src.pipeline.runner import RunConfig, TestRunner
 
 router = APIRouter(prefix="/runs", tags=["Runs"])
 
 def _job_out(record: dict) -> RunJobOut:
     return RunJobOut(**record)
+
+
+def _platform_job_out(job: dict) -> RunJobOut:
+    status = job["stage"] if job["status"] == "RUNNING" else job["status"]
+    detail = {"platform_job": True, "stage": job["stage"]}
+    return RunJobOut(
+        run_id=job["id"],
+        status=status,
+        progress=(job["completed_units"] / job["total_units"] if job["total_units"] else 0.0),
+        detail=detail,
+        report=job["result"],
+        error=job["error_message"],
+    )
+
+
+def _remote_enabled() -> bool:
+    return get_settings().run_execution_backend == "platform"
 
 @router.post("/estimate", response_model=CostEstimateOut)
 async def estimate_run(
@@ -38,13 +59,26 @@ async def create_run(
     config: RunConfig,
     runner: TestRunner = Depends(get_runner),
     store: SqliteRunStore = Depends(get_store),
-    worker: LocalRunWorker = Depends(get_worker)
+    worker: LocalRunWorker = Depends(get_worker),
+    platform_jobs: PlatformJobService = Depends(get_platform_jobs),
+    compute: ComputeBackend = Depends(get_platform_compute),
 ) -> RunJobOut:
     """Persist and enqueue a run. Heavy model work never runs in the request."""
     config = _resolve_run_config(config)
     preflight = runner.preflight(config)
     if preflight.fatal_errors:
         raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
+    if _remote_enabled():
+        settings = get_settings()
+        job = platform_jobs.create(
+            project_id=settings.platform_default_project_id,
+            owner_user_id=settings.platform_default_user_id,
+            job_type="benchmark_run",
+            request=config.model_dump(mode="json"),
+            total_units=max(1, runner.estimate(config).n_cells),
+        )
+        compute.dispatch(job["id"])
+        return _platform_job_out(job)
     run_id = store.create(config)
     worker.enqueue(run_id, config)
     return _job_out(store.get(run_id))
@@ -53,6 +87,11 @@ async def create_run(
 async def list_runs(
     store: SqliteRunStore = Depends(get_store)
 ) -> list[RunJobOut]:
+    if _remote_enabled():
+        settings = get_settings()
+        from src.api.platform_dependencies import get_platform_jobs as _get_platform_jobs
+
+        return [_platform_job_out(job) for job in _get_platform_jobs().list(settings.platform_default_project_id, job_type="benchmark_run")]
     return [_job_out(r) for r in store.list()]
 
 @router.get("/{run_id}", response_model=RunJobOut)
@@ -61,6 +100,13 @@ async def get_run(
     store: SqliteRunStore = Depends(get_store)
 ) -> RunJobOut:
     record = store.get(run_id)
+    if record is None and _remote_enabled():
+        settings = get_settings()
+        from src.api.platform_dependencies import get_platform_jobs as _get_platform_jobs
+
+        job = _get_platform_jobs().get(settings.platform_default_project_id, run_id)
+        if job is not None and job["type"] == "benchmark_run":
+            return _platform_job_out(job)
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
     return _job_out(record)
@@ -71,6 +117,13 @@ async def get_run_report(
     store: SqliteRunStore = Depends(get_store)
 ) -> RunReportOut:
     record = store.get(run_id)
+    if record is None and _remote_enabled():
+        settings = get_settings()
+        from src.api.platform_dependencies import get_platform_jobs as _get_platform_jobs
+
+        job = _get_platform_jobs().get(settings.platform_default_project_id, run_id)
+        if job is not None and job["type"] == "benchmark_run" and job["result"] is not None:
+            return RunReportOut(**job["result"])
     if not record:
         raise HTTPException(status_code=404)
     if "report" not in record:
@@ -83,6 +136,15 @@ async def cancel_run(
     store: SqliteRunStore = Depends(get_store),
 ) -> RunJobOut:
     record = store.get(run_id)
+    if record is None and _remote_enabled():
+        settings = get_settings()
+        from src.api.platform_dependencies import get_platform_jobs as _get_platform_jobs
+
+        jobs = _get_platform_jobs()
+        job = jobs.get(settings.platform_default_project_id, run_id)
+        if job is not None and job["type"] == "benchmark_run":
+            jobs.cancel(settings.platform_default_project_id, run_id)
+            return _platform_job_out(jobs.get(settings.platform_default_project_id, run_id))
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
     if record["status"] not in ("COMPLETED", "FAILED", "CANCELLED"):
