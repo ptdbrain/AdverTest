@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 from src.api.checkpoint_service import PlatformCheckpointService
 from src.config import get_settings
@@ -100,11 +103,17 @@ class PlatformWorker:
             )
             result = report.as_dict()
             if self._storage is not None:
-                self._publish_evidence(job["id"], result, evidence_root, settings.object_storage_signed_url_ttl_seconds)
+                self._publish_evidence(
+                    job["id"], result, evidence_root, settings.object_storage_signed_url_ttl_seconds,
+                    settings.object_storage_bucket, settings.object_storage_endpoint_url,
+                )
             return result
         raise ValueError("JOB_TYPE_UNSUPPORTED")
 
-    def _publish_evidence(self, job_id: str, report: dict[str, Any], root: Path, ttl_seconds: int) -> None:
+    def _publish_evidence(
+        self, job_id: str, report: dict[str, Any], root: Path, ttl_seconds: int,
+        bucket: str, endpoint_url: str | None,
+    ) -> None:
         """Move worker-local PNG evidence to object storage before returning a report."""
         assert self._storage is not None
         path_fields = (
@@ -122,5 +131,30 @@ class PlatformWorker:
                 if not local_path.is_file() or root not in local_path.parents:
                     raise RuntimeError(f"invalid evidence path: {local_path}")
                 key = f"runs/{job_id}/evidence/{local_path.relative_to(root).as_posix()}"
-                self._storage.put_bytes(key, local_path.read_bytes(), mime_type="image/png")
+                content = local_path.read_bytes()
+                if endpoint_url == "https://storage.googleapis.com":
+                    _put_gcs_bytes(bucket, key, content)
+                else:
+                    self._storage.put_bytes(key, content, mime_type="image/png")
                 sample[field] = self._storage.signed_download_url(key, ttl_seconds)
+
+
+def _put_gcs_bytes(bucket: str, key: str, content: bytes) -> None:
+    """Upload worker-produced evidence with the attached GCE service account.
+
+    GCS's JSON API avoids the incompatible HMAC PUT signature seen on this
+    bucket while the configured S3 client remains responsible for signed reads.
+    """
+    metadata_url = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
+    token_request = Request(metadata_url, headers={"Metadata-Flavor": "Google"})
+    with urlopen(token_request, timeout=10) as response:  # nosec B310 - fixed metadata endpoint
+        token = json.loads(response.read())["access_token"]
+    upload_url = (
+        f"https://storage.googleapis.com/upload/storage/v1/b/{quote(bucket, safe='')}/o"
+        f"?uploadType=media&name={quote(key, safe='')}"
+    )
+    request = Request(upload_url, data=content, method="POST")
+    request.add_header("Authorization", f"Bearer {token}")
+    request.add_header("Content-Type", "image/png")
+    with urlopen(request, timeout=30):  # nosec B310 - fixed GCS endpoint
+        pass
