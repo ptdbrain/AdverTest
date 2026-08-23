@@ -64,3 +64,7 @@ class TrainingRunConfig(_FrozenContract):
     max_wall_time_seconds: int | None = Field(default=None, gt=0)
     contract_version: Literal["1.0.0"] = "1.0.0"
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+DefenseProfile.model_rebuild()
+TrainingRunConfig.model_rebuild()
