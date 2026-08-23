@@ -125,6 +125,20 @@ class PlatformJobService:
             self._append_event(session, record, "RUNNING", record.completed_units, record.total_units, message)
             return True
 
+    def waiting_for_gpu(self, job_id: str, message: str = "GPU is starting") -> bool:
+        """Expose GPU cold-start progress without letting a worker claim the job.
+
+        The durable job remains ``QUEUED`` so that :meth:`start` is still the
+        only transition that grants execution ownership to the Pub/Sub worker.
+        """
+        with self._database.session() as session:
+            record = session.get(PlatformJobRecord, job_id)
+            if record is None or record.status != JobStatus.QUEUED.value or record.cancel_requested:
+                return False
+            record.stage = "GPU_STARTING"
+            self._append_event(session, record, "GPU_STARTING", record.completed_units, record.total_units, message)
+            return True
+
     def progress(self, job_id: str, *, stage: str, completed: int, total: int, message: str) -> bool:
         if completed < 0 or total < 0 or (total and completed > total):
             raise ValueError("invalid job progress units")

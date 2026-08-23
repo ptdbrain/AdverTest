@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from src.jobs.queue import JobQueue
 
 
 class ComputeBackend(Protocol):
-    def dispatch(self, job_id: str) -> None: ...
+    def dispatch(self, job_id: str) -> dict[str, Any] | None: ...
 
 
 class LocalWorker:
@@ -17,6 +17,7 @@ class LocalWorker:
 
     def dispatch(self, job_id: str) -> None:
         self._queue.enqueue(job_id)
+        return None
 
 
 class RenderWorker(LocalWorker):

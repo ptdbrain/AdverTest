@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Protocol
+from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
 class JobQueue(Protocol):
-    def enqueue(self, job_id: str) -> None: ...
+    def enqueue(self, job_id: str) -> dict[str, Any] | None: ...
 
 
 class LocalJobQueue:
@@ -49,7 +49,7 @@ class HttpDispatcherQueue:
         self._url = url
         self._token = token
 
-    def enqueue(self, job_id: str) -> None:
+    def enqueue(self, job_id: str) -> dict[str, Any]:
         headers = {"Content-Type": "application/json"}
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
@@ -63,5 +63,6 @@ class HttpDispatcherQueue:
             with urlopen(request, timeout=10) as response:  # noqa: S310 - deployment configuration
                 if not 200 <= response.status < 300:
                     raise RuntimeError(f"external dispatcher returned HTTP {response.status}")
+                return json.loads(response.read().decode("utf-8"))
         except (HTTPError, URLError) as exc:
             raise RuntimeError("EXTERNAL_QUEUE_DISPATCH_FAILED") from exc

@@ -18,7 +18,7 @@ def _job_out(record: dict) -> RunJobOut:
 
 
 def _platform_job_out(job: dict) -> RunJobOut:
-    status = job["stage"] if job["status"] == "RUNNING" else job["status"]
+    status = job["stage"] if job["status"] == "RUNNING" or job["stage"] == "GPU_STARTING" else job["status"]
     detail = {"platform_job": True, "stage": job["stage"]}
     return RunJobOut(
         run_id=job["id"],
@@ -77,8 +77,11 @@ async def create_run(
             request=config.model_dump(mode="json"),
             total_units=max(1, runner.estimate(config).n_cells),
         )
+        # Keep the durable status QUEUED until the GCE worker claims it, while
+        # giving the UI a truthful cold-start status immediately.
+        platform_jobs.waiting_for_gpu(job["id"], "GPU đang khởi động, job sẽ tự chạy sau khi worker sẵn sàng...")
         compute.dispatch(job["id"])
-        return _platform_job_out(job)
+        return _platform_job_out(platform_jobs.get(settings.platform_default_project_id, job["id"]) or job)
     run_id = store.create(config)
     worker.enqueue(run_id, config)
     return _job_out(store.get(run_id))

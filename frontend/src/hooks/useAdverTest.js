@@ -363,6 +363,7 @@ export function useAdverTest() {
     const applyStatus = (job) => {
       setRunStatus(job.status || job.state);
       if (job.progress != null) setProgress(Math.round(job.progress * 100));
+      if (job.status === "GPU_STARTING") setProgressDetail("GPU đang khởi động, job sẽ tự chạy sau khi worker sẵn sàng (thường 1–3 phút)...");
       if (job.status === "PREPARING") setProgressDetail("Loading model & dataset...");
       if (job.status === "GENERATING") setProgressDetail("Generating attack variants...");
       if (job.status === "INFERENCING") setProgressDetail("Running inference...");

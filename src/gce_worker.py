@@ -5,11 +5,33 @@ from __future__ import annotations
 import json
 import os
 import signal
-from threading import Event
+from threading import Event, Lock, Timer
 
 from src.api.platform_dependencies import get_platform_worker
 from src.config import get_settings
 from src.demo_bootstrap import ensure_demo_catalog, ensure_demo_checkpoint, ensure_demo_kitti
+
+
+def _metadata(path: str) -> str:
+    """Read an identity field from the GCE metadata server."""
+    from urllib.request import Request, urlopen
+
+    request = Request(
+        f"http://metadata.google.internal/computeMetadata/v1/{path}",
+        headers={"Metadata-Flavor": "Google"},
+    )
+    with urlopen(request, timeout=2) as response:  # noqa: S310 - fixed GCE metadata host
+        return response.read().decode("utf-8")
+
+
+def stop_this_instance() -> None:
+    """Stop rather than suspend: GCE does not support suspending GPU VMs."""
+    from google.cloud import compute_v1
+
+    project = _metadata("project/project-id")
+    zone = _metadata("instance/zone").rsplit("/", 1)[-1]
+    instance = _metadata("instance/name")
+    compute_v1.InstancesClient().stop(project=project, zone=zone, instance=instance)
 
 
 def load_runtime_secrets() -> None:
@@ -83,18 +105,62 @@ def main() -> None:
     subscriber = pubsub_v1.SubscriberClient()
     worker = get_platform_worker()
     stop = Event()
+    idle_seconds = int(os.environ.get("GPU_IDLE_SHUTDOWN_SECONDS", "900"))
+    active_lock = Lock()
+    active_messages = 0
+    idle_timer: Timer | None = None
+
+    def cancel_idle_timer() -> None:
+        nonlocal idle_timer
+        if idle_timer is not None:
+            idle_timer.cancel()
+            idle_timer = None
+
+    def stop_if_idle() -> None:
+        nonlocal idle_timer
+        with active_lock:
+            idle_timer = None
+            if active_messages or stop.is_set():
+                return
+        try:
+            print(f"GPU worker idle for {idle_seconds}s; stopping this VM")
+            stop_this_instance()
+        except Exception as exc:  # keep worker alive and retry on a later idle period
+            print(f"Unable to stop idle GPU VM: {exc}")
+
+    def arm_idle_timer() -> None:
+        nonlocal idle_timer
+        if idle_seconds <= 0:
+            return
+        cancel_idle_timer()
+        idle_timer = Timer(idle_seconds, stop_if_idle)
+        idle_timer.daemon = True
+        idle_timer.start()
 
     def consume(message: object) -> None:
+        nonlocal active_messages
+        with active_lock:
+            cancel_idle_timer()
+            active_messages += 1
         try:
             payload = json.loads(message.data.decode("utf-8"))  # type: ignore[attr-defined]
             job_id = str(payload["job_id"])
             worker.process(job_id)
         except Exception:
             message.nack()  # type: ignore[attr-defined]
-            return
-        message.ack()  # type: ignore[attr-defined]
+        else:
+            message.ack()  # type: ignore[attr-defined]
+        finally:
+            with active_lock:
+                active_messages -= 1
+                if active_messages == 0:
+                    arm_idle_timer()
 
     stream = subscriber.subscribe(settings.gcp_pubsub_subscription, callback=consume)
+    # A manually started VM must not remain billable forever when there are no
+    # messages to trigger the callback above.
+    with active_lock:
+        arm_idle_timer()
     signal.signal(signal.SIGTERM, lambda *_: (stream.cancel(), stop.set()))
     signal.signal(signal.SIGINT, lambda *_: (stream.cancel(), stop.set()))
     try:
@@ -102,6 +168,8 @@ def main() -> None:
     finally:
         stream.cancel()
         stop.set()
+        with active_lock:
+            cancel_idle_timer()
 
 
 if __name__ == "__main__":

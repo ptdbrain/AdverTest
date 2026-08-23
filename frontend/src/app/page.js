@@ -24,7 +24,7 @@ function HeaderBar({ mode, runStatus, isRunning }) {
     : "app-header__status--ready";
 
   const statusLabel = isRunning
-    ? "Running"
+    ? runStatus === "GPU_STARTING" ? "Starting GPU" : "Running"
     : runStatus === "FAILED"
     ? "Failed"
     : runStatus === "COMPLETED"
