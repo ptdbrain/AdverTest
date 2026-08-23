@@ -50,9 +50,10 @@ class TokenOut(BaseModel):
 
 
 class UserStatusUpdateIn(BaseModel):
-    """Admin payload for updating user account status or quotas."""
+    """Admin payload for updating user account status, role, or quotas."""
 
     status: UserStatus | None = None
+    role: UserRole | None = None
     storage_quota_bytes: int | None = None
     compute_quota_hours: float | None = None
 

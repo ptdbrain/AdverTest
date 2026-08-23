@@ -35,6 +35,7 @@ async def update_user_status(
             admin_user_id=admin.id,
             target_user_id=user_id,
             status=payload.status,
+            role=payload.role,
             storage_quota_bytes=payload.storage_quota_bytes,
             compute_quota_hours=payload.compute_quota_hours,
         )

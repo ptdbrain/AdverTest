@@ -71,6 +71,8 @@ async def lifespan(app: FastAPI):
             os.environ["ADVERTEST_KITTI_ROOT"] = str(kitti_root)
             print(f"Demo KITTI ready: {kitti_root}")
     attacks, models, datasets = load_attacks(), load_adapters(), load_datasets()
+    from src.auth.dependencies import get_auth_service
+    get_auth_service().ensure_default_accounts()
     print(
         f"Starting {settings.app_name} in {settings.app_env} mode — "
         f"{len(attacks)} attacks, {len(models)} adapters, {len(datasets)} datasets"

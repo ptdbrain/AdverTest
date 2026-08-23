@@ -97,16 +97,19 @@ class AuthService:
         target_user_id: str,
         *,
         status: UserStatus | None = None,
+        role: UserRole | None = None,
         storage_quota_bytes: int | None = None,
         compute_quota_hours: float | None = None,
     ) -> UserOut:
-        """Update user account status or quotas (Admin only)."""
+        """Update user account status, role, or quotas (Admin only)."""
         user_record = self._store.get_record("user", target_user_id)
         if not user_record:
             raise ValueError(f"User {target_user_id} not found.")
 
         if status:
             user_record["status"] = status
+        if role:
+            user_record["role"] = role
         if storage_quota_bytes is not None:
             user_record["storage_quota_bytes"] = storage_quota_bytes
         if compute_quota_hours is not None:
@@ -119,9 +122,38 @@ class AuthService:
             action="ADMIN_UPDATE_USER",
             resource_type="user",
             resource_id=target_user_id,
-            detail={"status": status, "storage_quota_bytes": storage_quota_bytes},
+            detail={"status": status, "role": role, "storage_quota_bytes": storage_quota_bytes},
         )
         return self._to_user_out(user_record)
+
+    def ensure_default_accounts(self) -> None:
+        """Ensure standard initial Admin and User accounts exist for zero-friction login."""
+        users = self._store.list_records("user")
+        users_by_email = {u.get("email"): u for u in users}
+
+        if "admin@advertest.ai" not in users_by_email:
+            self.register(
+                UserCreateIn(
+                    email="admin@advertest.ai",
+                    password="AdminPassword123!",
+                    display_name="System Administrator",
+                ),
+                role="ADMIN",
+            )
+        elif users_by_email["admin@advertest.ai"].get("role") != "ADMIN":
+            admin_record = users_by_email["admin@advertest.ai"]
+            admin_record["role"] = "ADMIN"
+            self._store.update_record("user", admin_record["id"], admin_record)
+
+        if "user@advertest.ai" not in users_by_email:
+            self.register(
+                UserCreateIn(
+                    email="user@advertest.ai",
+                    password="UserPassword123!",
+                    display_name="Benchmark Developer",
+                ),
+                role="USER",
+            )
 
     def record_audit(
         self,
