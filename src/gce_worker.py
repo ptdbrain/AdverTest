@@ -9,7 +9,7 @@ from threading import Event
 
 from src.api.platform_dependencies import get_platform_worker
 from src.config import get_settings
-from src.demo_bootstrap import ensure_demo_checkpoint, ensure_demo_kitti
+from src.demo_bootstrap import ensure_demo_catalog, ensure_demo_checkpoint, ensure_demo_kitti
 
 
 def load_runtime_secrets() -> None:
@@ -66,6 +66,16 @@ def main() -> None:
         if kitti_root is not None:
             os.environ["ADVERTEST_KITTI_ROOT"] = str(kitti_root)
             print(f"Demo KITTI ready: {kitti_root}")
+    if settings.bootstrap_demo_catalog:
+        catalog_root = ensure_demo_catalog(
+            enabled=True,
+            storage=storage or get_platform_storage(),
+            storage_prefix=settings.demo_catalog_storage_prefix,
+            data_root=settings.data_root,
+        )
+        if catalog_root is not None:
+            os.environ["ADVERTEST_DEMO_CATALOG_ROOT"] = str(catalog_root)
+            print(f"Demo catalog ready: {catalog_root}")
     if not settings.gcp_pubsub_subscription:
         raise RuntimeError("GCP_PUBSUB_SUBSCRIPTION is required for the GCE worker")
     from google.cloud import pubsub_v1

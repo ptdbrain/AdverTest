@@ -40,6 +40,7 @@ class BDD100KSemanticDataset(DatasetSource):
         self.manifest = self.root / self.params.anonymization_manifest  # type: ignore[attr-defined]
         if not self.manifest.is_file():
             raise FileNotFoundError("BDD100K external loader requires an anonymization manifest")
+        self.anonymized = True
 
     def info(self) -> DatasetInfo:
         return DatasetInfo(name=self.name, anonymized=True, classes=tuple(_LABELS.values()), note="external semantic-only; non-paired")

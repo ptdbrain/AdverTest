@@ -74,3 +74,5 @@ class DatasetCatalogItem(BaseModel):
     class_map: dict[str, str] = Field(default_factory=dict)
     split_manifest: str | None = None
     ground_truth_status: str = "available"
+    dataset_params: dict[str, Any] = Field(default_factory=dict)
+    demo: bool = False

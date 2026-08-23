@@ -65,6 +65,42 @@ def ensure_demo_kitti(
     return destination
 
 
+def ensure_demo_catalog(
+    *, enabled: bool, storage: ArtifactStorage, storage_prefix: str, data_root: str
+) -> Path | None:
+    """Materialize the maintained, small demo bundles used by the web catalog.
+
+    The bundles are curated server assets.  They are deliberately separate from
+    user imports and keep the normal loaders and anonymisation gates intact.
+    """
+    if not enabled:
+        return None
+    prefix = storage_prefix.rstrip("/") + "/"
+    destination = Path(data_root).expanduser().resolve() / "demo-catalog"
+    marker = destination / ".ready"
+    if marker.is_file():
+        return destination
+    if destination.exists():
+        raise RuntimeError(f"demo catalog destination is incomplete: {destination}")
+    keys = storage.list_keys(prefix)
+    if not keys:
+        raise RuntimeError(f"no demo catalog objects found at storage prefix {prefix!r}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="advertest-catalog-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / "demo-catalog"
+        for key in keys:
+            relative = key.removeprefix(prefix)
+            if not relative or relative.startswith("/") or ".." in Path(relative).parts:
+                raise RuntimeError(f"unsafe demo catalog object key: {key!r}")
+            output = staged / relative
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(storage.get_bytes(key))
+        if not (staged / ".ready").is_file():
+            raise RuntimeError("demo catalog export has no ready marker")
+        os.replace(staged, destination)
+    return destination
+
+
 def _is_anonymized_kitti(root: Path) -> bool:
     descriptor, manifest = root / "dataset.json", root / "manifest.jsonl"
     if not descriptor.is_file() or not manifest.is_file():

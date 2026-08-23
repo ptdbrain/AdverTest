@@ -102,12 +102,14 @@ class BDD100KDetectionDataset(DatasetSource):
                 f"available: {sorted(self._KNOWN_MAPPINGS)}"
             )
         self.class_mapping = self._KNOWN_MAPPINGS[mapping_version]
+        manifest = self.params.anonymization_manifest  # type: ignore[attr-defined]
+        self.anonymized = bool(manifest and (self.root / manifest).is_file())
 
     def info(self) -> DatasetInfo:
         report = class_mapping_report(self.class_mapping)
         return DatasetInfo(
             name=self.name,
-            anonymized=False,
+            anonymized=self.anonymized,
             classes=tuple(report["canonical_classes"]),
             note=(
                 f"external detection; class mapping {self.class_mapping.version}; "

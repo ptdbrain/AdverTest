@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     demo_model_storage_key: str = "catalog/models/yolo11n/v1/yolo11n.pt"
     bootstrap_demo_kitti: bool = False
     demo_kitti_storage_prefix: str = "catalog/datasets/kitti/v1/anonymized/kitti-de/"
+    bootstrap_demo_catalog: bool = False
+    demo_catalog_storage_prefix: str = "catalog/datasets/demo-catalog/v1/"
 
     # Execution hardware defaults
     model_device: str = "cpu"

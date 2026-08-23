@@ -8,6 +8,29 @@ from src.datasets import load_datasets
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
 
+
+def _demo_dataset_params(name: str) -> dict[str, object]:
+    """Runtime paths for the maintained smoke bundles on the GPU worker."""
+    root = "/app/data/demo-catalog"
+    params: dict[str, dict[str, object]] = {
+        "bdd100k_detection": {
+            "root": f"{root}/bdd100k_detection", "split": "val", "anonymization_manifest": "manifest.jsonl",
+        },
+        "bdd100k_semantic": {
+            "root": f"{root}/bdd100k_semantic", "split": "train", "anonymization_manifest": "manifest.jsonl",
+        },
+        "cityscapes_segmentation": {
+            "root": f"{root}/cityscapes_segmentation", "split": "train", "anonymization_manifest": "manifest.jsonl",
+        },
+        "folder_dataset": {"root": f"{root}/folder_dataset", "input_format": "kitti"},
+        "generated_dataset": {"root": f"{root}/generated_dataset"},
+        "kitti3d": {
+            "root": f"{root}/kitti3d", "split": "all", "anonymization_manifest": "manifest.jsonl",
+        },
+        "kitti": {"root": "/app/data/anonymized/kitti-de", "split": "val"},
+    }
+    return params.get(name, {})
+
 @router.get("/attacks", response_model=list[AttackCatalogItem])
 async def list_attacks(
     group: str | None = Query(default=None, min_length=1, max_length=1),
@@ -52,7 +75,15 @@ async def list_models() -> list[ModelCatalogItem]:
 
 @router.get("/datasets", response_model=list[DatasetCatalogItem])
 async def list_datasets(task_id: str | None = None) -> list[DatasetCatalogItem]:
-    items = [DatasetCatalogItem(**ds.describe()) for ds in load_datasets().values()]
+    items = []
+    for dataset in load_datasets().values():
+        item = dataset.describe()
+        params = _demo_dataset_params(dataset.name)
+        item["dataset_params"] = params
+        item["demo"] = bool(params)
+        if params:
+            item["anonymized"] = True
+        items.append(DatasetCatalogItem(**item))
     if task_id:
         items = [item for item in items if item.task_id == task_id]
     return items

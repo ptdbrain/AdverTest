@@ -39,6 +39,7 @@ class CityscapesSegmentationDataset(DatasetSource):
         self.manifest = self.root / self.params.anonymization_manifest  # type: ignore[attr-defined]
         if not self.manifest.is_file():
             raise FileNotFoundError("Cityscapes SAM2 loader requires an anonymization manifest")
+        self.anonymized = True
 
     def info(self) -> DatasetInfo:
         return DatasetInfo(
