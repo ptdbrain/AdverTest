@@ -113,7 +113,10 @@ class PlatformJobService:
     def start(self, job_id: str, message: str = "Worker started") -> bool:
         with self._database.session() as session:
             record = session.get(PlatformJobRecord, job_id)
-            if record is None or record.status in _TERMINAL or record.cancel_requested:
+            # A queue can deliver the same message more than once.  Only the
+            # first worker may claim a queued job; accepting RUNNING here
+            # would execute it concurrently and append conflicting events.
+            if record is None or record.status != JobStatus.QUEUED.value or record.cancel_requested:
                 return False
             record.status = JobStatus.RUNNING.value
             record.stage = "RUNNING"

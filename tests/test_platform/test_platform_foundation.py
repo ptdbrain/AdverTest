@@ -45,6 +45,7 @@ def test_job_state_is_durable_cancellable_and_retryable(tmp_path: Path) -> None:
     job = jobs.create(project_id=project_id, owner_user_id=actor_id, job_type="export", request={}, total_units=2)
 
     assert jobs.start(job["id"])
+    assert not jobs.start(job["id"])
     assert jobs.progress(job["id"], stage="EXPORTING", completed=1, total=2, message="halfway")
     assert jobs.cancel(project_id, job["id"])
     assert jobs.fail(job["id"], "JOB_CANCELLED", "cancelled")
