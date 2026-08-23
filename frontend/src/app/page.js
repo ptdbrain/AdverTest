@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import ConfigPanel from "@/components/ConfigPanel.jsx";
 import ClosedLoopPanel from "@/components/ClosedLoopPanel";
 import DefencePanel from "@/components/DefencePanel";
@@ -8,6 +8,7 @@ import ComparisonView from "@/components/ComparisonView";
 import ReportView from "@/components/ReportView";
 import ImageGrid from "@/components/ImageGrid";
 import ThemeToggle from "@/components/ThemeToggle";
+import AuthModal from "@/components/AuthModal.jsx";
 import AdvisorPanel from "@/components/AdvisorPanel.jsx";
 import { useAdverTest } from "@/hooks/useAdverTest";
 
@@ -18,6 +19,16 @@ const MODE_LABELS = {
 };
 
 function HeaderBar({ mode, runStatus, isRunning }) {
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("advertest_auth_user");
+      if (saved) setCurrentUser(JSON.parse(saved));
+    } catch {}
+  }, []);
+
   const statusClass = isRunning
     ? "app-header__status--running"
     : runStatus === "FAILED"
@@ -33,30 +44,56 @@ function HeaderBar({ mode, runStatus, isRunning }) {
     : "Ready";
 
   return (
-    <header className="app-header" style={{ backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}>
-      <div className="app-header__left">
-        <span className="app-header__brand">AdverTest</span>
-        <div className="app-header__divider" />
-        <span className="app-header__info">
-          Task: <strong>{MODE_LABELS[mode] || mode}</strong>
-        </span>
-      </div>
-      <div className="app-header__right">
-        <a
-          href="/admin"
-          className="rounded-md border border-slate-700 bg-slate-800/60 px-2.5 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
-          style={{ textDecoration: "none" }}
-        >
-          Admin
-        </a>
-        <ThemeToggle />
-        <div className={`app-header__status ${statusClass}`} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <span className={`status-beacon ${isRunning ? "status-beacon--running" : runStatus === "FAILED" ? "status-beacon--failed" : "status-beacon--ready"}`} />
-          {statusLabel}
+    <>
+      <header className="app-header" style={{ backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}>
+        <div className="app-header__left">
+          <span className="app-header__brand">AdverTest</span>
+          <div className="app-header__divider" />
+          <span className="app-header__info">
+            Task: <strong>{MODE_LABELS[mode] || mode}</strong>
+          </span>
         </div>
-        <span className="simulation-tag">Simulation Only</span>
-      </div>
-    </header>
+        <div className="app-header__right">
+          <button
+            type="button"
+            onClick={() => setAuthModalOpen(true)}
+            className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors flex items-center gap-1.5 ${currentUser ? (currentUser.role === "ADMIN" ? "border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20" : "border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20") : "border-slate-700 bg-slate-800/60 text-slate-300 hover:bg-slate-700 hover:text-white"}`}
+          >
+            {currentUser ? (
+              <>
+                <span>{currentUser.role === "ADMIN" ? "👑" : "👤"}</span>
+                <span>{currentUser.display_name || currentUser.email}</span>
+              </>
+            ) : (
+              <>
+                <span>🔑</span>
+                <span>Sign In</span>
+              </>
+            )}
+          </button>
+
+          <a
+            href="/admin"
+            className="rounded-md border border-slate-700 bg-slate-800/60 px-2.5 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+            style={{ textDecoration: "none" }}
+          >
+            Admin
+          </a>
+          <ThemeToggle />
+          <div className={`app-header__status ${statusClass}`} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span className={`status-beacon ${isRunning ? "status-beacon--running" : runStatus === "FAILED" ? "status-beacon--failed" : "status-beacon--ready"}`} />
+            {statusLabel}
+          </div>
+          <span className="simulation-tag">Simulation Only</span>
+        </div>
+      </header>
+
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        onAuthChange={(user) => setCurrentUser(user)}
+      />
+    </>
   );
 }
 

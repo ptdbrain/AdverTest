@@ -14,9 +14,18 @@ export function getApiBase() {
 
 export async function apiFetch(path, options = {}) {
   const url = `${getApiBase()}${path}`;
+  const headers = { "Content-Type": "application/json", ...options.headers };
+  
+  if (typeof window !== "undefined" && !headers["Authorization"]) {
+    const token = localStorage.getItem("advertest_auth_token");
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+  }
+
   const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options.headers },
     ...options,
+    headers,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -29,6 +38,24 @@ export async function apiFetch(path, options = {}) {
     throw new Error(detail);
   }
   return res.json();
+}
+
+export function loginUser({ email, password }) {
+  return apiFetch("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function registerUser({ email, password, display_name }) {
+  return apiFetch("/api/v1/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ email, password, display_name }),
+  });
+}
+
+export function getCurrentUser() {
+  return apiFetch("/api/v1/auth/me");
 }
 
 export function getCatalogAttacks(params = {}) {
