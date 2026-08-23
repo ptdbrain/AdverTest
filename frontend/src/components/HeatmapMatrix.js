@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { getDescriptiveAttackName } from "@/lib/attackNaming";
 
 function cellColor(degradation) {
   const d = Math.max(0, Math.min(100, degradation));
@@ -13,15 +14,15 @@ function cellColor(degradation) {
 }
 
 const GROUP_LABELS = {
-  A: "Corruption",
-  B: "Weather",
-  C: "Occlusion",
-  D: "Adversarial",
-  E: "Patch",
-  F: "Blackbox",
+  A: "Corruption (Biến dạng hình ảnh)",
+  B: "Weather (Thời tiết khắc nghiệt)",
+  C: "Occlusion (Vật cản che khuất)",
+  D: "Adversarial (Nhiễu tấn công Gradient)",
+  E: "Patch (Vùng dán vật lý)",
+  F: "Blackbox (Tấn công hộp đen)",
 };
 
-export default function HeatmapMatrix({ cells = [], heatmap = {} }) {
+export default function HeatmapMatrix({ cells = [], heatmap = {}, report = null }) {
   const { groupedRows, severities } = useMemo(() => {
     const sevSet = new Set();
     cells.forEach((c) => sevSet.add(c.severity));
@@ -30,19 +31,24 @@ export default function HeatmapMatrix({ cells = [], heatmap = {} }) {
 
     const byAttack = {};
     cells.forEach((c) => {
-      if (!byAttack[c.attack]) byAttack[c.attack] = { group: c.group, cells: {} };
-      byAttack[c.attack].cells[c.severity] = c;
+      // Extract clean human-friendly attack name without (Cấp X) for row header
+      const displayName = getDescriptiveAttackName(c, null, report).replace(/\s*\(Cấp\s*\d+\)/i, "").trim();
+      const groupKey = c.group || "?";
+      const key = `${groupKey}::${displayName}`;
+
+      if (!byAttack[key]) byAttack[key] = { group: groupKey, name: displayName, cells: {} };
+      byAttack[key].cells[c.severity] = c;
     });
 
     const grouped = {};
-    Object.entries(byAttack).forEach(([name, data]) => {
+    Object.entries(byAttack).forEach(([key, data]) => {
       const g = data.group || "?";
       if (!grouped[g]) grouped[g] = [];
-      grouped[g].push({ name, ...data });
+      grouped[g].push(data);
     });
 
     return { groupedRows: grouped, severities: sevs };
-  }, [cells]);
+  }, [cells, report]);
 
   if (cells.length === 0) {
     return (
@@ -58,7 +64,7 @@ export default function HeatmapMatrix({ cells = [], heatmap = {} }) {
   return (
     <div className="heatmap">
       <div className="heatmap__title">
-        Degradation Heatmap
+        Degradation Heatmap (Bản đồ nhiệt độ suy giảm theo cấp độ)
         <span style={{ fontSize: "0.55rem", color: "var(--text-muted)", fontWeight: 400, marginLeft: "auto" }}>
           Cell = % degradation (D)
         </span>
@@ -66,9 +72,9 @@ export default function HeatmapMatrix({ cells = [], heatmap = {} }) {
       <table className="heatmap__table">
         <thead>
           <tr>
-            <th>Attack</th>
+            <th>Dạng Tấn Công (Attack)</th>
             {severities.map((s) => (
-              <th key={s}>Sev. {s}</th>
+              <th key={s}>Cấp {s}</th>
             ))}
           </tr>
         </thead>
@@ -83,7 +89,7 @@ export default function HeatmapMatrix({ cells = [], heatmap = {} }) {
                 </tr>
                 {attacks.map((atk) => (
                   <tr key={atk.name}>
-                    <td>{atk.name.replace(/_/g, " ")}</td>
+                    <td style={{ fontWeight: 600 }}>{atk.name}</td>
                     {severities.map((s) => {
                       const cell = atk.cells[s];
                       const d = cell?.degradation ?? null;

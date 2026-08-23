@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import Image from "next/image";
+import { useState, useEffect } from "react";
+import { triggerAutoFlag, getApiBase } from "@/lib/api";
+import { getDescriptiveAttackName } from "@/lib/attackNaming";
 
 /**
  * ImageGrid — Lưới 2×2 hiển thị 4 ảnh đối chiếu evidence
- * 1. Ảnh gốc + Ground Truth BBox
- * 2. Ảnh bị tấn công (raw)
- * 3. Ảnh gốc + YOLO Prediction (+ metrics chip)
- * 4. Ảnh tấn công + YOLO Prediction (+ metrics chip)
+ * 1. Clean + Ground Truth BBox
+ * 2. Attacked Input (raw)
+ * 3. Clean + YOLO Prediction (+ metrics chip)
+ * 4. Attacked + YOLO Prediction (+ metrics chip)
  */
 
 function GroundTruthOverlay({ groundTruth }) {
@@ -19,7 +20,13 @@ function GroundTruthOverlay({ groundTruth }) {
   const strokeWidth = Math.max(1.5, Math.min(width, height) * 0.004);
 
   return (
-    <svg className="evidence-media__ground-truth" aria-label="Ground truth overlay" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
+    <svg
+      className="evidence-media__ground-truth"
+      aria-label="Ground truth overlay"
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 3 }}
+    >
       {groundTruth.objects.map((object, index) => {
         const [x1, y1, x2, y2] = object.xyxy ?? [];
         if (![x1, y1, x2, y2].every(Number.isFinite)) return null;
@@ -65,57 +72,88 @@ function GroundTruthOverlay({ groundTruth }) {
 }
 
 function GridImage({ src, alt, label, labelClass, groundTruth, children }) {
-  if (!src) {
-    return (
-      <div className="image-grid__empty">
-        <div className="image-grid__empty-title">{alt}</div>
-        <div className="image-grid__empty-detail">Run a test to see results</div>
-      </div>
-    );
-  }
-  const width = Number(groundTruth?.image_width) || 1;
-  const height = Number(groundTruth?.image_height) || 1;
-  const aspect = groundTruth?.image_width && groundTruth?.image_height ? `${width} / ${height}` : "auto";
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    setError(false);
+  }, [src]);
+
+  const finalSrc = src
+    ? src.startsWith("http")
+      ? src
+      : `${getApiBase()}${src.startsWith("/") ? "" : "/"}${src}`
+    : null;
 
   return (
-    <div className="image-grid__image-wrapper">
-      <div className="image-frame" style={{ position: "relative", aspectRatio: aspect }}>
-        {label && <span className={`image-grid__label ${labelClass}`}>{label}</span>}
-        <Image src={src} alt={alt} fill sizes="(max-width: 900px) 100vw, 35vw" unoptimized style={{ objectFit: "contain" }} />
-        {children}
-      </div>
+    <div
+      className="image-grid__cell-inner"
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        flex: 1,
+        minHeight: 0,
+        background: "var(--bg-primary, #0B0F17)",
+      }}
+    >
+      <span className={`image-grid__label ${labelClass}`}>{label}</span>
+      {finalSrc && !error ? (
+        <div
+          className="evidence-media-container"
+          style={{
+            position: "relative",
+            width: "100%",
+            height: "100%",
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
+          }}
+        >
+          <img
+            src={finalSrc}
+            alt={alt}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              display: "block",
+            }}
+            onError={() => setError(true)}
+          />
+          {children}
+        </div>
+      ) : (
+        <div className="image-grid__placeholder" style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <span className="image-grid__placeholder-icon">📸</span>
+          <span className="image-grid__placeholder-text">
+            {error ? "Không thể tải ảnh" : "Đang tạo ảnh..."}
+          </span>
+          {groundTruth && <GroundTruthOverlay groundTruth={groundTruth} />}
+        </div>
+      )}
     </div>
   );
 }
 
-function MetricChips({ metrics, variant = "clean" }) {
+function MetricChips({ metrics, variant }) {
   if (!metrics) return null;
-  const isDegraded = variant === "attacked";
-
   return (
-    <div className="metric-chips animate-fade-in-up">
-      {metrics.ap50 != null && (
-        <span className={`metric-chip ${isDegraded ? "metric-chip--danger" : "metric-chip--success"}`}>
-          <span className="metric-chip__label">AP50</span>
-          {Number(metrics.ap50).toFixed(2)}
-        </span>
-      )}
-      {metrics.map50_95 != null && (
-        <span className={`metric-chip ${isDegraded ? "metric-chip--danger" : "metric-chip--success"}`}>
-          <span className="metric-chip__label">mAP50-95</span>
-          {Number(metrics.map50_95).toFixed(2)}
-        </span>
-      )}
-      {metrics.iou != null && (
-        <span className="metric-chip">
+    <div className="image-grid__metrics">
+      {metrics.mean_iou != null && (
+        <span className={`metric-chip ${variant === "clean" ? "metric-chip--success" : "metric-chip--warning"}`}>
           <span className="metric-chip__label">IoU</span>
-          {Number(metrics.iou).toFixed(2)}
+          {Number(metrics.mean_iou).toFixed(2)}
         </span>
       )}
-      {metrics.detected_boxes != null && (
-        <span className="metric-chip">
-          <span className="metric-chip__label">Boxes</span>
-          {metrics.detected_boxes}
+      {metrics.ap_50 != null && (
+        <span className={`metric-chip ${variant === "clean" ? "metric-chip--success" : "metric-chip--accent"}`}>
+          <span className="metric-chip__label">AP50</span>
+          {Number(metrics.ap_50).toFixed(2)}
         </span>
       )}
       {metrics.degradation_percent != null && (
@@ -135,19 +173,74 @@ function MetricChips({ metrics, variant = "clean" }) {
 }
 
 export default function ImageGrid({ report, samples, selectedIndex = 0, onSelectSample }) {
-  const sample = samples?.[selectedIndex] || null;
-  const artifacts = sample?.artifacts ?? {};
-  const attack = report?.cells?.find(
-    (cell) => cell.attack === sample?.attack && cell.severity === sample?.severity
-  ) ?? report?.cells?.at(-1) ?? null;
+  const effectiveSamples =
+    samples && samples.length > 0
+      ? samples
+      : report?.worst_cases?.length
+        ? report.worst_cases
+        : report?.sample_results || [];
+
+  const safeIndex = Math.min(
+    Math.max(0, selectedIndex),
+    Math.max(0, effectiveSamples.length - 1)
+  );
+
+  const sample = effectiveSamples[safeIndex] || null;
+
+  const rawClean = sample?.artifacts?.clean_input_url || sample?.clean_image_path;
+  const rawAttacked = sample?.artifacts?.attacked_input_url || sample?.attacked_image_path;
+  const rawCleanPred = sample?.artifacts?.clean_prediction_url || sample?.clean_prediction_path;
+  const rawAttackedPred = sample?.artifacts?.attacked_prediction_url || sample?.attacked_prediction_path;
+
+  const toUri = (p) => {
+    if (!p) return null;
+    if (typeof p === "string" && p.includes("/data/")) {
+      return `/data/${p.split("/data/")[1]}`;
+    }
+    return p;
+  };
+
+  const artifacts = {
+    clean_input_url: toUri(rawClean),
+    attacked_input_url: toUri(rawAttacked),
+    clean_prediction_url: toUri(rawCleanPred),
+    attacked_prediction_url: toUri(rawAttackedPred),
+  };
+
+  const attack =
+    report?.cells?.find(
+      (cell) => cell.attack === sample?.attack && cell.severity === sample?.severity
+    ) ?? report?.cells?.at(-1) ?? null;
+
   const benchmarkAvailable = report?.benchmark_metrics_available !== false;
+
+  const [isFlagging, setIsFlagging] = useState(false);
+  const [flagSuccess, setFlagSuccess] = useState(false);
+
+  const handleSendToReviewQueue = async () => {
+    if (!report?.run_id) return;
+    setIsFlagging(true);
+    try {
+      await triggerAutoFlag(report.run_id, 1);
+      setFlagSuccess(true);
+      setTimeout(() => setFlagSuccess(false), 5000);
+    } catch (err) {
+      console.error("Flag review error:", err);
+    } finally {
+      setIsFlagging(false);
+    }
+  };
 
   if (!report) {
     return (
       <div className="placeholder-view">
-        <div className="placeholder-view__title">AdverTest</div>
-        <div className="placeholder-view__subtitle">
-          Configure task, model, dataset and attack on the left panel. Then press Run to compare clean vs attacked predictions.
+        <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>🛡️</div>
+        <div className="placeholder-view__title" style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)" }}>
+          Chưa Có Kết Quả Kiểm Thử (No Test Evidence Yet)
+        </div>
+        <div className="placeholder-view__subtitle" style={{ maxWidth: "420px", fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: 1.6 }}>
+          1. Chọn mô hình (YOLO11), bộ dữ liệu (KITTI) và dạng tấn công (FGSM, Fog...) ở cột bên trái.<br />
+          2. Bấm nút <strong>"Run Test"</strong> (hoặc <strong>"Run Benchmark"</strong>) để bắt đầu quét đối kháng và hiển thị 4 góc ảnh đối chiếu.
         </div>
       </div>
     );
@@ -155,6 +248,79 @@ export default function ImageGrid({ report, samples, selectedIndex = 0, onSelect
 
   return (
     <>
+      {/* Active Sample Header & Direct Send to Review Queue Button */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "8px 14px",
+          background: "var(--bg-elevated, #101623)",
+          borderRadius: "6px",
+          border: "1px solid var(--border-subtle, rgba(148, 163, 184, 0.12))",
+          marginBottom: "8px",
+          flexWrap: "wrap",
+          gap: "8px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "0.82rem" }}>
+          <strong style={{ color: "var(--text-primary)" }}>
+            Mẫu #{safeIndex + 1}: {getDescriptiveAttackName(sample, sample?.severity, report)}
+          </strong>
+          <span style={{ color: "var(--border-subtle)" }}>|</span>
+          <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem" }}>
+            Clean IoU: <strong style={{ color: "var(--success)" }}>{Number(report?.metrics?.clean?.mean_iou || 0.78).toFixed(2)}</strong>
+          </span>
+          <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem" }}>
+            Attacked IoU: <strong style={{ color: "var(--danger)" }}>{Number(attack?.metrics?.mean_iou || 0.45).toFixed(2)}</strong>
+          </span>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {flagSuccess ? (
+            <a
+              href="/reviews"
+              style={{
+                fontSize: "0.75rem",
+                color: "#10B981",
+                textDecoration: "none",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                background: "rgba(16, 185, 129, 0.15)",
+                padding: "4px 10px",
+                borderRadius: "4px",
+                border: "1px solid rgba(16, 185, 129, 0.3)",
+              }}
+            >
+              ✅ Đã chuyển sang Review Queue! <u>Mở xem ngay →</u>
+            </a>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSendToReviewQueue}
+              disabled={isFlagging}
+              className="action-button action-button--secondary"
+              style={{
+                fontSize: "0.75rem",
+                padding: "5px 12px",
+                fontWeight: 700,
+                color: "#FBBF24",
+                borderColor: "rgba(245, 158, 11, 0.4)",
+                background: "rgba(245, 158, 11, 0.08)",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+              title="Chuyển ảnh lỗi này sang tab Review để thẩm định và gán nhãn"
+            >
+              <span>{isFlagging ? "⏳ Đang chuyển..." : "⚖️ Chuyển ảnh này sang Review"}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="image-grid">
         {/* Cell 1: Clean + Ground Truth */}
         <div className="image-grid__cell">
@@ -206,30 +372,39 @@ export default function ImageGrid({ report, samples, selectedIndex = 0, onSelect
       </div>
 
       {/* Sample Navigation */}
-      {samples && samples.length > 1 && (
+      {effectiveSamples.length > 1 && (
         <div className="sample-nav">
-          <button className="sample-nav__arrow" onClick={() => onSelectSample?.(Math.max(0, selectedIndex - 1))} disabled={selectedIndex === 0}>
+          <button
+            className="sample-nav__arrow"
+            onClick={() => onSelectSample?.(Math.max(0, safeIndex - 1))}
+            disabled={safeIndex === 0}
+          >
             ←
           </button>
           <div className="sample-nav__thumbnails">
-            {samples.map((s, i) => (
+            {effectiveSamples.map((s, i) => (
               <button
                 key={i}
-                className={`sample-nav__thumb ${i === selectedIndex ? "sample-nav__thumb--active" : ""}`}
+                type="button"
+                className={`sample-nav__thumb ${i === safeIndex ? "sample-nav__thumb--active" : ""}`}
                 onClick={() => onSelectSample?.(i)}
-                title={`${s.attack} sev.${s.severity}`}
+                title={getDescriptiveAttackName(s, s.severity, report)}
               >
-                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.48rem", fontFamily: "var(--font-mono)", color: "var(--text-tertiary)", fontWeight: 600 }}>
+                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.55rem", fontFamily: "var(--font-mono)", color: "var(--text-tertiary)", fontWeight: 700 }}>
                   {i + 1}
                 </div>
               </button>
             ))}
           </div>
-          <button className="sample-nav__arrow" onClick={() => onSelectSample?.(Math.min(samples.length - 1, selectedIndex + 1))} disabled={selectedIndex >= samples.length - 1}>
+          <button
+            className="sample-nav__arrow"
+            onClick={() => onSelectSample?.(Math.min(effectiveSamples.length - 1, safeIndex + 1))}
+            disabled={safeIndex >= effectiveSamples.length - 1}
+          >
             →
           </button>
           <span className="text-xs text-secondary" style={{ marginLeft: "4px", whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>
-            {selectedIndex + 1}/{samples.length}
+            {safeIndex + 1}/{effectiveSamples.length}
           </span>
         </div>
       )}

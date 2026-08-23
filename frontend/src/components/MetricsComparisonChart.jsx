@@ -11,8 +11,22 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import { getCanonicalAttackKey, getDescriptiveAttackName } from "@/lib/attackNaming";
 
-function CustomComparisonTooltip({ active, payload, label }) {
+const ATTACK_PALETTE = [
+  "#EF4444", // Red
+  "#F59E0B", // Amber
+  "#8B5CF6", // Purple
+  "#EC4899", // Pink
+  "#3B82F6", // Blue
+  "#14B8A6", // Teal
+  "#F97316", // Orange
+  "#6366F1", // Indigo
+  "#06B6D4", // Cyan
+  "#84CC16", // Lime
+];
+
+function CustomComparisonTooltip({ active, payload, label, baselineValues }) {
   if (!active || !payload?.length) return null;
 
   return (
@@ -24,7 +38,7 @@ function CustomComparisonTooltip({ active, payload, label }) {
         padding: "12px 16px",
         backdropFilter: "blur(12px)",
         boxShadow: "var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.3))",
-        minWidth: "240px",
+        minWidth: "260px",
         color: "var(--text-primary, #E2E8F0)",
       }}
     >
@@ -44,17 +58,29 @@ function CustomComparisonTooltip({ active, payload, label }) {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "0.8rem" }}>
-        {payload.map((p, idx) => (
-          <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--text-secondary)" }}>
-              <span style={{ width: 8, height: 8, borderRadius: "2px", background: p.color }} />
-              {p.name}:
-            </span>
-            <strong style={{ fontFamily: "var(--font-mono)", color: p.color }}>
-              {Number(p.value).toFixed(3)}
-            </strong>
-          </div>
-        ))}
+        {payload.map((p, idx) => {
+          const val = Number(p.value);
+          const isBaseline = p.dataKey === "Baseline";
+          const baselineVal = baselineValues?.[label] ?? 1;
+          const dropPct = !isBaseline && baselineVal > 0 ? ((baselineVal - val) / baselineVal) * 100 : 0;
+
+          return (
+            <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: "6px", color: isBaseline ? "var(--success, #16A34A)" : "var(--text-secondary)" }}>
+                <span style={{ width: 8, height: 8, borderRadius: "2px", background: p.color }} />
+                {p.name}:
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", fontFamily: "var(--font-mono)" }}>
+                <strong style={{ color: p.color }}>{val.toFixed(3)}</strong>
+                {!isBaseline && dropPct > 0 && (
+                  <span style={{ fontSize: "0.72rem", color: "var(--danger, #EF4444)", fontWeight: 700 }}>
+                    (↓{dropPct.toFixed(1)}%)
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -68,127 +94,160 @@ export default function MetricsComparisonChart({ report }) {
   const cleanAp50 = Number((cleanMetrics.ap50 ?? apClean).toFixed(3));
   const cleanMap = Number((cleanMetrics.map50_95 ?? Math.max(0, apClean * 0.72)).toFixed(3));
 
-  // Average attacked AP50 and mAP50-95
-  const avgAttackedAp50 = cells.length > 0
-    ? Number((cells.reduce((acc, c) => acc + (c.metrics?.ap50 ?? c.ap ?? 0), 0) / cells.length).toFixed(3))
-    : 0;
+  // Extract each unique attack cell with guaranteed unique keys and clean names
+  const attackSeries = useMemo(() => {
+    if (cells.length === 0) {
+      return [{ key: "attack_default", label: "Attack (Avg)", color: ATTACK_PALETTE[0], ap50: 0, map50_95: 0 }];
+    }
 
-  const avgAttackedMap = cells.length > 0
-    ? Number((cells.reduce((acc, c) => acc + (c.metrics?.map50_95 ?? (c.ap ? c.ap * 0.72 : 0)), 0) / cells.length).toFixed(3))
-    : 0;
+    // Traverse in reverse (or use Map) to keep the latest cell for each canonical attack+severity
+    const cellMap = new Map();
+    cells.forEach((cell) => {
+      const key = getCanonicalAttackKey(cell, cell.severity, report);
+      cellMap.set(key, cell);
+    });
 
-  // Overview data: 2 metrics (AP50 & mAP50-95), each with Clean and Attacked
-  const overviewData = useMemo(() => {
-    return [
-      {
-        category: "AP@50 (IoU 0.50)",
-        "Clean (Trước tấn công)": cleanAp50,
-        "Attacked (Sau tấn công)": avgAttackedAp50,
-        clean: cleanAp50,
-        attacked: avgAttackedAp50,
-      },
-      {
-        category: "mAP@50-95 (IoU 0.50:0.95)",
-        "Clean (Trước tấn công)": cleanMap,
-        "Attacked (Sau tấn công)": avgAttackedMap,
-        clean: cleanMap,
-        attacked: avgAttackedMap,
-      },
+    const uniqueCells = Array.from(cellMap.values());
+
+    return uniqueCells.map((cell, idx) => {
+      const label = getDescriptiveAttackName(cell, cell.severity, report);
+      const canonicalKey = getCanonicalAttackKey(cell, cell.severity, report);
+      const uniqueKey = `series_${canonicalKey}`;
+
+      return {
+        key: uniqueKey,
+        label,
+        attack: cell.attack,
+        severity: cell.severity,
+        ap50: Number((cell.metrics?.ap50 ?? cell.ap ?? 0).toFixed(3)),
+        map50_95: Number((cell.metrics?.map50_95 ?? (cell.ap ? cell.ap * 0.72 : 0)).toFixed(3)),
+        color: ATTACK_PALETTE[idx % ATTACK_PALETTE.length],
+      };
+    });
+  }, [cells, report]);
+
+  // Build overview chart data: each metric category has Baseline + each attack series
+  const { overviewData, seriesKeys } = useMemo(() => {
+    const ap50Row = { category: "AP@50 (IoU 0.50)", Baseline: cleanAp50 };
+    const mapRow = { category: "mAP@50-95 (IoU 0.50:0.95)", Baseline: cleanMap };
+
+    attackSeries.forEach((series) => {
+      ap50Row[series.key] = series.ap50;
+      mapRow[series.key] = series.map50_95;
+    });
+
+    const series = [
+      { key: "Baseline", label: "Baseline (Ảnh sạch)", color: "var(--success, #16A34A)" },
+      ...attackSeries.map((s) => ({ key: s.key, label: s.label, color: s.color })),
     ];
-  }, [cleanAp50, avgAttackedAp50, cleanMap, avgAttackedMap]);
 
-  const ap50Degradation = cleanAp50 > 0 ? ((cleanAp50 - avgAttackedAp50) / cleanAp50) * 100 : 0;
-  const mapDegradation = cleanMap > 0 ? ((cleanMap - avgAttackedMap) / cleanMap) * 100 : 0;
+    return {
+      overviewData: [ap50Row, mapRow],
+      seriesKeys: series,
+    };
+  }, [cleanAp50, cleanMap, attackSeries]);
+
+  const baselineLookup = useMemo(() => {
+    return {
+      "AP@50 (IoU 0.50)": cleanAp50,
+      "mAP@50-95 (IoU 0.50:0.95)": cleanMap,
+    };
+  }, [cleanAp50, cleanMap]);
 
   return (
     <div className="chart-container" style={{ padding: "var(--space-lg)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
       {/* Header */}
-      <div>
-        <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>
-          Biểu đồ so sánh cốt lõi
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "8px" }}>
+        <div>
+          <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>
+            Biểu đồ so sánh cốt lõi (Baseline vs Các tổ hợp tấn công)
+          </div>
+          <h3 style={{ fontSize: "1.05rem", fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>
+            So sánh AP50 & mAP50-95: Baseline vs Các Đòn Tấn Công ({attackSeries.length} phương pháp)
+          </h3>
         </div>
-        <h3 style={{ fontSize: "1.05rem", fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>
-          So sánh AP50 & mAP50-95 Trước và Sau Tấn công
-        </h3>
+        <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+          Mỗi đòn tấn công mới sẽ thêm 1 cột so sánh trực diện
+        </span>
       </div>
 
-      {/* Summary Stat Cards */}
+      {/* Summary Stat Cards across Baseline and Attack Combinations */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
           gap: "var(--space-sm)",
+          overflowX: "auto",
+          paddingBottom: "4px",
         }}
       >
-        {/* AP50 Box */}
+        {/* Baseline Card */}
         <div
           style={{
             background: "var(--bg-elevated)",
-            padding: "12px 16px",
+            padding: "12px 14px",
             borderRadius: "var(--radius-sm)",
             border: "1px solid var(--border-subtle)",
-            borderLeft: "3px solid var(--accent)",
+            borderLeft: "3px solid var(--success, #16A34A)",
           }}
         >
-          <div style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", textTransform: "uppercase", fontWeight: 700 }}>
-            AP@50 (IoU 0.50)
+          <div style={{ fontSize: "0.68rem", color: "var(--success)", textTransform: "uppercase", fontWeight: 700 }}>
+            Baseline (Ảnh sạch)
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginTop: "4px" }}>
             <span style={{ fontSize: "1.2rem", fontWeight: 800, color: "var(--success)", fontFamily: "var(--font-mono)" }}>
               {cleanAp50.toFixed(3)}
             </span>
-            <span style={{ fontSize: "0.85rem", color: "var(--text-tertiary)" }}>→</span>
-            <span style={{ fontSize: "1.2rem", fontWeight: 800, color: "var(--danger)", fontFamily: "var(--font-mono)" }}>
-              {avgAttackedAp50.toFixed(3)}
-            </span>
-            <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--danger)", marginLeft: "auto", fontFamily: "var(--font-mono)" }}>
-              ↓ {ap50Degradation.toFixed(1)}%
+            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+              mAP: {cleanMap.toFixed(3)}
             </span>
           </div>
           <div style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: "4px" }}>
-            Clean: {cleanAp50.toFixed(3)} | Attacked: {avgAttackedAp50.toFixed(3)}
+            Chuẩn so sánh ban đầu (100%)
           </div>
         </div>
 
-        {/* mAP50-95 Box */}
-        <div
-          style={{
-            background: "var(--bg-elevated)",
-            padding: "12px 16px",
-            borderRadius: "var(--radius-sm)",
-            border: "1px solid var(--border-subtle)",
-            borderLeft: "3px solid #8B5CF6",
-          }}
-        >
-          <div style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", textTransform: "uppercase", fontWeight: 700 }}>
-            mAP@50-95 (IoU 0.50:0.95)
-          </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginTop: "4px" }}>
-            <span style={{ fontSize: "1.2rem", fontWeight: 800, color: "var(--success)", fontFamily: "var(--font-mono)" }}>
-              {cleanMap.toFixed(3)}
-            </span>
-            <span style={{ fontSize: "0.85rem", color: "var(--text-tertiary)" }}>→</span>
-            <span style={{ fontSize: "1.2rem", fontWeight: 800, color: "var(--danger)", fontFamily: "var(--font-mono)" }}>
-              {avgAttackedMap.toFixed(3)}
-            </span>
-            <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--danger)", marginLeft: "auto", fontFamily: "var(--font-mono)" }}>
-              ↓ {mapDegradation.toFixed(1)}%
-            </span>
-          </div>
-          <div style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: "4px" }}>
-            Clean: {cleanMap.toFixed(3)} | Attacked: {avgAttackedMap.toFixed(3)}
-          </div>
-        </div>
+        {/* Individual Attack Combination Cards */}
+        {attackSeries.map((atk, idx) => {
+          const dropAp50 = cleanAp50 > 0 ? ((cleanAp50 - atk.ap50) / cleanAp50) * 100 : 0;
+          return (
+            <div
+              key={idx}
+              style={{
+                background: "var(--bg-elevated)",
+                padding: "12px 14px",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border-subtle)",
+                borderLeft: `3px solid ${atk.color}`,
+              }}
+            >
+              <div style={{ fontSize: "0.68rem", color: atk.color, textTransform: "uppercase", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {atk.label}
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginTop: "4px" }}>
+                <span style={{ fontSize: "1.2rem", fontWeight: 800, color: atk.color, fontFamily: "var(--font-mono)" }}>
+                  {atk.ap50.toFixed(3)}
+                </span>
+                <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--danger, #EF4444)", marginLeft: "auto", fontFamily: "var(--font-mono)" }}>
+                  ↓ {dropAp50.toFixed(1)}%
+                </span>
+              </div>
+              <div style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                mAP@50-95: {atk.map50_95.toFixed(3)}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Bar Chart Overview (2 Pairs of Bars) */}
-      <div style={{ width: "100%", height: 280, marginTop: "var(--space-xs)" }}>
+      {/* Dynamic Multi-Column Bar Chart */}
+      <div style={{ width: "100%", height: 320, marginTop: "var(--space-xs)" }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={overviewData}
             margin={{ top: 20, right: 30, left: 0, bottom: 10 }}
-            barCategoryGap="35%"
-            barGap={10}
+            barCategoryGap="25%"
+            barGap={6}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" vertical={false} opacity={0.6} />
             <XAxis
@@ -207,7 +266,10 @@ export default function MetricsComparisonChart({ report }) {
               tickLine={false}
               axisLine={{ stroke: "var(--border-subtle)" }}
             />
-            <Tooltip content={<CustomComparisonTooltip />} cursor={{ fill: "var(--bg-hover)", opacity: 0.4 }} />
+            <Tooltip
+              content={<CustomComparisonTooltip baselineValues={baselineLookup} />}
+              cursor={{ fill: "var(--bg-hover)", opacity: 0.4 }}
+            />
             <Legend
               verticalAlign="top"
               align="right"
@@ -216,18 +278,16 @@ export default function MetricsComparisonChart({ report }) {
                 <span style={{ color: "var(--text-secondary)", fontWeight: 600 }}>{value}</span>
               )}
             />
-            <Bar
-              dataKey="Clean (Trước tấn công)"
-              fill="var(--success, #16A34A)"
-              radius={[6, 6, 0, 0]}
-              maxBarSize={64}
-            />
-            <Bar
-              dataKey="Attacked (Sau tấn công)"
-              fill="var(--danger, #EF6461)"
-              radius={[6, 6, 0, 0]}
-              maxBarSize={64}
-            />
+            {seriesKeys.map((s) => (
+              <Bar
+                key={s.key}
+                dataKey={s.key}
+                name={s.label}
+                fill={s.color}
+                radius={[4, 4, 0, 0]}
+                maxBarSize={48}
+              />
+            ))}
           </BarChart>
         </ResponsiveContainer>
       </div>
