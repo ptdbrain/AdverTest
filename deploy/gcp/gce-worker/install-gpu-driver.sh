@@ -6,6 +6,8 @@ cos-extensions install gpu -- -version=R580
 mount --bind /var/lib/nvidia /var/lib/nvidia
 mount -o remount,exec /var/lib/nvidia
 until docker info >/dev/null 2>&1; do sleep 2; done
+export DOCKER_CONFIG=/tmp/advertest-docker-config
+mkdir -p "$DOCKER_CONFIG"
 access_token="$(curl -fsS -H 'Metadata-Flavor: Google' \
   http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
   | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
