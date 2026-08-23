@@ -1,6 +1,7 @@
 import { render, screen, waitFor, act } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import ReviewPage from "@/app/reviews/page.jsx";
+import { AuthProvider } from "@/context/AuthContext";
 
 // Mock API functions
 vi.mock("@/lib/api", () => ({
@@ -23,26 +24,30 @@ vi.mock("@/lib/api", () => ({
   getFailureClusters: vi.fn().mockResolvedValue([{ id: "cluster-1", name: "Weather Failures" }]),
   createFailureCluster: vi.fn().mockResolvedValue({ id: "cluster-2", name: "New Cluster" }),
   createDefenseProfile: vi.fn().mockResolvedValue({ id: "dp-1", name: "Spatial Filter" }),
+  getGoogleAuthConfig: vi.fn().mockResolvedValue({ client_id: "", configured: false, demo_profiles: [] }),
+  getApiBase: vi.fn().mockReturnValue("http://127.0.0.1:8000"),
 }));
 
 describe("ReviewPage", () => {
   it("renders pending review queue and decision options without placeholders", async () => {
     await act(async () => {
-      render(<ReviewPage />);
+      render(
+        <AuthProvider>
+          <ReviewPage />
+        </AuthProvider>
+      );
     });
 
     await waitFor(
       () => {
-        expect(screen.getAllByText("REV-001")[0]).toBeInTheDocument();
+        expect(screen.getAllByText(/REV-001/i)[0]).toBeInTheDocument();
       },
       { timeout: 3000 }
     );
 
-    expect(screen.getByText(/FOG/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/FOG/i)[0]).toBeInTheDocument();
     expect(screen.getByText("Accept Risk")).toBeInTheDocument();
     expect(screen.getByText("Request Retrain")).toBeInTheDocument();
     expect(screen.getByText("Reject Sample")).toBeInTheDocument();
   });
 });
-
-

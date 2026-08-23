@@ -9,6 +9,7 @@ import ReportView from "@/components/ReportView";
 import ImageGrid from "@/components/ImageGrid";
 import ThemeToggle from "@/components/ThemeToggle";
 import AdvisorPanel from "@/components/AdvisorPanel.jsx";
+import UserMenu from "@/components/UserMenu.jsx";
 import { useAdverTest } from "@/hooks/useAdverTest";
 
 const MODE_LABELS = {
@@ -18,6 +19,8 @@ const MODE_LABELS = {
 };
 
 function HeaderBar({ mode, runStatus, isRunning }) {
+  const [wbConnected, setWbConnected] = useState(true);
+
   const statusClass = isRunning
     ? "app-header__status--running"
     : runStatus === "FAILED"
@@ -34,27 +37,33 @@ function HeaderBar({ mode, runStatus, isRunning }) {
 
   return (
     <header className="app-header" style={{ backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}>
-      <div className="app-header__left">
+      <div className="app-header__left" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
         <span className="app-header__brand">AdverTest</span>
         <div className="app-header__divider" />
         <span className="app-header__info">
           Task: <strong>{MODE_LABELS[mode] || mode}</strong>
         </span>
       </div>
-      <div className="app-header__right">
+
+      <div className="app-header__right" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        {/* Review Queue (Human-in-the-Loop) Link */}
         <a
-          href="/admin"
-          className="rounded-md border border-slate-700 bg-slate-800/60 px-2.5 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
-          style={{ textDecoration: "none" }}
+          href="/reviews"
+          className="rounded-md border border-amber-600/40 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 hover:text-amber-200 transition-colors"
+          style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: "4px" }}
+          title="Human-in-the-loop review queue for failure cases"
         >
-          Admin
+          <span>⚖️ Review Queue (HITL)</span>
         </a>
-        <ThemeToggle />
+
+        {/* Status Beacon */}
         <div className={`app-header__status ${statusClass}`} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <span className={`status-beacon ${isRunning ? "status-beacon--running" : runStatus === "FAILED" ? "status-beacon--failed" : "status-beacon--ready"}`} />
           {statusLabel}
         </div>
-        <span className="simulation-tag">Simulation Only</span>
+
+        {/* User Authentication Menu (with Settings access) */}
+        <UserMenu />
       </div>
     </header>
   );
@@ -185,6 +194,8 @@ export default function HomePage() {
           selectedDataset={state.selectedDataset}
           selectedAttacks={state.selectedAttacks}
           runOptions={state.runOptions}
+          runId={state.runId}
+          activeRunMeta={state.activeRunMeta}
           isRunning={state.isRunning}
           progress={state.progress}
           progressDetail={state.progressDetail}
@@ -208,21 +219,95 @@ export default function HomePage() {
 
         <section className="center-view" aria-label="Robustness evidence workspace">
           {state.isRunning ? (
-            <div className="progress-overlay">
-              <strong>{state.runStatus}</strong>
-              <progress max="100" value={state.progress} aria-label="Run progress" />
-              <span>{state.progress}%</span>
-              <p>{state.progressDetail}</p>
-              <button type="button" onClick={actions.cancelRun}>Cancel</button>
+            <div
+              className="progress-overlay"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "16px",
+                padding: "32px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "6px 14px", borderRadius: "20px", background: "rgba(56, 189, 248, 0.12)", border: "1px solid rgba(56, 189, 248, 0.3)" }}>
+                <span className="status-beacon status-beacon--running" />
+                <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "var(--accent)" }}>
+                  ĐANG CHẠY PHIÊN: #{state.runId ? state.runId.slice(0, 10) : "INITIALIZING"}
+                </span>
+              </div>
+
+              <div style={{ maxWidth: "460px" }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 800, margin: "0 0 6px", color: "var(--text-primary)" }}>
+                  {state.progressDetail || "Đang xử lý kiểm thử đối kháng..."}
+                </h3>
+                <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  🎯 <strong>Tác vụ:</strong> {state.mode} &nbsp;|&nbsp; 🤖 <strong>Model:</strong> {state.selectedModelVersion || "YOLO11"} &nbsp;|&nbsp; 📦 <strong>Dữ liệu:</strong> {state.selectedDataset}
+                  <br />
+                  ⚡ <strong>Chuỗi đòn:</strong> {state.selectedAttacks?.length ? state.selectedAttacks.join(", ") : "Attack Recipe"} (Cấp {state.recipe.steps?.[0]?.severity || 3})
+                </div>
+              </div>
+
+              <div style={{ width: "100%", maxWidth: "380px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", fontWeight: 700, color: "var(--text-muted)", marginBottom: "4px" }}>
+                  <span>{state.runStatus || "PROCESSING"}</span>
+                  <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>{state.progress}%</span>
+                </div>
+                <div className="progress-inline__bar-track" style={{ height: "8px", borderRadius: "4px", background: "var(--bg-elevated)" }}>
+                  <div className="progress-inline__bar-fill" style={{ width: `${state.progress}%`, background: "var(--accent)", borderRadius: "4px", transition: "width 0.3s ease" }} />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  onClick={actions.cancelRun}
+                  className="action-button action-button--secondary"
+                  style={{
+                    padding: "8px 18px",
+                    fontWeight: 800,
+                    fontSize: "0.8rem",
+                    color: "#EF4444",
+                    borderColor: "rgba(239, 68, 68, 0.4)",
+                    background: "rgba(239, 68, 68, 0.1)",
+                  }}
+                >
+                  🛑 Dừng & Hủy Phiên Này
+                </button>
+              </div>
             </div>
           ) : (
             <>
-              <nav className="tab-bar" aria-label="Run results">
-                <button className={`tab-bar__item ${state.activeTab === "evidence" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("evidence")}>Evidence</button>
-                <button className={`tab-bar__item ${state.activeTab === "comparison" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("comparison")}>Comparison</button>
-                <button className={`tab-bar__item ${state.activeTab === "report" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("report")}>Report</button>
-                <button className={`tab-bar__item ${state.activeTab === "defence" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("defence")}>Defence</button>
-                <button className={`tab-bar__item ${state.activeTab === "advisor" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("advisor")}>AI Advisor</button>
+              <nav className="tab-bar" aria-label="Run results" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex" }}>
+                  <button className={`tab-bar__item ${state.activeTab === "evidence" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("evidence")}>Evidence</button>
+                  <button className={`tab-bar__item ${state.activeTab === "comparison" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("comparison")}>Comparison</button>
+                  <button className={`tab-bar__item ${state.activeTab === "report" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("report")}>Report</button>
+                  <button className={`tab-bar__item ${state.activeTab === "defence" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("defence")}>Defence</button>
+                  <button className={`tab-bar__item ${state.activeTab === "advisor" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("advisor")}>AI Advisor</button>
+                </div>
+                {state.report && (
+                  <button
+                    type="button"
+                    onClick={actions.resetSession}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--text-muted)",
+                      fontSize: "0.72rem",
+                      cursor: "pointer",
+                      padding: "4px 10px",
+                      marginRight: "10px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                    title="Xóa phiên kiểm thử hiện tại để bắt đầu phiên mới"
+                  >
+                    <span>🔄 Xóa phiên hiện tại</span>
+                  </button>
+                )}
               </nav>
 
               {state.runStatus === "FAILED" && (
@@ -269,7 +354,7 @@ export default function HomePage() {
                   severity={state.recipe.steps.at(-1)?.severity}
                 />
               ) : state.activeTab === "report" ? (
-                <ReportView report={state.report} />
+                <ReportView report={state.report} onClearHistory={actions.clearReportHistory} />
               ) : (
                 <ImageGrid
                   key={state.runId || "empty"}
