@@ -9,6 +9,7 @@ from threading import Event
 
 from src.api.platform_dependencies import get_platform_worker
 from src.config import get_settings
+from src.demo_bootstrap import ensure_demo_checkpoint, ensure_demo_kitti
 
 
 def load_runtime_secrets() -> None:
@@ -40,6 +41,31 @@ def load_runtime_secrets() -> None:
 def main() -> None:
     load_runtime_secrets()
     settings = get_settings()
+    storage = None
+    if settings.bootstrap_demo_model:
+        from src.api.platform_dependencies import get_platform_storage
+
+        storage = get_platform_storage()
+        checkpoint = ensure_demo_checkpoint(
+            enabled=True,
+            checkpoint_root=settings.checkpoint_root,
+            model_id=settings.bootstrap_demo_model_id,
+            storage=storage,
+            storage_key=settings.demo_model_storage_key,
+        )
+        print(f"Demo checkpoint ready: {checkpoint}")
+    if settings.bootstrap_demo_kitti:
+        from src.api.platform_dependencies import get_platform_storage
+
+        kitti_root = ensure_demo_kitti(
+            enabled=True,
+            storage=storage or get_platform_storage(),
+            storage_prefix=settings.demo_kitti_storage_prefix,
+            data_root=settings.data_root,
+        )
+        if kitti_root is not None:
+            os.environ["ADVERTEST_KITTI_ROOT"] = str(kitti_root)
+            print(f"Demo KITTI ready: {kitti_root}")
     if not settings.gcp_pubsub_subscription:
         raise RuntimeError("GCP_PUBSUB_SUBSCRIPTION is required for the GCE worker")
     from google.cloud import pubsub_v1
