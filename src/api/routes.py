@@ -759,7 +759,7 @@ async def cancel_benchmark_run(run_id: str) -> RunJobOut:
         _store.request_cancel(run_id)
         if record["status"] == "QUEUED":
             _store.fail(run_id, "Cancelled by user", cancelled=True)
-    return _job_out(_store.get(run_id))
+    return _job_out(_store.get(run_id) or record)
 
 
 @router.websocket("/benchmark-runs/{run_id}/events/ws")
