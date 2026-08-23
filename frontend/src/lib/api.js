@@ -12,10 +12,27 @@ export function getApiBase() {
   return BUILD_TIME_API_BASE.replace(/\/$/, "");
 }
 
+export function artifactUrl(pathValue) {
+  if (!pathValue) return "";
+  if (/^https?:\/\//i.test(pathValue)) return pathValue;
+  const base = getApiBase();
+  const normalized = pathValue.startsWith("/") ? pathValue : `/${pathValue}`;
+  return `${base}${normalized}`;
+}
+
 export async function apiFetch(path, options = {}) {
   const url = `${getApiBase()}${path}`;
+  let authHeaders = {};
+  if (typeof window !== "undefined") {
+    try {
+      const token = localStorage.getItem("advertest_auth_token");
+      if (token) {
+        authHeaders["Authorization"] = `Bearer ${token}`;
+      }
+    } catch {}
+  }
   const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { "Content-Type": "application/json", ...authHeaders, ...options.headers },
     ...options,
   });
   if (!res.ok) {
@@ -372,3 +389,60 @@ export function startFolderDatasetImport({ root, name, logicalSourceId, inputFor
 }
 
 export function getFolderDatasetImportJob(jobId) { return apiFetch(`/api/v1/datasets/import-jobs/${encodeURIComponent(jobId)}`); }
+ 
+/* ---- Authentication & Google SSO ---- */
+export function loginGoogleSSO(payload) {
+  return apiFetch("/api/v1/auth/google", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getGoogleAuthConfig() {
+  return apiFetch("/api/v1/auth/google/config");
+}
+
+export function getAuthMe() {
+  return apiFetch("/api/v1/auth/me");
+}
+
+export function loginUser(email, password) {
+  return apiFetch("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function registerUser(payload) {
+  return apiFetch("/api/v1/auth/register", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/* ---- Settings & W&B Integration ---- */
+export function getWandbSettings() {
+  return apiFetch("/api/v1/settings/wandb");
+}
+
+export function saveWandbSettings(payload) {
+  return apiFetch("/api/v1/settings/wandb", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function testWandbConnection(payload) {
+  return apiFetch("/api/v1/settings/wandb/test", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateUserProfile(payload) {
+  return apiFetch("/api/v1/settings/profile", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
