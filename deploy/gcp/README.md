@@ -34,6 +34,7 @@ CHECKPOINT_SANDBOX_TOKEN=<different-long-random-token>
 GCP_PUBSUB_SUBSCRIPTION=projects/<project>/subscriptions/advertest-gce-worker
 MODEL_DEVICE=cuda:0
 MODEL_HALF_PRECISION=true
+GPU_IDLE_SHUTDOWN_SECONDS=900
 PLATFORM_DATABASE_URL=<Render external PostgreSQL URL>
 OBJECT_STORAGE_BACKEND=s3
 OBJECT_STORAGE_BUCKET=advertest-prod-artifacts
@@ -44,3 +45,11 @@ OBJECT_STORAGE_SECRET_ACCESS_KEY=<GCS HMAC secret>
 
 The dispatcher and sandbox must require authentication and have only the
 minimum ingress permitted. Do not expose the GCE worker as a public API.
+
+## On-demand GPU lifecycle
+
+The dispatcher needs `compute.instances.get` and `compute.instances.start` on
+the GPU VM. It starts the VM before publishing a job; Pub/Sub retains the job
+through the cold start. The worker needs `compute.instances.get` and
+`compute.instances.stop` and stops its own VM after
+`GPU_IDLE_SHUTDOWN_SECONDS` with no active jobs. A GPU VM cannot be suspended.
