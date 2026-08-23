@@ -58,7 +58,10 @@ def artifact_uri(path_value: Any) -> str | None:
     """Convert absolute filesystem path to browser-readable static data URI."""
     if not path_value:
         return None
-    candidate = Path(str(path_value)).expanduser().resolve()
+    raw_value = str(path_value)
+    if raw_value.startswith(("https://", "http://")):
+        return raw_value
+    candidate = Path(raw_value).expanduser().resolve()
     data_root = Path(get_settings().data_root).expanduser().resolve()
     if candidate != data_root and data_root not in candidate.parents:
         return None

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from src.api.checkpoint_service import PlatformCheckpointService
 from src.config import get_settings
 from src.jobs.service import PlatformJobService
 from src.pipeline.runner import RunConfig, TestRunner
+from src.storage.base import ArtifactStorage
 from src.storage.export_service import AttackedDatasetExportService
 
 
@@ -19,10 +21,12 @@ class PlatformWorker:
         jobs: PlatformJobService,
         checkpoints: PlatformCheckpointService,
         exports: AttackedDatasetExportService,
+        storage: ArtifactStorage | None = None,
     ) -> None:
         self._jobs = jobs
         self._checkpoints = checkpoints
         self._exports = exports
+        self._storage = storage
         self._runner = TestRunner()
 
     def process(self, job_id: str) -> None:
@@ -63,6 +67,8 @@ class PlatformWorker:
         if job["type"] == "benchmark_run":
             config = RunConfig.model_validate(job["request"])
             settings = get_settings()
+            evidence_root = Path(settings.runs_root).expanduser().resolve() / "platform-evidence" / job["id"]
+            config = config.model_copy(update={"evidence_dir": str(evidence_root)})
             if config.model == "yolo11":
                 adapter_params = dict(config.adapter_params)
                 adapter_params.update(
@@ -92,5 +98,29 @@ class PlatformWorker:
                 should_cancel=lambda: self._jobs.cancel_requested(job["id"]),
                 run_id=job["id"],
             )
-            return report.as_dict()
+            result = report.as_dict()
+            if self._storage is not None:
+                self._publish_evidence(job["id"], result, evidence_root, settings.object_storage_signed_url_ttl_seconds)
+            return result
         raise ValueError("JOB_TYPE_UNSUPPORTED")
+
+    def _publish_evidence(self, job_id: str, report: dict[str, Any], root: Path, ttl_seconds: int) -> None:
+        """Move worker-local PNG evidence to object storage before returning a report."""
+        assert self._storage is not None
+        path_fields = (
+            "clean_image_path",
+            "attacked_image_path",
+            "clean_prediction_path",
+            "attacked_prediction_path",
+        )
+        for sample in report.get("sample_results", []):
+            for field in path_fields:
+                value = sample.get(field)
+                if not value:
+                    continue
+                local_path = Path(str(value)).resolve()
+                if not local_path.is_file() or root not in local_path.parents:
+                    raise RuntimeError(f"invalid evidence path: {local_path}")
+                key = f"runs/{job_id}/evidence/{local_path.relative_to(root).as_posix()}"
+                self._storage.put_bytes(key, local_path.read_bytes(), mime_type="image/png")
+                sample[field] = self._storage.signed_download_url(key, ttl_seconds)

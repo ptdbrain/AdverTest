@@ -81,7 +81,9 @@ def get_platform_exports() -> AttackedDatasetExportService:
 
 @functools.lru_cache
 def get_platform_worker() -> PlatformWorker:
-    return PlatformWorker(get_platform_jobs(), get_platform_checkpoints(), get_platform_exports())
+    return PlatformWorker(
+        get_platform_jobs(), get_platform_checkpoints(), get_platform_exports(), get_platform_storage()
+    )
 
 
 @functools.lru_cache
