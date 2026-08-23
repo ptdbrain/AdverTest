@@ -317,6 +317,37 @@ def scan_base_checkpoints(root: Path) -> list[ModelVersion]:
                 checkpoint_role="base",
             )
         )
+
+    # 3D PointPillars base checkpoint discovery
+    pp_candidates = (
+        root / "pointpillars_kitti_3class.pth",
+        root / "pointpillars.pth",
+        root / "surrogates" / "pointpillars_kitti_3class.pth",
+        root.parent / "checkpoints" / "pointpillars_kitti_3class.pth",
+        root.parent / "data" / "checkpoints" / "pointpillars_kitti_3class.pth",
+    )
+    for pp_ckpt in pp_candidates:
+        if pp_ckpt.is_file():
+            versions.append(
+                ModelVersion(
+                    id="pointpillars-kitti-3class-base",
+                    model_name="pointpillars-kitti-3class",
+                    task="detection3d",
+                    checkpoint_path=str(pp_ckpt.resolve()),
+                    checkpoint_hash=_file_sha256(pp_ckpt),
+                    parent_id=None,
+                    training_metadata={
+                        "source": "vendor_base",
+                        "role": "base",
+                        "config_id": "pointpillars-kitti-3class",
+                        "config_file": "configs/mmdet3d/pointpillars_hv_secfpn_6x8_160e_kitti-3d-3class.py",
+                    },
+                    runnable=True,
+                    model_family_id="pointpillars3d",
+                    checkpoint_role="base",
+                )
+            )
+            break
     return versions
 
 
