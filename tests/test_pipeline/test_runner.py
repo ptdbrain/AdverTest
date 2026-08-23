@@ -51,8 +51,13 @@ def test_ordered_recipe_produces_one_final_evidence_result() -> None:
     )
 
     assert len(report.cells) == 1
-    assert report.cells[0].attack == recipe.recipe_id
+    # cell.attack is the human-readable recipe name, not the raw hash
+    assert report.cells[0].attack == recipe.name
+    # recipe provenance still tracks the canonical hash
     assert report.provenance["recipe"]["recipe_hash"] == recipe.recipe_hash
+    # recipe_steps and recipe_id are preserved in cell metrics for canonical key resolution
+    assert report.cells[0].metrics["recipe_id"] == recipe.recipe_id
+    assert len(report.cells[0].metrics["recipe_steps"]) == 2
     assert all(item.recipe_hash == recipe.recipe_hash for item in report.sample_results)
     assert all(len(item.recipe_steps) == 2 for item in report.sample_results)
 
