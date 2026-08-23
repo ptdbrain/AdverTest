@@ -1,9 +1,10 @@
 """Group A: Gaussian coordinate noise on LiDAR XYZ channels."""
 from typing import ClassVar
-import numpy as np
+
 from src.attacks import ATTACKS
 from src.attacks.base import AttackParams, BaseAttack
 from src.core.types import AttackGroup, CostClass, LidarFrame, SensorKind
+
 
 class LidarXYZNoiseParams(AttackParams):
     sigma_per_severity: tuple[float, ...] = (0.01, 0.02, 0.05, 0.10, 0.20)

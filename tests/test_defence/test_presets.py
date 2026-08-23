@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from src.defence.presets import (
     HELDOUT_ATTACKS,
-    ROBUST_MIX_RATIO,
-    TARGETED_REPAIR_RATIO,
     TRAIN_ATTACKS,
     VALIDATION_ATTACKS,
     create_robust_mix_profile,

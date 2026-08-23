@@ -1,9 +1,10 @@
 """Group C: uniform random LiDAR point dropout."""
 from typing import ClassVar
-import numpy as np
+
 from src.attacks import ATTACKS
 from src.attacks.base import AttackParams, BaseAttack
 from src.core.types import AttackGroup, CostClass, LidarFrame, SensorKind
+
 
 class LidarPointDropoutParams(AttackParams):
     fraction_per_severity: tuple[float, ...] = (0.05, 0.10, 0.20, 0.35, 0.50)

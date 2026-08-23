@@ -5,7 +5,7 @@ import math
 import pytest
 
 from src.core.types import Box3D
-from src.evaluation.geometry3d import HAS_SHAPELY, Match3D, bev_iou, match_boxes3d
+from src.evaluation.geometry3d import HAS_SHAPELY, bev_iou, match_boxes3d
 
 
 def test_identical_boxes_have_unit_iou():

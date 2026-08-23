@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
@@ -15,9 +14,16 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, WebSocke
 from PIL import Image, UnidentifiedImageError
 
 from src.adapters import get_adapter
-from src.api.checkpoint_service import CheckpointValidationService
-from src.api.generated_dataset_service import GeneratedDatasetService
-from src.api.jobs import LocalRunWorker, SqliteRunStore
+from src.api.dependencies import (
+    get_checkpoint_validations,
+    get_dataset_import_workers,
+    get_generated_datasets,
+    get_runner,
+    get_store,
+    get_training_jobs,
+    get_worker,
+    get_workflow_store,
+)
 from src.api.schemas import (
     ClosedLoopAdvanceIn,
     ClosedLoopSnapshotOut,
@@ -47,8 +53,6 @@ from src.api.schemas import (
     RunReportOut,
     TrainingRunIn,
 )
-from src.api.training_service import TrainingJobService
-from src.api.workflow_store import WorkflowJobStore
 from src.attacks import ATTACK_CATALOG, load_attacks
 from src.attacks.recipes import RecipeBuilder
 from src.config import get_settings
@@ -58,18 +62,7 @@ from src.evaluation.export import export_comparison
 from src.models import list_known_versions, scan_base_checkpoints, scan_model_artifacts
 from src.models.families import FAMILIES, adapter_request, approved_model_config
 from src.models.versions import ModelVersion
-from src.api.dependencies import (
-    get_checkpoint_validations,
-    get_dataset_import_workers,
-    get_generated_datasets,
-    get_runner,
-    get_store,
-    get_training_jobs,
-    get_worker,
-    get_workflow_store,
-)
-from src.pipeline import RunConfig, TestRunner
-from src.services.person_d import PersonDServices
+from src.pipeline import RunConfig
 from src.training.contracts import DefenseProfile, TrainingRunConfig
 
 router = APIRouter()

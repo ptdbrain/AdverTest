@@ -19,7 +19,6 @@ import pytest
 
 from src.attacks.base import AttackContext
 from src.attacks.weather.lidar_fog import LidarFog
-from src.core.types import DetectionPrediction, Sample
 from src.evaluation.kitti3d import Kitti3DEvaluator
 from src.pipeline.protocol import BenchmarkProtocol
 

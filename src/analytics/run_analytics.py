@@ -8,7 +8,8 @@ No filesystem I/O or external network queries are performed.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 
 def compute_run_summary(report: Mapping[str, Any]) -> dict[str, Any]:

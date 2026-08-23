@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
@@ -30,7 +31,6 @@ from src.api.schemas import (
     ClosedLoopAdvanceIn,
     ClosedLoopSnapshotOut,
     ClosedLoopStartIn,
-    CostEstimateOut,
     DefenceRunIn,
     FailureClusterCreateIn,
     LineageGraphOut,
@@ -41,8 +41,6 @@ from src.api.schemas import (
     RunJobOut,
     TrainingRunIn,
 )
-from pathlib import Path
-
 from src.api.training_service import TrainingJobService
 from src.api.workflow_store import WorkflowJobStore
 from src.config import get_settings
@@ -80,15 +78,6 @@ async def get_defense_profile(
 
 
 # ---- Training Runs & Manifests ----
-
-
-@router.post("/training-runs/estimate")
-async def estimate_training_run(
-    body: TrainingRunIn,
-    training_jobs: TrainingJobService = Depends(get_training_jobs),
-) -> dict[str, Any]:
-    """Estimate training dataset size and duration without spawning external worker processes."""
-    return training_jobs.estimate(body)
 
 
 @router.post("/training-runs/estimate")

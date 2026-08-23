@@ -1,8 +1,10 @@
 import numpy as np
 import pytest
+
 from src.attacks.base import AttackContext
 from src.attacks.occlusion.lidar_point_dropout import LidarPointDropout
 from src.core.types import Box3D, LidarFrame, Sample
+
 
 @pytest.fixture
 def kitti_sample():

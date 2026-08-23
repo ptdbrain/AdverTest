@@ -48,11 +48,11 @@ async def client(tmp_path, monkeypatch):
     get_settings.cache_clear()
 
     import src.api.dependencies as deps_module
+    import src.api.routers.analytics as analytics_module
     import src.api.routers.catalog as catalog_module
     import src.api.routers.datasets as datasets_module
-    import src.api.routers.runs as runs_module
     import src.api.routers.defence as defence_module
-    import src.api.routers.analytics as analytics_module
+    import src.api.routers.runs as runs_module
     import src.api.routes as routes_module
     import src.main as main_module
 
