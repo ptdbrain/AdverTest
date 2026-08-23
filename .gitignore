@@ -82,6 +82,11 @@ advertest-plan.md
 # Results
 results/
 
+# Local test scratch
+.pytest_temp/
+scratch/
+.superpowers/
+
 # Kaggle downloads and generated notebook artifacts.
 kaggle/
 notebooks/

@@ -48,12 +48,16 @@ async def client(tmp_path, monkeypatch):
     get_settings.cache_clear()
 
     import src.api.dependencies as deps_module
+    import src.api.routers.admin as admin_module
+    import src.api.routers.advisor as advisor_module
     import src.api.routers.analytics as analytics_module
+    import src.api.routers.auth as auth_module
     import src.api.routers.catalog as catalog_module
     import src.api.routers.datasets as datasets_module
     import src.api.routers.defence as defence_module
     import src.api.routers.runs as runs_module
     import src.api.routes as routes_module
+    import src.auth.dependencies as auth_deps_module
     import src.main as main_module
 
     deps_module.get_store.cache_clear()
@@ -66,14 +70,22 @@ async def client(tmp_path, monkeypatch):
         deps_module.get_training_jobs.cache_clear()
     if hasattr(deps_module, 'get_checkpoint_validations'):
         deps_module.get_checkpoint_validations.cache_clear()
+    if hasattr(deps_module, 'get_advisor_service') and hasattr(deps_module.get_advisor_service, 'cache_clear'):
+        deps_module.get_advisor_service.cache_clear()
+    if hasattr(auth_deps_module, 'get_auth_service') and hasattr(auth_deps_module.get_auth_service, 'cache_clear'):
+        auth_deps_module.get_auth_service.cache_clear()
 
     importlib.reload(deps_module)
+    importlib.reload(auth_deps_module)
     importlib.reload(routes_module)
     importlib.reload(catalog_module)
     importlib.reload(runs_module)
     importlib.reload(datasets_module)
     importlib.reload(defence_module)
     importlib.reload(analytics_module)
+    importlib.reload(advisor_module)
+    importlib.reload(auth_module)
+    importlib.reload(admin_module)
     main_module = importlib.reload(main_module)
 
     app = main_module.app

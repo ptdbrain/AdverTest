@@ -8,6 +8,7 @@ import ComparisonView from "@/components/ComparisonView";
 import ReportView from "@/components/ReportView";
 import ImageGrid from "@/components/ImageGrid";
 import ThemeToggle from "@/components/ThemeToggle";
+import AdvisorPanel from "@/components/AdvisorPanel.jsx";
 import { useAdverTest } from "@/hooks/useAdverTest";
 
 const MODE_LABELS = {
@@ -41,6 +42,13 @@ function HeaderBar({ mode, runStatus, isRunning }) {
         </span>
       </div>
       <div className="app-header__right">
+        <a
+          href="/admin"
+          className="rounded-md border border-slate-700 bg-slate-800/60 px-2.5 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+          style={{ textDecoration: "none" }}
+        >
+          Admin
+        </a>
         <ThemeToggle />
         <div className={`app-header__status ${statusClass}`} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <span className={`status-beacon ${isRunning ? "status-beacon--running" : runStatus === "FAILED" ? "status-beacon--failed" : "status-beacon--ready"}`} />
@@ -214,6 +222,7 @@ export default function HomePage() {
                 <button className={`tab-bar__item ${state.activeTab === "comparison" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("comparison")}>Comparison</button>
                 <button className={`tab-bar__item ${state.activeTab === "report" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("report")}>Report</button>
                 <button className={`tab-bar__item ${state.activeTab === "defence" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("defence")}>Defence</button>
+                <button className={`tab-bar__item ${state.activeTab === "advisor" ? "tab-bar__item--active" : ""}`} onClick={() => actions.setActiveTab("advisor")}>AI Advisor</button>
               </nav>
 
               {state.runStatus === "FAILED" && (
@@ -229,7 +238,20 @@ export default function HomePage() {
                 </p>
               )}
 
-              {state.activeTab === "defence" ? (
+              {state.activeTab === "advisor" ? (
+                <div style={{ padding: "var(--space-md)" }}>
+                  <AdvisorPanel
+                    runId={state.runId}
+                    onTriggerAction={(actionType, params) => {
+                      if (actionType === "RUN_CLEAN_BASELINE" && actions.runBenchmark) {
+                        actions.runBenchmark();
+                      } else if (actionType === "GENERATE_DEFENCE_DATASET") {
+                        actions.setActiveTab("defence");
+                      }
+                    }}
+                  />
+                </div>
+              ) : state.activeTab === "defence" ? (
                 <DefencePanel
                   baselineRunId={state.defenceBaselineRunId || state.runId}
                   baseCheckpoints={state.baseCheckpoints}
