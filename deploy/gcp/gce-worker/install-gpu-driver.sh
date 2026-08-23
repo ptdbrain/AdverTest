@@ -31,6 +31,5 @@ docker run -d --name advertest-gpu-worker --restart always --network host \
   -e MODEL_DEVICE=cuda:0 \
   -e MODEL_HALF_PRECISION=true \
   -e LD_LIBRARY_PATH=/usr/local/nvidia/lib64 \
-  -e PATH=/usr/local/nvidia/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   -e GPU_IDLE_SHUTDOWN_SECONDS=900 \
   asia-southeast1-docker.pkg.dev/ai20k-build/advertest/gce-worker:gpu-dispatch-v7
