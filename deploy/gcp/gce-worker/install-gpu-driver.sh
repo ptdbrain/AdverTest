@@ -17,6 +17,10 @@ docker rm -f advertest-gpu-worker advertest-gpu-worker-v4 || true
 docker run -d --name advertest-gpu-worker --restart always --network host \
   -v /var/lib/nvidia/lib64:/usr/local/nvidia/lib64:ro \
   -v /var/lib/nvidia/bin:/usr/local/nvidia/bin:ro \
+  --device /dev/nvidia0 \
+  --device /dev/nvidiactl \
+  --device /dev/nvidia-uvm \
+  --device /dev/nvidia-uvm-tools \
   -e APP_ENV=production \
   -e GOOGLE_CLOUD_PROJECT=ai20k-build \
   -e GCP_PUBSUB_SUBSCRIPTION=projects/ai20k-build/subscriptions/advertest-gce-worker \
@@ -26,5 +30,7 @@ docker run -d --name advertest-gpu-worker --restart always --network host \
   -e OBJECT_STORAGE_REGION=auto \
   -e MODEL_DEVICE=cuda:0 \
   -e MODEL_HALF_PRECISION=true \
+  -e LD_LIBRARY_PATH=/usr/local/nvidia/lib64 \
+  -e PATH=/usr/local/nvidia/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   -e GPU_IDLE_SHUTDOWN_SECONDS=900 \
   asia-southeast1-docker.pkg.dev/ai20k-build/advertest/gce-worker:gpu-dispatch-v7
