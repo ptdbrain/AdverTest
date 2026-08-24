@@ -42,7 +42,11 @@ export function LanguageProvider({ children }) {
 export function useLanguage() {
   const ctx = useContext(LanguageContext);
   if (!ctx) {
-    throw new Error("useLanguage phải được dùng bên trong <LanguageProvider>");
+    return {
+      lang: "vi",
+      setLang: () => {},
+      t: (key, params) => translate("vi", key, params),
+    };
   }
   return ctx;
 }
