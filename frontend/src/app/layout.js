@@ -1,5 +1,6 @@
 import { Inter } from "next/font/google";
 import AppShell from "@/components/layout/AppShell";
+import AppProviders from "@/components/AppProviders";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -11,9 +12,11 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="vi" className={inter.className}>
+    <html lang="vi" className={inter.className} suppressHydrationWarning>
       <body className="antialiased bg-[#F8FAFC] text-[#0F172A]">
-        <AppShell>{children}</AppShell>
+        <AppProviders>
+          <AppShell>{children}</AppShell>
+        </AppProviders>
       </body>
     </html>
   );

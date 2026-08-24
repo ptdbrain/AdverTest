@@ -363,7 +363,7 @@ class SqliteRunStore:
 class LocalRunWorker:
     """Bounded background worker. A GPU deployment replaces this with Celery."""
 
-    def __init__(self, store: SqliteRunStore, *, max_workers: int = 1) -> None:
+    def __init__(self, store: SqliteRunStore, *, max_workers: int = 4) -> None:
         self.store = store
         self.pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="advertest-run")
 
@@ -371,6 +371,9 @@ class LocalRunWorker:
         self.pool.submit(self._execute, run_id, config)
 
     def _execute(self, run_id: str, config: RunConfig) -> None:
+        if self.store.cancel_requested(run_id):
+            self.store.fail(run_id, "Cancelled by user before execution", cancelled=True)
+            return
         total_cells = max(1, len(config.attacks) * len(config.severities))
 
         def progress(state: str, detail: dict[str, Any]) -> None:
@@ -427,7 +430,8 @@ def _row_payload(row: sqlite3.Row) -> dict[str, Any]:
         "run_id": row["run_id"],
         "status": row["status"],
         "progress": row["progress"],
-        "detail": json.loads(row["detail_json"]),
+        "detail": json.loads(row["detail_json"]) if row["detail_json"] else {},
+        "config": json.loads(row["config_json"]) if "config_json" in row.keys() and row["config_json"] else None,
         "report": json.loads(row["report_json"]) if row["report_json"] else None,
         "error": row["error"],
         "cancel_requested": bool(row["cancel_requested"]),

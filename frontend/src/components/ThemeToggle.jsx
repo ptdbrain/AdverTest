@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useLanguage } from "@/context/LanguageContext";
 
 export default function ThemeToggle({ className = "", compact = false }) {
+  const { t } = useLanguage();
   const [theme, setTheme] = useState("dark");
 
   useEffect(() => {
@@ -38,8 +40,8 @@ export default function ThemeToggle({ className = "", compact = false }) {
       type="button"
       className={`theme-toggle-btn ${className}`}
       onClick={toggleTheme}
-      title={isLight ? "Chuyển sang Dark mode" : "Chuyển sang Light mode"}
-      aria-label={isLight ? "Switch to Dark mode" : "Switch to Light mode"}
+      title={isLight ? t("theme.toggleToDark") : t("theme.toggleToLight")}
+      aria-label={isLight ? t("theme.toggleToDark") : t("theme.toggleToLight")}
       suppressHydrationWarning
     >
       {isLight ? (
@@ -79,7 +81,7 @@ export default function ThemeToggle({ className = "", compact = false }) {
           <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
         </svg>
       )}
-      {!compact && <span className="theme-toggle-btn__text">{isLight ? "Dark" : "Light"}</span>}
+      {!compact && <span className="theme-toggle-btn__text">{isLight ? t("theme.dark") : t("theme.light")}</span>}
     </button>
   );
 }

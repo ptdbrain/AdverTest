@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
+    # Security & Auth
+    jwt_secret: str = "advertest-insecure-development-secret-key-2026"
+    admin_default_password: str = "AdminPassword123!"
+    wandb_encryption_key: str = "replace-this-with-a-fernet-key-in-production"
+
     # Test-run defaults (plan §5: cheap by default, opt into expensive scans)
     default_model: str = "blob_detector"
     default_dataset: str = "synthetic_shapes"

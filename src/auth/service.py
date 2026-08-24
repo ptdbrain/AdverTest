@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import json
+import logging
+import urllib.request
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from src.api.jobs import SqliteRunStore
-from src.auth.contracts import AuditLogOut, UserCreateIn, UserOut, UserRole, UserStatus
+from src.auth.contracts import AuditLogOut, GoogleAuthIn, UserCreateIn, UserOut, UserStatus
 from src.auth.security import create_access_token, hash_password, verify_password
+from src.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:
@@ -18,18 +23,15 @@ class AuthService:
     def __init__(self, store: SqliteRunStore) -> None:
         self._store = store
 
-    def register(self, payload: UserCreateIn, *, role: UserRole | None = None) -> tuple[UserOut, str]:
-        """Register a new user account.
-
-        If this is the first registered user and no role is specified, automatically grant ADMIN.
-        """
+    def register(self, payload: UserCreateIn, *, role: str | None = None) -> tuple[UserOut, str]:
+        """Register a new user account."""
         existing_users = self._store.list_records("user")
         for u in existing_users:
             if u.get("email") == payload.email:
                 raise ValueError("An account with this email already exists.")
 
         user_id = f"usr-{uuid.uuid4().hex[:12]}"
-        user_role: UserRole = role if role is not None else ("ADMIN" if len(existing_users) == 0 else "USER")
+        user_role = role or payload.role or ("ADMIN" if len(existing_users) == 0 else "ENGINEER")
         now_str = datetime.now(UTC).isoformat()
 
         user_record = {
@@ -37,6 +39,8 @@ class AuthService:
             "email": str(payload.email),
             "password_hash": hash_password(payload.password),
             "display_name": payload.display_name,
+            "avatar_url": None,
+            "auth_provider": "local",
             "role": user_role,
             "status": "ACTIVE",
             "storage_quota_bytes": 10 * 1024 * 1024 * 1024,
@@ -47,7 +51,6 @@ class AuthService:
 
         self._store.put_record("user", user_id, user_record)
 
-        # Audit registration
         self.record_audit(
             actor_user_id=user_id,
             action="USER_REGISTER",
@@ -74,11 +77,88 @@ class AuthService:
         if not verify_password(plain_password, target_user.get("password_hash", "")):
             raise ValueError("Invalid email or password.")
 
-        # Update last login
         target_user["last_login_at"] = datetime.now(UTC).isoformat()
         self._store.update_record("user", target_user["id"], target_user)
 
         user_out = self._to_user_out(target_user)
+        token = create_access_token({"sub": user_out.id, "email": user_out.email, "role": user_out.role})
+        return user_out, token
+
+    def authenticate_google(self, payload: GoogleAuthIn) -> tuple[UserOut, str]:
+        """Authenticate via Google SSO (OAuth2 ID Token or verified Google profile)."""
+        email = payload.email
+        display_name = payload.display_name
+        avatar_url = payload.avatar_url
+
+        # If a Google ID token credential was provided, verify and decode claims
+        if payload.credential:
+            try:
+                # 1. Try Google TokenInfo endpoint for authoritative token verification
+                req = urllib.request.Request(
+                    f"https://oauth2.googleapis.com/tokeninfo?id_token={payload.credential}",
+                    headers={"User-Agent": "AdverTest-Auth/1.0"},
+                )
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    claims = json.loads(response.read().decode())
+                    email = claims.get("email") or email
+                    display_name = claims.get("name") or display_name
+                    avatar_url = claims.get("picture") or avatar_url
+            except Exception as e:
+                # Disabling unsafe fallback: decoding JWT without signature validation is a severe security risk.
+                raise ValueError(f"Google Token verification failed: {e}. Refusing to trust unverified payload.") from e
+
+        if not email:
+            raise ValueError("Google authentication failed: Email address is required.")
+
+        users = self._store.list_records("user")
+        target_user = next((u for u in users if u.get("email") == email), None)
+        now_str = datetime.now(UTC).isoformat()
+
+        if target_user:
+            # User already exists -> Update profile & login timestamp
+            if target_user.get("status") != "ACTIVE":
+                raise ValueError(f"Account is {target_user.get('status', 'SUSPENDED').lower()}. Contact administrator.")
+
+            target_user["last_login_at"] = now_str
+            if avatar_url:
+                target_user["avatar_url"] = avatar_url
+            if display_name and not target_user.get("display_name"):
+                target_user["display_name"] = display_name
+            if payload.role and payload.role != target_user.get("role"):
+                target_user["role"] = payload.role
+
+            self._store.update_record("user", target_user["id"], target_user)
+            user_out = self._to_user_out(target_user)
+        else:
+            # Create new user registered via Google SSO
+            user_id = f"usr-g-{uuid.uuid4().hex[:10]}"
+            user_role = payload.role or ("ADMIN" if len(users) == 0 else "ENGINEER")
+
+            new_user = {
+                "id": user_id,
+                "email": str(email),
+                "password_hash": "",
+                "display_name": display_name or email.split("@")[0],
+                "avatar_url": avatar_url or f"https://api.dicebear.com/7.x/bottts/svg?seed={email}",
+                "auth_provider": "google",
+                "role": user_role,
+                "status": "ACTIVE",
+                "storage_quota_bytes": 10 * 1024 * 1024 * 1024,
+                "compute_quota_hours": 100.0,
+                "created_at": now_str,
+                "last_login_at": now_str,
+            }
+            self._store.put_record("user", user_id, new_user)
+            user_out = self._to_user_out(new_user)
+
+        self.record_audit(
+            actor_user_id=user_out.id,
+            action="USER_LOGIN_GOOGLE",
+            resource_type="user",
+            resource_id=user_out.id,
+            detail={"email": email, "auth_provider": "google", "role": user_out.role},
+        )
+
         token = create_access_token({"sub": user_out.id, "email": user_out.email, "role": user_out.role})
         return user_out, token
 
@@ -97,7 +177,7 @@ class AuthService:
         target_user_id: str,
         *,
         status: UserStatus | None = None,
-        role: UserRole | None = None,
+        role: str | None = None,
         storage_quota_bytes: int | None = None,
         compute_quota_hours: float | None = None,
     ) -> UserOut:
@@ -127,32 +207,37 @@ class AuthService:
         return self._to_user_out(user_record)
 
     def ensure_default_accounts(self) -> None:
-        """Ensure standard initial Admin and User accounts exist for zero-friction login."""
+        """Ensure standard initial accounts exist for zero-friction login."""
         users = self._store.list_records("user")
         users_by_email = {u.get("email"): u for u in users}
 
         if "admin@advertest.ai" not in users_by_email:
+            settings = get_settings()
+            admin_pwd = settings.admin_default_password
+            if admin_pwd == "AdminPassword123!":
+                logger.warning(
+                    "CRITICAL SECURITY WARNING: System initialized with the default Admin password. "
+                    "You MUST change this in production by setting the `ADMIN_DEFAULT_PASSWORD` environment variable."
+                )
+
             self.register(
                 UserCreateIn(
                     email="admin@advertest.ai",
-                    password="AdminPassword123!",
+                    password=admin_pwd,
                     display_name="System Administrator",
+                    role="ADMIN",
                 ),
                 role="ADMIN",
             )
-        elif users_by_email["admin@advertest.ai"].get("role") != "ADMIN":
-            admin_record = users_by_email["admin@advertest.ai"]
-            admin_record["role"] = "ADMIN"
-            self._store.update_record("user", admin_record["id"], admin_record)
-
-        if "user@advertest.ai" not in users_by_email:
+        if "engineer@advertest.ai" not in users_by_email:
             self.register(
                 UserCreateIn(
-                    email="user@advertest.ai",
-                    password="UserPassword123!",
-                    display_name="Benchmark Developer",
+                    email="engineer@advertest.ai",
+                    password="EngineerPassword123!",
+                    display_name="Alex (ML Engineer)",
+                    role="ENGINEER",
                 ),
-                role="USER",
+                role="ENGINEER",
             )
 
     def record_audit(
@@ -209,7 +294,9 @@ class AuthService:
             id=record["id"],
             email=record["email"],
             display_name=record.get("display_name", ""),
-            role=record.get("role", "USER"),
+            avatar_url=record.get("avatar_url"),
+            auth_provider=record.get("auth_provider", "local"),
+            role=record.get("role", "ENGINEER"),
             status=record.get("status", "ACTIVE"),
             storage_quota_bytes=int(record.get("storage_quota_bytes", 10 * 1024 * 1024 * 1024)),
             compute_quota_hours=float(record.get("compute_quota_hours", 100.0)),

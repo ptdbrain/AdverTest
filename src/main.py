@@ -34,6 +34,9 @@ from src.api.routers import (
     platform_datasets,
     runs,
 )
+from src.api.routers import (
+    settings as settings_router,
+)
 from src.api.routes import router
 from src.attacks import load_attacks
 from src.config import get_settings
@@ -113,6 +116,7 @@ app.include_router(platform_datasets.router, prefix="/api/v1")
 app.include_router(defence.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")
 app.include_router(advisor.router, prefix="/api/v1")
+app.include_router(settings_router.router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")
 app.mount("/data", StaticFiles(directory=str(data_root)), name="data")
 

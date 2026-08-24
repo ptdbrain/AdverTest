@@ -1,6 +1,10 @@
+"use client";
+
 import React, { useRef, useState } from "react";
 import UploadModal from "./UploadModal";
 import { getCheckpoint, uploadCheckpoint } from "@/lib/api";
+import { SHORT_ATTACK_LABELS, ATTACK_LABELS } from "@/lib/attackNaming";
+import { useLanguage } from "@/context/LanguageContext";
 
 const GROUP_LABELS = {
   A: "Corruption",
@@ -63,12 +67,15 @@ export default function ConfigPanel({
   selectedAttacks = [],
   recipe = { steps: [] },
   runOptions = { seed: 42, limit: 8, split: "val", difficulty: "all", confidence: 0.25, iou: 0.5 },
+  runId = null,
+  activeRunMeta = null,
   isRunning = false,
   progress = 0,
   progressDetail = "",
   runStatus,
   actions = {},
 }) {
+  const { t } = useLanguage();
   const {
     setSelectedDataset,
     addDataset,
@@ -255,6 +262,10 @@ export default function ConfigPanel({
             ))}
           </select>
         </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px", fontSize: "0.62rem", color: "var(--success, #10B981)" }}>
+          <span>🛡️</span>
+          <span>Privacy Anonymized (Face & License Plates blurred)</span>
+        </div>
       </div>
 
       <UploadModal
@@ -377,10 +388,10 @@ export default function ConfigPanel({
                 className="recipe-step"
                 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.72rem" }}
               >
-                <span>{step.attack_name.replace(/_/g, " ")}</span>
+                <span>{SHORT_ATTACK_LABELS[step.attack_name] || ATTACK_LABELS[step.attack_name] || step.attack_name.replace(/_/g, " ")}</span>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.68rem", color: "var(--accent-light)" }}>
-                    Sev {step.severity}
+                    {t("config.level", { level: step.severity })}
                   </span>
                   <input
                     aria-label={`${step.attack_name} severity`}
@@ -492,34 +503,119 @@ export default function ConfigPanel({
         )}
       </div>
 
-      {/* 7. Progress Bar */}
-      {isRunning && (
-        <div className="progress-inline">
-          <div className="progress-inline__text">
-            <strong>{progressDetail || "Processing..."}</strong>
-            <span>{progress}%</span>
+      {/* 7. Pre-flight Workload & Cost Complexity Card */}
+      {!isRunning && selectedAttacks.length > 0 && (() => {
+        const nSamples = runOptions?.limit ?? 8;
+        const nAttacks = selectedAttacks.length;
+        const hasExpensive = selectedAttacks.some((a) => ["cw_l2", "square_attack", "dag"].includes(a));
+        const hasMedium = selectedAttacks.some((a) => ["pgd", "fgsm", "mi_fgsm", "tog", "sam2_pgd"].includes(a));
+        const complexityTier = hasExpensive ? t("config.complexity.heavy") : hasMedium ? t("config.complexity.medium") : t("config.complexity.light");
+        const complexityColor = hasExpensive ? "var(--danger)" : hasMedium ? "var(--warning)" : "var(--success)";
+        const estForwardPasses = (nAttacks + 1) * nSamples;
+
+        return (
+          <div
+            style={{
+              background: "var(--bg-elevated, #1A2230)",
+              padding: "8px 10px",
+              borderRadius: "var(--radius-sm, 6px)",
+              border: "1px solid var(--border-subtle, rgba(148, 163, 184, 0.12))",
+              display: "flex",
+              flexDirection: "column",
+              gap: "4px",
+              fontSize: "0.68rem",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>{t("config.workloadBudget")}</span>
+              <span style={{ color: complexityColor, fontWeight: 700, fontSize: "0.62rem" }}>
+                {complexityTier}
+              </span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", color: "var(--text-muted)", marginTop: "2px" }}>
+              <div>{t("config.cells")} <strong style={{ color: "var(--text-primary)" }}>{t("config.attacksFormat", { attacks: nAttacks, samples: nSamples })}</strong></div>
+              <div>{t("config.forwardPasses")} <strong style={{ color: "var(--text-primary)" }}>{t("config.passesCount", { count: estForwardPasses })}</strong></div>
+              <div>{t("config.predCaching")} <strong style={{ color: "var(--success)" }}>SQLite Enabled</strong></div>
+              <div>{t("config.resourceNeed")} <strong style={{ color: "var(--text-primary)" }}>Device Inferred</strong></div>
+            </div>
           </div>
-          <div className="progress-inline__bar-track">
-            <div className="progress-inline__bar-fill" style={{ width: `${progress}%` }} />
+        );
+      })()}
+
+      {/* 8. Active Execution Monitor */}
+      {isRunning && (
+        <div
+          style={{
+            background: "rgba(56, 189, 248, 0.08)",
+            border: "1px solid rgba(56, 189, 248, 0.25)",
+            borderRadius: "8px",
+            padding: "12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+            margin: "4px 0",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "var(--accent)", display: "flex", alignItems: "center", gap: "6px" }}>
+              <span className="status-beacon status-beacon--running" style={{ width: 8, height: 8 }} />
+              {t("config.runningSession", { id: runId ? runId.slice(0, 8) : "INITIALIZING" })}
+            </span>
+            <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
+              {progress}%
+            </span>
+          </div>
+
+          <div className="progress-inline__bar-track" style={{ height: "6px", background: "var(--bg-primary)" }}>
+            <div className="progress-inline__bar-fill" style={{ width: `${progress}%`, background: "var(--accent)" }} />
+          </div>
+
+          <div style={{ fontSize: "0.68rem", color: "var(--text-secondary)", lineHeight: 1.4 }}>
+            <div>📌 <strong>{t("config.attackLabel")}</strong> {activeRunMeta?.attacks?.length ? activeRunMeta.attacks.map((a) => SHORT_ATTACK_LABELS[a] || ATTACK_LABELS[a] || a).join(" + ") : (selectedAttacks.length ? selectedAttacks.map((a) => SHORT_ATTACK_LABELS[a] || a).join(", ") : t("config.custom"))}</div>
+            <div>🤖 <strong>{t("common.model")}</strong> {activeRunMeta?.modelVersion || selectedModelVersion || "YOLO11"} | 📦 <strong>{t("common.data")}</strong> {activeRunMeta?.dataset || selectedDataset}</div>
+            <div style={{ color: "var(--text-muted)", marginTop: "2px" }}>{progressDetail || t("config.processGradient")}</div>
           </div>
         </div>
       )}
 
-      {/* 8. Run Button */}
+      {/* 9. Run & Control Buttons */}
       {isRunning ? (
-        <button
-          type="button"
-          className="run-button"
-          onClick={cancelRunAction}
-          style={{
-            background: "var(--danger-dim, rgba(239, 68, 68, 0.15))",
-            borderColor: "var(--danger, #ef4444)",
-            color: "var(--danger, #ef4444)",
-            cursor: "pointer",
-          }}
-        >
-          ✕ Cancel Run
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <button
+            type="button"
+            className="run-button"
+            onClick={cancelRunAction}
+            style={{
+              background: "rgba(239, 68, 68, 0.15)",
+              borderColor: "#EF4444",
+              color: "#EF4444",
+              cursor: "pointer",
+              fontWeight: 800,
+              fontSize: "0.82rem",
+              padding: "10px 14px",
+            }}
+          >
+            {t("config.cancelStop")}
+          </button>
+
+          <button
+            type="button"
+            className="run-button"
+            onClick={handleRun}
+            style={{
+              background: "rgba(56, 189, 248, 0.12)",
+              borderColor: "var(--accent)",
+              color: "var(--accent)",
+              cursor: "pointer",
+              fontWeight: 700,
+              fontSize: "0.75rem",
+              padding: "8px 12px",
+            }}
+            title={t("config.cancelRerun.title")}
+          >
+            {t("config.cancelRerun")}
+          </button>
+        </div>
       ) : (
         <button
           type="button"
@@ -527,7 +623,7 @@ export default function ConfigPanel({
           onClick={handleRun}
           disabled={blocked || selectedAttacks.length === 0}
         >
-          {blocked ? "Waiting for artifacts" : "Run Test"}
+          {blocked ? t("config.waitingArtifacts") : t("config.runTest")}
         </button>
       )}
     </aside>

@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-UserRole = Literal["USER", "ADMIN"]
+UserRole = Literal["USER", "ADMIN", "ENGINEER", "REVIEWER", "AUDITOR"]
 UserStatus = Literal["ACTIVE", "SUSPENDED", "DISABLED"]
 
 
@@ -17,7 +17,9 @@ class UserOut(BaseModel):
     id: str
     email: str
     display_name: str
-    role: UserRole = "USER"
+    avatar_url: str | None = None
+    auth_provider: str = "local"
+    role: str = "ENGINEER"
     status: UserStatus = "ACTIVE"
     storage_quota_bytes: int = 10 * 1024 * 1024 * 1024  # 10 GB default
     compute_quota_hours: float = 100.0  # 100 GPU/CPU hours default
@@ -31,6 +33,7 @@ class UserCreateIn(BaseModel):
     email: str = Field(min_length=3, max_length=255)
     password: str = Field(min_length=8, description="Password must have at least 8 characters")
     display_name: str = Field(min_length=1, max_length=100)
+    role: str | None = None
 
 
 class LoginIn(BaseModel):
@@ -38,6 +41,16 @@ class LoginIn(BaseModel):
 
     email: str
     password: str
+
+
+class GoogleAuthIn(BaseModel):
+    """Payload for authenticating with Google SSO (ID Token or OAuth callback)."""
+
+    credential: str | None = None
+    email: str | None = None
+    display_name: str | None = None
+    avatar_url: str | None = None
+    role: str | None = None
 
 
 class TokenOut(BaseModel):
@@ -53,7 +66,7 @@ class UserStatusUpdateIn(BaseModel):
     """Admin payload for updating user account status, role, or quotas."""
 
     status: UserStatus | None = None
-    role: UserRole | None = None
+    role: str | None = None
     storage_quota_bytes: int | None = None
     compute_quota_hours: float | None = None
 

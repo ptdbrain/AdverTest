@@ -89,7 +89,7 @@ async def get_run_analytics_classes(
     return compute_run_classes_breakdown(run_item["report"])
 
 
-@router.get("/runs/{run_id}/samples")
+@router.get("/runs/{run_id}/analytics/samples")
 async def get_run_analytics_samples(
     run_id: str,
     attack: str | None = Query(default=None, description="Filter by attack name"),

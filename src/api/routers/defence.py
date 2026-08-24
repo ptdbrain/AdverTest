@@ -427,7 +427,10 @@ async def create_defence_run(
     if candidate.checkpoint_role == "base":
         raise HTTPException(status_code=422, detail={"code": "DEFENCE_CANDIDATE_ROLE_REQUIRED"})
 
-    baseline_config = RunConfig.model_validate(baseline["config"])
+    raw_config = baseline.get("config") or (baseline.get("report") or {}).get("provenance", {}).get("run_config")
+    if not raw_config:
+        raise HTTPException(status_code=422, detail={"code": "BASELINE_CONFIG_MISSING"})
+    baseline_config = RunConfig.model_validate(raw_config)
     if candidate.task != baseline_config.task_id or candidate.model_family_id != baseline_config.model_family_id:
         raise HTTPException(status_code=422, detail={"code": "DEFENCE_PROTOCOL_TASK_OR_FAMILY_MISMATCH"})
 

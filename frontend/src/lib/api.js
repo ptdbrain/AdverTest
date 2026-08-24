@@ -12,16 +12,26 @@ export function getApiBase() {
   return BUILD_TIME_API_BASE.replace(/\/$/, "");
 }
 
+export function artifactUrl(pathValue) {
+  if (!pathValue) return "";
+  if (/^https?:\/\//i.test(pathValue)) return pathValue;
+  const base = getApiBase();
+  const normalized = pathValue.startsWith("/") ? pathValue : `/${pathValue}`;
+  return `${base}${normalized}`;
+}
+
 export async function apiFetch(path, options = {}) {
   const url = `${getApiBase()}${path}`;
-  const headers = { "Content-Type": "application/json", ...options.headers };
-  
-  if (typeof window !== "undefined" && !headers["Authorization"]) {
-    const token = localStorage.getItem("advertest_auth_token");
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
+  let authHeaders = {};
+  if (typeof window !== "undefined") {
+    try {
+      const token = localStorage.getItem("advertest_auth_token");
+      if (token) {
+        authHeaders["Authorization"] = `Bearer ${token}`;
+      }
+    } catch {}
   }
+  const headers = { "Content-Type": "application/json", ...authHeaders, ...options.headers };
 
   const res = await fetch(url, {
     ...options,
@@ -40,17 +50,25 @@ export async function apiFetch(path, options = {}) {
   return res.json();
 }
 
-export function loginUser({ email, password }) {
+export function loginUser(credentialsOrEmail, passwordArg) {
+  const payload =
+    typeof credentialsOrEmail === "object"
+      ? credentialsOrEmail
+      : { email: credentialsOrEmail, password: passwordArg };
   return apiFetch("/api/v1/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(payload),
   });
 }
 
-export function registerUser({ email, password, display_name }) {
+export function registerUser(payloadOrEmail, passwordArg, displayNameArg) {
+  const payload =
+    typeof payloadOrEmail === "object"
+      ? payloadOrEmail
+      : { email: payloadOrEmail, password: passwordArg, display_name: displayNameArg };
   return apiFetch("/api/v1/auth/register", {
     method: "POST",
-    body: JSON.stringify({ email, password, display_name }),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -399,3 +417,45 @@ export function startFolderDatasetImport({ root, name, logicalSourceId, inputFor
 }
 
 export function getFolderDatasetImportJob(jobId) { return apiFetch(`/api/v1/datasets/import-jobs/${encodeURIComponent(jobId)}`); }
+ 
+/* ---- Authentication & Google SSO ---- */
+export function loginGoogleSSO(payload) {
+  return apiFetch("/api/v1/auth/google", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getGoogleAuthConfig() {
+  return apiFetch("/api/v1/auth/google/config");
+}
+
+export function getAuthMe() {
+  return apiFetch("/api/v1/auth/me");
+}
+
+/* ---- Settings & W&B Integration ---- */
+export function getWandbSettings() {
+  return apiFetch("/api/v1/settings/wandb");
+}
+
+export function saveWandbSettings(payload) {
+  return apiFetch("/api/v1/settings/wandb", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function testWandbConnection(payload) {
+  return apiFetch("/api/v1/settings/wandb/test", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateUserProfile(payload) {
+  return apiFetch("/api/v1/settings/profile", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}

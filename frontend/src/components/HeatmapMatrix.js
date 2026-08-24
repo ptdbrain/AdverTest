@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
+import { useLanguage } from "@/context/LanguageContext";
+import { getDescriptiveAttackName } from "@/lib/attackNaming";
 
 function cellColor(degradation) {
   const d = Math.max(0, Math.min(100, degradation));
@@ -12,16 +14,16 @@ function cellColor(degradation) {
   return       { bg: "rgba(252, 129, 129, 0.25)", text: "#fc8181" };
 }
 
-const GROUP_LABELS = {
-  A: "Corruption",
-  B: "Weather",
-  C: "Occlusion",
-  D: "Adversarial",
-  E: "Patch",
-  F: "Blackbox",
-};
-
-export default function HeatmapMatrix({ cells = [], heatmap = {} }) {
+export default function HeatmapMatrix({ cells = [], heatmap = {}, report = null }) {
+  const { t } = useLanguage();
+  const groupLabels = {
+    A: t("heatmap.catA"),
+    B: t("heatmap.catB"),
+    C: t("heatmap.catC"),
+    D: t("heatmap.catD"),
+    E: t("heatmap.catE"),
+    F: t("heatmap.catF"),
+  };
   const { groupedRows, severities } = useMemo(() => {
     const sevSet = new Set();
     cells.forEach((c) => sevSet.add(c.severity));
@@ -30,19 +32,24 @@ export default function HeatmapMatrix({ cells = [], heatmap = {} }) {
 
     const byAttack = {};
     cells.forEach((c) => {
-      if (!byAttack[c.attack]) byAttack[c.attack] = { group: c.group, cells: {} };
-      byAttack[c.attack].cells[c.severity] = c;
+      // Extract clean human-friendly attack name without (Cấp X) for row header
+      const displayName = getDescriptiveAttackName(c, null, report).replace(/\s*\(Cấp\s*\d+\)/i, "").trim();
+      const groupKey = c.group || "?";
+      const key = `${groupKey}::${displayName}`;
+
+      if (!byAttack[key]) byAttack[key] = { group: groupKey, name: displayName, cells: {} };
+      byAttack[key].cells[c.severity] = c;
     });
 
     const grouped = {};
-    Object.entries(byAttack).forEach(([name, data]) => {
+    Object.entries(byAttack).forEach(([key, data]) => {
       const g = data.group || "?";
       if (!grouped[g]) grouped[g] = [];
-      grouped[g].push({ name, ...data });
+      grouped[g].push(data);
     });
 
     return { groupedRows: grouped, severities: sevs };
-  }, [cells]);
+  }, [cells, report]);
 
   if (cells.length === 0) {
     return (
@@ -58,17 +65,17 @@ export default function HeatmapMatrix({ cells = [], heatmap = {} }) {
   return (
     <div className="heatmap">
       <div className="heatmap__title">
-        Degradation Heatmap
+        {t("heatmap.title")}
         <span style={{ fontSize: "0.55rem", color: "var(--text-muted)", fontWeight: 400, marginLeft: "auto" }}>
-          Cell = % degradation (D)
+          {t("heatmap.cellD")}
         </span>
       </div>
       <table className="heatmap__table">
         <thead>
           <tr>
-            <th>Attack</th>
+            <th>{t("heatmap.attackCol")}</th>
             {severities.map((s) => (
-              <th key={s}>Sev. {s}</th>
+              <th key={s}>{t("heatmap.levelCol", { level: s })}</th>
             ))}
           </tr>
         </thead>
@@ -78,12 +85,12 @@ export default function HeatmapMatrix({ cells = [], heatmap = {} }) {
               <tbody key={group}>
                 <tr className="heatmap__group-header">
                   <td colSpan={severities.length + 1}>
-                    {GROUP_LABELS[group] || group}
+                    {groupLabels[group] || group}
                   </td>
                 </tr>
                 {attacks.map((atk) => (
                   <tr key={atk.name}>
-                    <td>{atk.name.replace(/_/g, " ")}</td>
+                    <td style={{ fontWeight: 600 }}>{atk.name}</td>
                     {severities.map((s) => {
                       const cell = atk.cells[s];
                       const d = cell?.degradation ?? null;

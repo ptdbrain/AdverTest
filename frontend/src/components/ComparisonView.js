@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import Image from "next/image";
+import { getDescriptiveAttackName } from "@/lib/attackNaming";
 
 function degradationColor(d) {
   if (d < 15) return "var(--success)";
@@ -7,7 +8,7 @@ function degradationColor(d) {
   return "var(--danger)";
 }
 
-export default function ComparisonView({ report, samples, severity }) {
+export default function ComparisonView({ report, samples = [], severity }) {
   const [selectedSampleIdx, setSelectedSampleIdx] = useState(0);
   const [sliderPos, setSliderPos] = useState(50);
   const containerRef = useRef(null);
@@ -26,6 +27,7 @@ export default function ComparisonView({ report, samples, severity }) {
   const currentSample = samples[selectedSampleIdx] || null;
   const cleanUrl = currentSample?.artifacts?.clean_prediction_url;
   const attackedUrl = currentSample?.artifacts?.attacked_prediction_url;
+  const attackDisplayName = getDescriptiveAttackName(currentSample, currentSample?.severity || severity, report);
 
   const handleSliderChange = (e) => {
     setSliderPos(e.target.value);
@@ -57,7 +59,7 @@ export default function ComparisonView({ report, samples, severity }) {
           }}
         >
           <span className="comparison-container__label comparison-container__label--attacked" style={{ right: "var(--space-sm)", left: "auto" }}>
-            Attacked — {currentSample?.attack || "N/A"} (Sev.{currentSample?.severity || severity})
+            Tấn công: {attackDisplayName}
           </span>
           {attackedUrl ? (
             <Image className="comparison-image animate-fade-in" src={attackedUrl} alt="Attacked prediction" fill style={{ objectFit: "contain" }} unoptimized />
