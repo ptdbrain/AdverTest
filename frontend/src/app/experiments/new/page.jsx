@@ -18,6 +18,8 @@ import {
   Check,
   Sparkles,
   Info,
+  Database,
+  Search,
 } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import Card from "@/components/common/Card";
@@ -26,6 +28,8 @@ import Button from "@/components/common/Button";
 import {
   PROBLEM_TYPES,
   MODEL_ARCHITECTURES,
+  AVAILABLE_DATASETS,
+  AVAILABLE_MODELS,
   CLASS_LABELS_DATA,
 } from "@/data/mockData";
 import { cn } from "@/lib/utils";
@@ -34,15 +38,22 @@ export default function ConfigureProblemPage() {
   const router = useRouter();
   const [selectedTask, setSelectedTask] = useState("detection2d");
   const [selectedArch, setSelectedArch] = useState("yolo");
-  const [selectedModelVariant, setSelectedModelVariant] = useState("YOLOv8n");
-  const [dataSource, setDataSource] = useState("user_upload");
-  const [modelSource, setModelSource] = useState("user_upload");
+  
+  // Active selected dataset and model objects
+  const [selectedDatasetId, setSelectedDatasetId] = useState("traffic_urban_v1");
+  const [selectedModelId, setSelectedModelId] = useState("yolov8n");
+
+  const [dataSource, setDataSource] = useState("repository");
+  const [modelSource, setModelSource] = useState("default_lib");
   const [mixedPrecision, setMixedPrecision] = useState(true);
   const [batchSize, setBatchSize] = useState(16);
   const [gpuCount, setGpuCount] = useState(1);
   const [expName, setExpName] = useState("EXP-2025-05-12-001");
   const [expDesc, setExpDesc] = useState("Đánh giá khả năng phát hiện đối tượng của YOLOv8n trên bộ dữ liệu giao thông đô thị.");
   const [expTags, setExpTags] = useState("yolov8, object-detection, traffic");
+
+  const currentDataset = AVAILABLE_DATASETS.find((d) => d.id === selectedDatasetId) || AVAILABLE_DATASETS[0];
+  const currentModel = AVAILABLE_MODELS.find((m) => m.id === selectedModelId) || AVAILABLE_MODELS[0];
 
   const getTaskIcon = (id) => {
     switch (id) {
@@ -122,9 +133,9 @@ export default function ConfigureProblemPage() {
             </div>
           </Card>
 
-          {/* 2. Chọn mô hình / Kiến trúc */}
+          {/* 2. Chọn họ kiến trúc mô hình */}
           <Card
-            title="2. Chọn mô hình / Kiến trúc"
+            title="2. Chọn họ kiến trúc mô hình"
             subtitle="Chọn họ kiến trúc deep learning và phiên bản checkpoints cần kiểm thử"
           >
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -135,7 +146,8 @@ export default function ConfigureProblemPage() {
                     key={arch.id}
                     onClick={() => {
                       setSelectedArch(arch.id);
-                      setSelectedModelVariant(arch.defaultModel);
+                      const matchingModel = AVAILABLE_MODELS.find((m) => m.architecture === arch.id);
+                      if (matchingModel) setSelectedModelId(matchingModel.id);
                     }}
                     className={cn(
                       "p-3 rounded-lg border text-left cursor-pointer transition-all space-y-2",
@@ -154,11 +166,14 @@ export default function ConfigureProblemPage() {
                     </div>
                     <p className="text-[10px] text-slate-500">{arch.family}</p>
                     <select
-                      value={isSelected ? selectedModelVariant : arch.defaultModel}
+                      value={currentModel.name}
                       onChange={(e) => {
                         e.stopPropagation();
-                        setSelectedArch(arch.id);
-                        setSelectedModelVariant(e.target.value);
+                        const found = AVAILABLE_MODELS.find((m) => m.name.includes(e.target.value) || m.id === e.target.value);
+                        if (found) {
+                          setSelectedModelId(found.id);
+                          setSelectedArch(found.architecture || arch.id);
+                        }
                       }}
                       className="w-full text-xs py-1 px-2 border border-slate-300 rounded bg-white font-medium text-slate-700 focus:outline-none focus:border-blue-500"
                     >
@@ -182,30 +197,6 @@ export default function ConfigureProblemPage() {
                 <label
                   className={cn(
                     "flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors",
-                    dataSource === "user_upload"
-                      ? "border-blue-500 bg-blue-50/40"
-                      : "border-slate-200 hover:bg-slate-50"
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="data_src"
-                    checked={dataSource === "user_upload"}
-                    onChange={() => setDataSource("user_upload")}
-                    className="mt-0.5 text-blue-600"
-                  />
-                  <div>
-                    <div className="font-semibold text-slate-800">Tải lên bộ dữ liệu người dùng</div>
-                    <div className="text-[11px] text-slate-500">Tải lên ảnh, nhãn YOLO/COCO và file cấu hình</div>
-                    <Button variant="secondary" size="sm" icon={Upload} className="mt-2 text-xs">
-                      Tải lên dữ liệu
-                    </Button>
-                  </div>
-                </label>
-
-                <label
-                  className={cn(
-                    "flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors",
                     dataSource === "repository"
                       ? "border-blue-500 bg-blue-50/40"
                       : "border-slate-200 hover:bg-slate-50"
@@ -216,11 +207,24 @@ export default function ConfigureProblemPage() {
                     name="data_src"
                     checked={dataSource === "repository"}
                     onChange={() => setDataSource("repository")}
-                    className="text-blue-600"
+                    className="mt-0.5 text-blue-600"
                   />
-                  <div>
-                    <div className="font-semibold text-slate-800">Kho dữ liệu (Repository)</div>
-                    <div className="text-[11px] text-slate-500">traffic_dataset_v1 (25,146 ảnh)</div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-slate-800">Kho dữ liệu có sẵn (Repository)</div>
+                    <div className="text-[11px] text-slate-500 mb-2">Chọn bộ dữ liệu chuẩn đã có trong hệ thống</div>
+                    
+                    {/* Dataset Dropdown Selector */}
+                    <select
+                      value={selectedDatasetId}
+                      onChange={(e) => setSelectedDatasetId(e.target.value)}
+                      className="w-full p-1.5 rounded border border-slate-300 bg-white font-semibold text-blue-700 text-xs focus:outline-none focus:border-blue-500"
+                    >
+                      {AVAILABLE_DATASETS.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          📦 {d.name} ({d.samples.toLocaleString()} ảnh · {d.size})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </label>
 
@@ -236,12 +240,39 @@ export default function ConfigureProblemPage() {
                     type="radio"
                     name="data_src"
                     checked={dataSource === "sample"}
-                    onChange={() => setDataSource("sample")}
+                    onChange={() => {
+                      setDataSource("sample");
+                      setSelectedDatasetId("sample_demo_50");
+                    }}
                     className="text-blue-600"
                   />
                   <div>
-                    <div className="font-semibold text-slate-800">Dataset mẫu (Sample VOC/COCO)</div>
-                    <div className="text-[11px] text-slate-500">50 ảnh benchmark chuẩn</div>
+                    <div className="font-semibold text-slate-800">Dataset mẫu thử nhanh (50 ảnh)</div>
+                    <div className="text-[11px] text-slate-500">Tập con VOC 50 ảnh benchmark nhanh</div>
+                  </div>
+                </label>
+
+                <label
+                  className={cn(
+                    "flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors",
+                    dataSource === "user_upload"
+                      ? "border-blue-500 bg-blue-50/40"
+                      : "border-slate-200 hover:bg-slate-50"
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="data_src"
+                    checked={dataSource === "user_upload"}
+                    onChange={() => setDataSource("user_upload")}
+                    className="mt-0.5 text-blue-600"
+                  />
+                  <div>
+                    <div className="font-semibold text-slate-800">Tải lên bộ dữ liệu tùy chỉnh</div>
+                    <div className="text-[11px] text-slate-500">Hỗ trợ zip ảnh & nhãn YOLO / COCO JSON</div>
+                    <Button variant="secondary" size="sm" icon={Upload} className="mt-1.5 text-xs">
+                      Tải lên Dataset
+                    </Button>
                   </div>
                 </label>
               </div>
@@ -250,6 +281,70 @@ export default function ConfigureProblemPage() {
             {/* Nguồn mô hình */}
             <Card title="4. Nguồn mô hình">
               <div className="space-y-2.5 text-xs">
+                <label
+                  className={cn(
+                    "flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors",
+                    modelSource === "default_lib"
+                      ? "border-blue-500 bg-blue-50/40"
+                      : "border-slate-200 hover:bg-slate-50"
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="model_src"
+                    checked={modelSource === "default_lib"}
+                    onChange={() => setModelSource("default_lib")}
+                    className="mt-0.5 text-blue-600"
+                  />
+                  <div className="flex-1">
+                    <div className="font-semibold text-slate-800">Thư viện mô hình sẵn có (Pretrained)</div>
+                    <div className="text-[11px] text-slate-500 mb-2">Checkpoints chuẩn đã được benchmark</div>
+
+                    {/* Model Dropdown Selector */}
+                    <select
+                      value={selectedModelId}
+                      onChange={(e) => {
+                        const m = AVAILABLE_MODELS.find((mod) => mod.id === e.target.value);
+                        if (m) {
+                          setSelectedModelId(m.id);
+                          if (m.architecture) setSelectedArch(m.architecture);
+                        }
+                      }}
+                      className="w-full p-1.5 rounded border border-slate-300 bg-white font-semibold text-blue-700 text-xs focus:outline-none focus:border-blue-500"
+                    >
+                      {AVAILABLE_MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          🤖 {m.name} ({m.params} params · {m.format})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </label>
+
+                <label
+                  className={cn(
+                    "flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors",
+                    modelSource === "trained"
+                      ? "border-blue-500 bg-blue-50/40"
+                      : "border-slate-200 hover:bg-slate-50"
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="model_src"
+                    checked={modelSource === "trained"}
+                    onChange={() => {
+                      setModelSource("trained");
+                      setSelectedModelId("yolov8n_trades_defended");
+                    }}
+                    className="text-blue-600"
+                  />
+                  <div>
+                    <div className="font-semibold text-slate-800">Mô hình đã tôi luyện phòng thủ (Defended)</div>
+                    <div className="text-[11px] text-slate-500">YOLOv8n + TRADES (v2.1)</div>
+                  </div>
+                </label>
+
                 <label
                   className={cn(
                     "flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors",
@@ -266,53 +361,11 @@ export default function ConfigureProblemPage() {
                     className="mt-0.5 text-blue-600"
                   />
                   <div>
-                    <div className="font-semibold text-slate-800">Tải lên mô hình người dùng</div>
+                    <div className="font-semibold text-slate-800">Tải lên file trọng số người dùng</div>
                     <div className="text-[11px] text-slate-500">Hỗ trợ .pt, .pth, .onnx, .engine</div>
-                    <Button variant="secondary" size="sm" icon={Upload} className="mt-2 text-xs">
-                      Tải lên mô hình
+                    <Button variant="secondary" size="sm" icon={Upload} className="mt-1.5 text-xs">
+                      Tải lên Weights
                     </Button>
-                  </div>
-                </label>
-
-                <label
-                  className={cn(
-                    "flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors",
-                    modelSource === "trained"
-                      ? "border-blue-500 bg-blue-50/40"
-                      : "border-slate-200 hover:bg-slate-50"
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="model_src"
-                    checked={modelSource === "trained"}
-                    onChange={() => setModelSource("trained")}
-                    className="text-blue-600"
-                  />
-                  <div>
-                    <div className="font-semibold text-slate-800">Chọn mô hình đã huấn luyện</div>
-                    <div className="text-[11px] text-slate-500">yolov8n_custom.pt (v8.0.226)</div>
-                  </div>
-                </label>
-
-                <label
-                  className={cn(
-                    "flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors",
-                    modelSource === "default_lib"
-                      ? "border-blue-500 bg-blue-50/40"
-                      : "border-slate-200 hover:bg-slate-50"
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="model_src"
-                    checked={modelSource === "default_lib"}
-                    onChange={() => setModelSource("default_lib")}
-                    className="text-blue-600"
-                  />
-                  <div>
-                    <div className="font-semibold text-slate-800">Thư viện mô hình mặc định</div>
-                    <div className="text-[11px] text-slate-500">YOLOv8 COCO Pretrained</div>
                   </div>
                 </label>
               </div>
@@ -322,30 +375,39 @@ export default function ConfigureProblemPage() {
           {/* 5 & 6. Data Preview & Class Labels */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* 5. Xem trước dữ liệu */}
-            <Card title="5. Xem trước dữ liệu" subtitle="Ảnh mẫu trong tập dữ liệu giao thông">
-              <div className="grid grid-cols-3 gap-2">
-                {[1, 2, 3, 4, 5].map((idx) => (
-                  <div
-                    key={idx}
-                    className="h-20 rounded bg-slate-200 border border-slate-300 relative overflow-hidden flex items-center justify-center text-slate-400 font-mono text-[10px]"
-                  >
-                    <span className="p-1 text-center">sample_{idx}.jpg</span>
+            <Card
+              title="5. Xem trước dữ liệu"
+              subtitle={`Ảnh mẫu trong tập "${currentDataset.name}"`}
+            >
+              <div className="space-y-2">
+                <div className="grid grid-cols-3 gap-2">
+                  {[1, 2, 3, 4, 5].map((idx) => (
+                    <div
+                      key={idx}
+                      className="h-20 rounded bg-slate-100 border border-slate-300 relative overflow-hidden flex flex-col items-center justify-center text-slate-500 font-mono text-[10px] p-1 text-center"
+                    >
+                      <Database className="w-4 h-4 text-slate-400 mb-1" />
+                      <span>{currentDataset.id}_{idx}.jpg</span>
+                    </div>
+                  ))}
+                  <div className="h-20 rounded bg-blue-900/80 border border-blue-700 text-white font-bold text-xs flex items-center justify-center p-2 text-center">
+                    + {(currentDataset.samples - 5).toLocaleString()} ảnh
                   </div>
-                ))}
-                <div className="h-20 rounded bg-blue-900/80 border border-blue-700 text-white font-bold text-xs flex items-center justify-center p-2 text-center">
-                  + 12,345 ảnh
                 </div>
+                <p className="text-[11px] text-slate-500 italic">
+                  {currentDataset.description}
+                </p>
               </div>
             </Card>
 
             {/* 6. Nhãn lớp (Class labels) */}
             <Card
               title="6. Nhãn lớp (Class labels)"
-              subtitle="Tổng số lớp: 8 lớp đối tượng"
+              subtitle={`Tổng số: ${currentDataset.classes || currentDataset.classLabels?.length || 8} lớp đối tượng`}
               headerAction={
-                <button type="button" className="text-xs text-blue-600 hover:underline">
-                  Xem tất cả &gt;
-                </button>
+                <Badge variant="primary">
+                  {currentDataset.format}
+                </Badge>
               }
             >
               <div className="max-h-36 overflow-y-auto">
@@ -354,15 +416,15 @@ export default function ConfigureProblemPage() {
                     <tr className="border-b border-slate-200 text-slate-500 font-semibold">
                       <th className="py-1 px-2">ID</th>
                       <th className="py-1 px-2">Tên lớp</th>
-                      <th className="py-1 px-2 text-right">Số lượng</th>
+                      <th className="py-1 px-2 text-right">Số lượng mẫu</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                    {CLASS_LABELS_DATA.map((c) => (
+                    {(currentDataset.classLabels || CLASS_LABELS_DATA).map((c) => (
                       <tr key={c.id} className="hover:bg-slate-50">
                         <td className="py-1 px-2 font-mono text-slate-400">{c.id}</td>
                         <td className="py-1 px-2 font-semibold text-slate-800">{c.name}</td>
-                        <td className="py-1 px-2 text-right font-mono">{c.count.toLocaleString()}</td>
+                        <td className="py-1 px-2 text-right font-mono">{c.count?.toLocaleString() || 500}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -378,31 +440,31 @@ export default function ConfigureProblemPage() {
               <div className="space-y-1.5 text-xs font-medium divide-y divide-slate-100">
                 <div className="flex justify-between py-1">
                   <span className="text-slate-500">Tên mô hình</span>
-                  <span className="font-semibold text-slate-800 font-mono">{selectedModelVariant}</span>
+                  <span className="font-semibold text-slate-800 font-mono">{currentModel.name}</span>
                 </div>
                 <div className="flex justify-between py-1">
-                  <span className="text-slate-500">Phiên bản</span>
-                  <span className="text-slate-800">8.0.226</span>
+                  <span className="text-slate-500">Họ kiến trúc</span>
+                  <span className="text-slate-800">{currentModel.family}</span>
                 </div>
                 <div className="flex justify-between py-1">
-                  <span className="text-slate-500">Định dạng</span>
-                  <span className="font-mono text-slate-800">.pt (PyTorch)</span>
+                  <span className="text-slate-500">Định dạng file</span>
+                  <span className="font-mono text-slate-800">{currentModel.format}</span>
                 </div>
                 <div className="flex justify-between py-1">
-                  <span className="text-slate-500">Số tham số</span>
-                  <span className="text-slate-800">3.2M</span>
+                  <span className="text-slate-500">Số lượng tham số</span>
+                  <span className="text-blue-600 font-bold font-mono">{currentModel.params}</span>
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-slate-500">Kích thước file</span>
-                  <span className="text-slate-800">6.4 MB</span>
+                  <span className="text-slate-800 font-mono">{currentModel.fileSize}</span>
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-slate-500">Độ phân giải đầu vào</span>
-                  <span className="text-slate-800 font-mono">640 × 640</span>
+                  <span className="text-slate-800 font-mono">{currentModel.inputSize}</span>
                 </div>
                 <div className="flex justify-between py-1">
-                  <span className="text-slate-500">Số lớp</span>
-                  <span className="text-slate-800">8</span>
+                  <span className="text-slate-500">Độ chính xác gốc (Clean Baseline)</span>
+                  <span className="text-emerald-600 font-bold font-mono">{currentModel.mapBaseline}</span>
                 </div>
               </div>
             </Card>
@@ -515,27 +577,27 @@ export default function ConfigureProblemPage() {
               </div>
               <div className="flex justify-between py-1">
                 <span className="text-slate-500">Kiến trúc mô hình</span>
-                <span className="font-mono text-blue-600 font-bold">{selectedModelVariant}</span>
+                <span className="font-mono text-blue-600 font-bold">{currentModel.name}</span>
               </div>
               <div className="flex justify-between py-1">
-                <span className="text-slate-500">Nguồn dữ liệu</span>
-                <span className="text-slate-800">traffic_dataset_v1</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Nguồn mô hình</span>
-                <span className="text-slate-800 font-mono">yolov8n_custom.pt</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Số lớp</span>
-                <span className="text-slate-800">8 lớp</span>
+                <span className="text-slate-500">Bộ dữ liệu</span>
+                <span className="text-slate-800 font-semibold">{currentDataset.name}</span>
               </div>
               <div className="flex justify-between py-1">
                 <span className="text-slate-500">Tổng số ảnh</span>
-                <span className="text-slate-800 font-mono">25,146</span>
+                <span className="text-slate-800 font-mono">{currentDataset.samples?.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-slate-500">Dung lượng dataset</span>
+                <span className="text-slate-800 font-mono">{currentDataset.size}</span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-slate-500">Số tham số model</span>
+                <span className="text-blue-600 font-mono font-bold">{currentModel.params}</span>
               </div>
               <div className="flex justify-between py-1">
                 <span className="text-slate-500">Độ phân giải</span>
-                <span className="text-slate-800 font-mono">640 × 640</span>
+                <span className="text-slate-800 font-mono">{currentModel.inputSize}</span>
               </div>
               <div className="flex justify-between py-1">
                 <span className="text-slate-500">Thiết bị</span>
@@ -551,9 +613,9 @@ export default function ConfigureProblemPage() {
             <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 mb-4 flex items-start gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
               <div className="text-xs">
-                <div className="font-bold text-emerald-800">✓ Hợp lệ</div>
+                <div className="font-bold text-emerald-800">✓ Hợp lệ & Sẵn sàng</div>
                 <p className="text-emerald-700 text-[11px] mt-0.5">
-                  Tất cả cài đặt đã sẵn sàng để tiếp tục sang cấu hình tấn công.
+                  Đã liên kết mô hình <strong>{currentModel.name}</strong> với tập dữ liệu <strong>{currentDataset.name}</strong>.
                 </p>
               </div>
             </div>

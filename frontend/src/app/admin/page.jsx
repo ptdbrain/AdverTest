@@ -279,72 +279,171 @@ export default function AdminPage() {
 
       {/* TAB CONTENT: RESOURCE REPOSITORIES */}
       {activeTab === "repositories" && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <Card title="Kho mô hình (Model Repo)" subtitle="Quản lý weights và checkpoints">
-            <div className="space-y-2 text-xs divide-y divide-slate-100 font-medium">
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Tổng số mô hình</span>
-                <span className="font-bold text-slate-800">56</span>
+        <div className="space-y-5">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <Card title="Kho mô hình (Model Repo)" subtitle="Quản lý weights và checkpoints">
+              <div className="space-y-2 text-xs divide-y divide-slate-100 font-medium">
+                <div className="flex justify-between py-1">
+                  <span className="text-slate-500">Tổng số mô hình</span>
+                  <span className="font-bold text-slate-800">56</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-slate-500">Phiên bản checkpoints</span>
+                  <span className="text-slate-800">128</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-slate-500">Tổng kích thước</span>
+                  <span className="font-mono text-blue-600 font-bold">412 GB</span>
+                </div>
               </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Phiên bản checkpoints</span>
-                <span className="text-slate-800">128</span>
+            </Card>
+
+            <Card title="Kho dữ liệu (Dataset Repo)" subtitle="Dữ liệu kiểm thử & nhãn annotation">
+              <div className="space-y-2 text-xs divide-y divide-slate-100 font-medium">
+                <div className="flex justify-between py-1">
+                  <span className="text-slate-500">Tổng số Dataset</span>
+                  <span className="font-bold text-slate-800">34</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-slate-500">Số bản ghi</span>
+                  <span className="text-slate-800">12.4M</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-slate-500">Tổng kích thước</span>
+                  <span className="font-mono text-purple-600 font-bold">678 GB</span>
+                </div>
               </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Tổng kích thước</span>
-                <span className="font-mono text-blue-600 font-bold">412 GB</span>
+            </Card>
+
+            <Card title="Thư viện tấn công" subtitle="Các module sinh nhiễu đối kháng">
+              <div className="space-y-2 text-xs divide-y divide-slate-100 font-medium">
+                <div className="flex justify-between py-1">
+                  <span className="text-slate-500">Phương pháp</span>
+                  <span className="font-bold text-slate-800">48</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-slate-500">Lượt thực thi</span>
+                  <span className="text-slate-800">1.2K</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-slate-500">Thuật toán mới</span>
+                  <Badge variant="danger">+3 mới</Badge>
+                </div>
               </div>
+            </Card>
+
+            <Card title="Thư viện phòng thủ" subtitle="Các cơ chế bảo vệ & tôi luyện">
+              <div className="space-y-2 text-xs divide-y divide-slate-100 font-medium">
+                <div className="flex justify-between py-1">
+                  <span className="text-slate-500">Kỹ thuật phòng thủ</span>
+                  <span className="font-bold text-slate-800">28</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-slate-500">Lượt áp dụng</span>
+                  <span className="text-slate-800">892</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-slate-500">Mô hình đã tôi luyện</span>
+                  <Badge variant="success">14 models</Badge>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Model Catalog Table */}
+          <Card
+            title="Danh mục mô hình sẵn có (Model Catalog)"
+            subtitle="Danh sách các checkpoints và weights được tích hợp sẵn trong hệ thống"
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500 font-semibold bg-slate-50">
+                    <th className="py-2.5 px-3">Tên mô hình</th>
+                    <th className="py-2.5 px-3">Kiến trúc</th>
+                    <th className="py-2.5 px-3">Nhiệm vụ</th>
+                    <th className="py-2.5 px-3">Số tham số</th>
+                    <th className="py-2.5 px-3">Kích thước</th>
+                    <th className="py-2.5 px-3">Độ phân giải</th>
+                    <th className="py-2.5 px-3">Baseline</th>
+                    <th className="py-2.5 px-3">FPS (RTX 4090)</th>
+                    <th className="py-2.5 px-3 text-right">Hành động</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                  {AVAILABLE_MODELS.map((m) => (
+                    <tr key={m.id} className="hover:bg-slate-50">
+                      <td className="py-2.5 px-3 font-bold text-slate-900 font-mono flex items-center gap-2">
+                        <span>🤖</span> {m.name}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <Badge variant="primary">{m.family}</Badge>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600">{m.task}</td>
+                      <td className="py-2.5 px-3 font-mono font-bold text-blue-600">{m.params}</td>
+                      <td className="py-2.5 px-3 font-mono text-slate-500">{m.fileSize}</td>
+                      <td className="py-2.5 px-3 font-mono text-slate-500">{m.inputSize}</td>
+                      <td className="py-2.5 px-3 font-mono font-bold text-emerald-600">{m.mapBaseline}</td>
+                      <td className="py-2.5 px-3 font-mono text-purple-600">{m.fpsRtx4090}</td>
+                      <td className="py-2.5 px-3 text-right">
+                        <Link href="/experiments/new">
+                          <Button variant="secondary" size="sm" className="text-[11px] py-1 px-2">
+                            Dùng mô hình
+                          </Button>
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </Card>
 
-          <Card title="Kho dữ liệu (Dataset Repo)" subtitle="Dữ liệu kiểm thử & nhãn annotation">
-            <div className="space-y-2 text-xs divide-y divide-slate-100 font-medium">
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Tổng số Dataset</span>
-                <span className="font-bold text-slate-800">34</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Số bản ghi</span>
-                <span className="text-slate-800">12.4M</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Tổng kích thước</span>
-                <span className="font-mono text-purple-600 font-bold">678 GB</span>
-              </div>
-            </div>
-          </Card>
-
-          <Card title="Thư viện tấn công" subtitle="Các module sinh nhiễu đối kháng">
-            <div className="space-y-2 text-xs divide-y divide-slate-100 font-medium">
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Phương pháp</span>
-                <span className="font-bold text-slate-800">48</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Lượt thực thi</span>
-                <span className="text-slate-800">1.2K</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Thuật toán mới</span>
-                <Badge variant="danger">+3 mới</Badge>
-              </div>
-            </div>
-          </Card>
-
-          <Card title="Thư viện phòng thủ" subtitle="Các cơ chế bảo vệ & tôi luyện">
-            <div className="space-y-2 text-xs divide-y divide-slate-100 font-medium">
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Kỹ thuật phòng thủ</span>
-                <span className="font-bold text-slate-800">28</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Lượt áp dụng</span>
-                <span className="text-slate-800">892</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Mô hình đã tôi luyện</span>
-                <Badge variant="success">14 models</Badge>
-              </div>
+          {/* Dataset Catalog Table */}
+          <Card
+            title="Danh mục tập dữ liệu sẵn có (Dataset Catalog)"
+            subtitle="Các bộ benchmark chuẩn được lưu trữ sẵn trong Storage Cluster"
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500 font-semibold bg-slate-50">
+                    <th className="py-2.5 px-3">Tên tập dữ liệu</th>
+                    <th className="py-2.5 px-3">Nhiệm vụ</th>
+                    <th className="py-2.5 px-3">Số lượng ảnh / frame</th>
+                    <th className="py-2.5 px-3">Số lớp đối tượng</th>
+                    <th className="py-2.5 px-3">Dung lượng</th>
+                    <th className="py-2.5 px-3">Định dạng</th>
+                    <th className="py-2.5 px-3">Độ phân giải</th>
+                    <th className="py-2.5 px-3 text-right">Hành động</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                  {AVAILABLE_DATASETS.map((d) => (
+                    <tr key={d.id} className="hover:bg-slate-50">
+                      <td className="py-2.5 px-3 font-bold text-slate-900 flex items-center gap-2">
+                        <span>📦</span> {d.name}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <Badge variant="teal">{d.task}</Badge>
+                      </td>
+                      <td className="py-2.5 px-3 font-mono font-bold text-blue-600">{d.samples.toLocaleString()}</td>
+                      <td className="py-2.5 px-3 font-mono text-slate-700">{d.classes} lớp</td>
+                      <td className="py-2.5 px-3 font-mono text-purple-600 font-bold">{d.size}</td>
+                      <td className="py-2.5 px-3 font-mono text-slate-500">{d.format}</td>
+                      <td className="py-2.5 px-3 font-mono text-slate-500">{d.resolution}</td>
+                      <td className="py-2.5 px-3 text-right">
+                        <Link href="/experiments/new">
+                          <Button variant="secondary" size="sm" className="text-[11px] py-1 px-2">
+                            Chọn Dataset
+                          </Button>
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </Card>
         </div>
