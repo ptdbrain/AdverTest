@@ -33,6 +33,8 @@ from src.api.routers import (
     jobs,
     platform_datasets,
     runs,
+)
+from src.api.routers import (
     settings as settings_router,
 )
 from src.api.routes import router

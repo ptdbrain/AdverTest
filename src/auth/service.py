@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-import base64
 import json
+import logging
 import urllib.request
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from src.api.jobs import SqliteRunStore
-from src.auth.contracts import AuditLogOut, GoogleAuthIn, UserCreateIn, UserOut, UserRole, UserStatus
+from src.auth.contracts import AuditLogOut, GoogleAuthIn, UserCreateIn, UserOut, UserStatus
 from src.auth.security import create_access_token, hash_password, verify_password
+from src.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:
@@ -100,18 +103,9 @@ class AuthService:
                     email = claims.get("email") or email
                     display_name = claims.get("name") or display_name
                     avatar_url = claims.get("picture") or avatar_url
-            except Exception:
-                # 2. Fallback: Parse unverified JWT payload claims safely
-                try:
-                    parts = payload.credential.split(".")
-                    if len(parts) >= 2:
-                        padded = parts[1] + "=" * ((4 - len(parts[1]) % 4) % 4)
-                        claims = json.loads(base64.urlsafe_b64decode(padded.encode()).decode())
-                        email = claims.get("email") or email
-                        display_name = claims.get("name") or display_name
-                        avatar_url = claims.get("picture") or avatar_url
-                except Exception as e:
-                    raise ValueError(f"Invalid Google ID token credential: {e}") from e
+            except Exception as e:
+                # Disabling unsafe fallback: decoding JWT without signature validation is a severe security risk.
+                raise ValueError(f"Google Token verification failed: {e}. Refusing to trust unverified payload.") from e
 
         if not email:
             raise ValueError("Google authentication failed: Email address is required.")
@@ -218,10 +212,18 @@ class AuthService:
         users_by_email = {u.get("email"): u for u in users}
 
         if "admin@advertest.ai" not in users_by_email:
+            settings = get_settings()
+            admin_pwd = settings.admin_default_password
+            if admin_pwd == "AdminPassword123!":
+                logger.warning(
+                    "CRITICAL SECURITY WARNING: System initialized with the default Admin password. "
+                    "You MUST change this in production by setting the `ADMIN_DEFAULT_PASSWORD` environment variable."
+                )
+
             self.register(
                 UserCreateIn(
                     email="admin@advertest.ai",
-                    password="AdminPassword123!",
+                    password=admin_pwd,
                     display_name="System Administrator",
                     role="ADMIN",
                 ),

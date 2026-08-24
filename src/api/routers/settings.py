@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 import os
 import urllib.request
-import json
 from typing import Any
 
+from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
@@ -15,6 +18,29 @@ from src.api.jobs import SqliteRunStore
 from src.auth.contracts import UserOut
 from src.auth.dependencies import get_auth_service, get_current_user
 from src.auth.service import AuthService
+from src.config import get_settings
+
+
+def _get_fernet() -> Fernet:
+    key = get_settings().wandb_encryption_key
+    try:
+        return Fernet(key.encode("utf-8"))
+    except ValueError:
+        derived = base64.urlsafe_b64encode(hashlib.sha256(key.encode("utf-8")).digest())
+        return Fernet(derived)
+
+def encrypt_key(api_key: str) -> str:
+    if not api_key:
+        return ""
+    return _get_fernet().encrypt(api_key.encode("utf-8")).decode("utf-8")
+
+def decrypt_key(encrypted_key: str) -> str:
+    if not encrypted_key:
+        return ""
+    try:
+        return _get_fernet().decrypt(encrypted_key.encode("utf-8")).decode("utf-8")
+    except Exception:
+        return encrypted_key
 
 router = APIRouter(prefix="/settings", tags=["Settings & Integrations"])
 
@@ -74,7 +100,13 @@ async def get_wandb_settings(
 ) -> WandbSettingsOut:
     """Retrieve current Weights & Biases integration configuration."""
     record = store.get_record("integration_setting", "wandb") or {}
-    api_key = record.get("api_key") or os.getenv("WANDB_API_KEY", "")
+    encrypted_key = record.get("api_key")
+
+    if encrypted_key:
+        api_key = decrypt_key(encrypted_key)
+    else:
+        api_key = os.getenv("WANDB_API_KEY", "")
+
     entity = record.get("entity") or os.getenv("WANDB_ENTITY", "")
     project = record.get("project") or os.getenv("WANDB_PROJECT", "advertest-perception-robustness")
     auto_sync = record.get("auto_sync", True)
@@ -101,10 +133,11 @@ async def save_wandb_settings(
     entity = (payload.entity or "").strip()
     project = (payload.project or "advertest-perception-robustness").strip()
 
-    # Save to SQLite store
+    # Save to SQLite store with ENCRYPTED key
+    encrypted_api_key = encrypt_key(clean_key)
     setting_data = {
         "id": "wandb",
-        "api_key": clean_key,
+        "api_key": encrypted_api_key,
         "entity": entity,
         "project": project,
         "auto_sync": payload.auto_sync,

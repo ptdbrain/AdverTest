@@ -10,8 +10,8 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-# Default secret for local development; should be overridden in production via settings
-DEFAULT_JWT_SECRET = "advertest-insecure-development-secret-key-2026"
+from src.config import get_settings
+
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 
@@ -58,7 +58,7 @@ def _b64url_decode(s: str) -> bytes:
 def create_access_token(
     payload: dict[str, Any],
     *,
-    secret_key: str = DEFAULT_JWT_SECRET,
+    secret_key: str | None = None,
     expires_delta: timedelta | None = None,
 ) -> str:
     """Generate an HMAC-SHA256 signed JSON Web Token."""
@@ -77,13 +77,14 @@ def create_access_token(
     payload_b64 = _b64url_encode(json.dumps(token_claims, separators=(",", ":")).encode("utf-8"))
     signing_input = f"{header_b64}.{payload_b64}".encode()
 
+    secret_key = secret_key or get_settings().jwt_secret
     signature = hmac.new(secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest()
     sig_b64 = _b64url_encode(signature)
 
     return f"{header_b64}.{payload_b64}.{sig_b64}"
 
 
-def decode_access_token(token: str, *, secret_key: str = DEFAULT_JWT_SECRET) -> dict[str, Any] | None:
+def decode_access_token(token: str, *, secret_key: str | None = None) -> dict[str, Any] | None:
     """Decode and verify signature and expiration of an access token."""
     parts = token.split(".")
     if len(parts) != 3:
@@ -91,6 +92,7 @@ def decode_access_token(token: str, *, secret_key: str = DEFAULT_JWT_SECRET) -> 
 
     header_b64, payload_b64, sig_b64 = parts
     signing_input = f"{header_b64}.{payload_b64}".encode()
+    secret_key = secret_key or get_settings().jwt_secret
     expected_sig = hmac.new(secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest()
     actual_sig = _b64url_decode(sig_b64)
 

@@ -17,7 +17,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import time
 from pathlib import Path
@@ -44,8 +43,6 @@ from src.training.yolo_dataset_formatter import (
     ensure_kitti_dataset,
 )
 from src.training.yolo_trainer import YoloTrainer
-
-
 
 
 def check_environment() -> dict[str, Any]:
