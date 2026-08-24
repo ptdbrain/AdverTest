@@ -12,6 +12,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { getCanonicalAttackKey, getDescriptiveAttackName } from "@/lib/attackNaming";
+import { useLanguage } from "@/context/LanguageContext";
 
 const ATTACK_PALETTE = [
   "#EF4444", // Red
@@ -87,6 +88,7 @@ function CustomComparisonTooltip({ active, payload, label, baselineValues }) {
 }
 
 export default function MetricsComparisonChart({ report }) {
+  const { t } = useLanguage();
   const apClean = report?.ap_clean ?? 0;
   const cells = report?.cells ?? [];
   const cleanMetrics = report?.metrics?.clean ?? {};
@@ -137,7 +139,7 @@ export default function MetricsComparisonChart({ report }) {
     });
 
     const series = [
-      { key: "Baseline", label: "Baseline (Ảnh sạch)", color: "var(--success, #16A34A)" },
+      { key: "Baseline", label: t("metrics.baselineClean"), color: "var(--success, #16A34A)" },
       ...attackSeries.map((s) => ({ key: s.key, label: s.label, color: s.color })),
     ];
 
@@ -160,14 +162,14 @@ export default function MetricsComparisonChart({ report }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "8px" }}>
         <div>
           <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>
-            Biểu đồ so sánh cốt lõi (Baseline vs Các tổ hợp tấn công)
+            {t("metrics.title")}
           </div>
           <h3 style={{ fontSize: "1.05rem", fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>
-            So sánh AP50 & mAP50-95: Baseline vs Các Đòn Tấn Công ({attackSeries.length} phương pháp)
+            {t("metrics.subtitle", { count: attackSeries.length })}
           </h3>
         </div>
         <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-          Mỗi đòn tấn công mới sẽ thêm 1 cột so sánh trực diện
+          {t("metrics.hint")}
         </span>
       </div>
 
@@ -192,7 +194,7 @@ export default function MetricsComparisonChart({ report }) {
           }}
         >
           <div style={{ fontSize: "0.68rem", color: "var(--success)", textTransform: "uppercase", fontWeight: 700 }}>
-            Baseline (Ảnh sạch)
+            {t("metrics.baselineClean")}
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginTop: "4px" }}>
             <span style={{ fontSize: "1.2rem", fontWeight: 800, color: "var(--success)", fontFamily: "var(--font-mono)" }}>
@@ -203,7 +205,7 @@ export default function MetricsComparisonChart({ report }) {
             </span>
           </div>
           <div style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: "4px" }}>
-            Chuẩn so sánh ban đầu (100%)
+            {t("metrics.baseline")}
           </div>
         </div>
 

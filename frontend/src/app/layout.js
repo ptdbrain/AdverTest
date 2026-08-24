@@ -22,6 +22,10 @@ export default function RootLayout({ children }) {
                 var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
                 document.documentElement.setAttribute('data-theme', theme);
               } catch (e) {}
+              try {
+                var savedLang = localStorage.getItem('advertest_lang');
+                if (savedLang === 'en' || savedLang === 'vi') document.documentElement.setAttribute('lang', savedLang);
+              } catch (e) {}
             `,
           }}
         />

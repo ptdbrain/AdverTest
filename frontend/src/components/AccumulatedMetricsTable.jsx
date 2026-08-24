@@ -27,6 +27,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useLanguage } from "@/context/LanguageContext";
 import { getCanonicalAttackKey, getDescriptiveAttackName } from "@/lib/attackNaming";
 
 // ─── colour helpers ────────────────────────────────────────────────────────
@@ -146,15 +147,16 @@ function MetricCell({ metricKey, value, retained, isBaseline }) {
 // ─── main component ────────────────────────────────────────────────────────
 
 export default function AccumulatedMetricsTable({ report }) {
+  const { t } = useLanguage();
   const { apClean, cleanAp50, cleanMap, columns } = useMemo(() => buildMatrix(report), [report]);
 
   if (!report || columns.length === 0) {
     return (
       <div className="heatmap">
-        <div className="heatmap__title">Bảng tích lũy AP / mAP / Robustness</div>
+        <div className="heatmap__title">{t("accum.title")}</div>
         <div className="empty-state">
           <div className="empty-state__message">
-            Chưa có dữ liệu — chạy ít nhất một tổ hợp tấn công để so sánh với Baseline.
+            {t("accum.empty")}
           </div>
         </div>
       </div>
@@ -182,11 +184,10 @@ export default function AccumulatedMetricsTable({ report }) {
       >
         <div>
           <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>
-            Bảng tích lũy AP / mAP / Robustness
+            {t("accum.title")}
           </div>
-          <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text-primary)" }}>
-            Baseline + {columns.length} tổ hợp tấn công tích lũy trên bộ dữ liệu <strong>{report.dataset ?? "—"}</strong>
-          </div>
+          {/* eslint-disable-next-line react/no-danger */}
+          <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text-primary)" }} dangerouslySetInnerHTML={{ __html: t("accum.heading", { count: columns.length, dataset: report.dataset ?? "—" }) }} />
         </div>
         <span
           style={{
@@ -195,7 +196,7 @@ export default function AccumulatedMetricsTable({ report }) {
             fontFamily: "var(--font-mono)",
           }}
         >
-          Robustness = AP_đòn / AP_sạch (giữ lại %)
+          {t("accum.robustnessHint")}
         </span>
       </div>
 

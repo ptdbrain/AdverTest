@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { triggerAutoFlag, getApiBase } from "@/lib/api";
 import { getDescriptiveAttackName } from "@/lib/attackNaming";
+import { useLanguage } from "@/context/LanguageContext";
 
 /**
  * ImageGrid — Lưới 2×2 hiển thị 4 ảnh đối chiếu evidence
@@ -73,6 +74,7 @@ function GroundTruthOverlay({ groundTruth }) {
 
 function GridImage({ src, alt, label, labelClass, groundTruth, children }) {
   const [error, setError] = useState(false);
+  const { t } = useLanguage();
 
   useEffect(() => {
     setError(false);
@@ -131,7 +133,7 @@ function GridImage({ src, alt, label, labelClass, groundTruth, children }) {
         <div className="image-grid__placeholder" style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           <span className="image-grid__placeholder-icon">📸</span>
           <span className="image-grid__placeholder-text">
-            {error ? "Không thể tải ảnh" : "Đang tạo ảnh..."}
+            {error ? t("image.noImage") : t("image.generating")}
           </span>
           {groundTruth && <GroundTruthOverlay groundTruth={groundTruth} />}
         </div>
@@ -173,6 +175,7 @@ function MetricChips({ metrics, variant }) {
 }
 
 export default function ImageGrid({ report, samples, selectedIndex = 0, onSelectSample }) {
+  const { t } = useLanguage();
   const effectiveSamples =
     samples && samples.length > 0
       ? samples
@@ -236,12 +239,10 @@ export default function ImageGrid({ report, samples, selectedIndex = 0, onSelect
       <div className="placeholder-view">
         <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>🛡️</div>
         <div className="placeholder-view__title" style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)" }}>
-          Chưa Có Kết Quả Kiểm Thử (No Test Evidence Yet)
+          {t("imagegrid.emptyTitle")}
         </div>
-        <div className="placeholder-view__subtitle" style={{ maxWidth: "420px", fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: 1.6 }}>
-          1. Chọn mô hình (YOLO11), bộ dữ liệu (KITTI) và dạng tấn công (FGSM, Fog...) ở cột bên trái.<br />
-          2. Bấm nút <strong>"Run Test"</strong> (hoặc <strong>"Run Benchmark"</strong>) để bắt đầu quét đối kháng và hiển thị 4 góc ảnh đối chiếu.
-        </div>
+        {/* eslint-disable-next-line react/no-danger */}
+        <div className="placeholder-view__subtitle" style={{ maxWidth: "420px", fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: t("imagegrid.emptySteps") }} />
       </div>
     );
   }
@@ -265,7 +266,7 @@ export default function ImageGrid({ report, samples, selectedIndex = 0, onSelect
       >
         <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "0.82rem" }}>
           <strong style={{ color: "var(--text-primary)" }}>
-            Mẫu #{safeIndex + 1}: {getDescriptiveAttackName(sample, sample?.severity, report)}
+            {t("imagegrid.sampleLabel", { index: safeIndex + 1, name: getDescriptiveAttackName(sample, sample?.severity, report) })}
           </strong>
           <span style={{ color: "var(--border-subtle)" }}>|</span>
           <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem" }}>
@@ -294,7 +295,8 @@ export default function ImageGrid({ report, samples, selectedIndex = 0, onSelect
                 border: "1px solid rgba(16, 185, 129, 0.3)",
               }}
             >
-              ✅ Đã chuyển sang Review Queue! <u>Mở xem ngay →</u>
+              {/* eslint-disable-next-line react/no-danger */}
+              <span dangerouslySetInnerHTML={{ __html: t("imagegrid.sentToReview") }} />
             </a>
           ) : (
             <button
@@ -313,9 +315,9 @@ export default function ImageGrid({ report, samples, selectedIndex = 0, onSelect
                 alignItems: "center",
                 gap: "6px",
               }}
-              title="Chuyển ảnh lỗi này sang tab Review để thẩm định và gán nhãn"
+              title={t("imagegrid.sendToReview.title")}
             >
-              <span>{isFlagging ? "⏳ Đang chuyển..." : "⚖️ Chuyển ảnh này sang Review"}</span>
+              <span>{isFlagging ? t("imagegrid.sendingToReview") : t("imagegrid.sendToReview")}</span>
             </button>
           )}
         </div>

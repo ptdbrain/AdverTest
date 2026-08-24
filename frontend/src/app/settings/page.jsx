@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import UserMenu from "@/components/UserMenu.jsx";
 import {
   getWandbSettings,
@@ -16,30 +17,31 @@ const ROLES_INFO = [
     id: "ENGINEER",
     name: "👨‍💻 ML Engineer",
     color: "#38BDF8",
-    description: "Kỹ sư AI xây dựng mô hình, cấu hình tấn công đối kháng, thẩm định lỗi và tối ưu hóa robustness.",
-    permissions: [
-      "Khởi chạy và dừng các bài kiểm thử độ bền vững (FGSM, PGD, Fog, Rain, Occlusion...)",
-      "Cấu hình các bộ nhận dạng Perception (YOLO, SAM2, MMDetection3D)",
-      "Import dữ liệu, thẩm định các ca lỗi khó trong Review Queue (HITL)",
-      "Đẩy các ca lỗi khó vào Retraining Backlog để tái huấn luyện mô hình",
+    descKey: "settings.role.engineer.desc",
+    permissionKeys: [
+      "settings.role.engineer.perm1",
+      "settings.role.engineer.perm2",
+      "settings.role.engineer.perm3",
+      "settings.role.engineer.perm4",
     ],
   },
   {
     id: "ADMIN",
     name: "👑 System Administrator",
     color: "#A855F7",
-    description: "Quản trị viên toàn quyền quản trị người dùng, hạn ngạch GPU/Storage và tích hợp MLOps.",
-    permissions: [
-      "Quản lý danh sách tài khoản người dùng, kích hoạt hoặc tạm ngưng tài khoản",
-      "Phân bổ hạn ngạch lưu trữ (Storage Quota) và giờ tính toán GPU (Compute Hours)",
-      "Cấu hình các khóa API bảo mật và tích hợp Weights & Biases (W&B)",
-      "Truy cập toàn bộ nhật ký sự kiện hệ thống (System Audit Trail)",
+    descKey: "settings.role.admin.desc",
+    permissionKeys: [
+      "settings.role.admin.perm1",
+      "settings.role.admin.perm2",
+      "settings.role.admin.perm3",
+      "settings.role.admin.perm4",
     ],
   },
 ];
 
 export default function SettingsPage() {
   const { user, role, isAuthenticated } = useAuth();
+  const { lang, setLang, t } = useLanguage();
   const [activeTab, setActiveTab] = useState("appearance");
 
   // Profile Form State
@@ -50,7 +52,6 @@ export default function SettingsPage() {
 
   // Appearance & Language State
   const [currentTheme, setCurrentTheme] = useState("dark");
-  const [language, setLanguage] = useState("vi");
   const [minimalMode, setMinimalMode] = useState(true);
   const [prefSuccessMsg, setPrefSuccessMsg] = useState("");
 
@@ -75,8 +76,6 @@ export default function SettingsPage() {
     try {
       const savedTheme = localStorage.getItem("theme") || "dark";
       setCurrentTheme(savedTheme);
-      const savedLang = localStorage.getItem("advertest_lang") || "vi";
-      setLanguage(savedLang);
       const savedMin = localStorage.getItem("advertest_minimal_mode");
       if (savedMin !== null) setMinimalMode(savedMin === "true");
     } catch {}
@@ -106,17 +105,16 @@ export default function SettingsPage() {
           : newTheme;
       document.documentElement.setAttribute("data-theme", effectiveTheme);
       localStorage.setItem("theme", newTheme);
-      setPrefSuccessMsg("🎨 Đã áp dụng chủ đề mới!");
+      setPrefSuccessMsg(t("settings.theme.saved"));
       setTimeout(() => setPrefSuccessMsg(""), 3000);
     } catch {}
   };
 
-  // Handle Language Change
+  // Handle Language Change — broadcast to whole UI via context
   const handleLanguageChange = (newLang) => {
-    setLanguage(newLang);
+    setLang(newLang);
     try {
-      localStorage.setItem("advertest_lang", newLang);
-      setPrefSuccessMsg("🌐 Đã lưu tùy chọn ngôn ngữ!");
+      setPrefSuccessMsg(t("settings.language.saved"));
       setTimeout(() => setPrefSuccessMsg(""), 3000);
     } catch {}
   };
@@ -127,7 +125,7 @@ export default function SettingsPage() {
     setMinimalMode(val);
     try {
       localStorage.setItem("advertest_minimal_mode", String(val));
-      setPrefSuccessMsg("✨ Đã cập nhật chế độ hiển thị!");
+      setPrefSuccessMsg(t("settings.minimal.saved"));
       setTimeout(() => setPrefSuccessMsg(""), 3000);
     } catch {}
   };
@@ -143,9 +141,9 @@ export default function SettingsPage() {
       await updateUserProfile({
         display_name: displayName,
       });
-      setProfileSuccessMsg("✅ Đã cập nhật thông tin hồ sơ thành công!");
+      setProfileSuccessMsg(t("settings.profile.updated"));
     } catch (err) {
-      setProfileErrorMsg(err.message || "Cập nhật hồ sơ thất bại.");
+      setProfileErrorMsg(err.message || t("settings.profile.saveError"));
     } finally {
       setIsSavingProfile(false);
     }
@@ -167,9 +165,9 @@ export default function SettingsPage() {
       setWandbMaskedKey(res.api_key_masked);
       setWandbConnected(res.connected);
       setWandbKey("");
-      setWandbStatusMsg("✅ Đã lưu cấu hình Weights & Biases thành công!");
+      setWandbStatusMsg(t("settings.wandb.saved"));
     } catch (err) {
-      setWandbStatusMsg(`❌ Lỗi lưu cấu hình: ${err.message}`);
+      setWandbStatusMsg(t("settings.wandb.saveError", { message: err.message }));
     } finally {
       setIsSavingWandb(false);
     }
@@ -187,16 +185,30 @@ export default function SettingsPage() {
         project: wandbProject,
         auto_sync: wandbAutoSync,
       });
-      setWandbStatusMsg(`✅ ${res.message || "Kết nối Weights & Biases thành công!"}`);
+      setWandbStatusMsg(`✅ ${res.message || t("settings.wandb.testOk")}`);
       setWandbConnected(true);
     } catch (err) {
-      setWandbStatusMsg(`❌ Kiểm tra thất bại: ${err.message}`);
+      setWandbStatusMsg(t("settings.wandb.testError", { message: err.message }));
     } finally {
       setIsTestingWandb(false);
     }
   };
 
   const currentRole = role || user?.role || "ENGINEER";
+
+  const tabStyle = (tab, withDot) => ({
+    padding: "8px 16px",
+    borderRadius: "6px",
+    border: "none",
+    background: activeTab === tab ? "var(--bg-elevated)" : "transparent",
+    color: activeTab === tab ? "var(--accent, #38BDF8)" : "var(--text-secondary)",
+    fontWeight: 700,
+    fontSize: "0.85rem",
+    cursor: "pointer",
+    display: withDot ? "flex" : undefined,
+    alignItems: withDot ? "center" : undefined,
+    gap: withDot ? "6px" : undefined,
+  });
 
   return (
     <div
@@ -234,10 +246,10 @@ export default function SettingsPage() {
               border: "1px solid rgba(56, 189, 248, 0.25)",
             }}
           >
-            ← Quay lại Dashboard
+            {t("settings.backDashboard")}
           </Link>
           <span style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--text-primary)" }}>
-            ⚙️ Cài Đặt Hệ Thống & Tùy Chọn
+            {t("settings.headerTitle")}
           </span>
         </div>
 
@@ -257,72 +269,17 @@ export default function SettingsPage() {
             flexWrap: "wrap",
           }}
         >
-          <button
-            type="button"
-            onClick={() => setActiveTab("appearance")}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "6px",
-              border: "none",
-              background: activeTab === "appearance" ? "var(--bg-elevated)" : "transparent",
-              color: activeTab === "appearance" ? "var(--accent, #38BDF8)" : "var(--text-secondary)",
-              fontWeight: 700,
-              fontSize: "0.85rem",
-              cursor: "pointer",
-            }}
-          >
-            🎨 Giao Diện & Ngôn Ngữ
+          <button type="button" onClick={() => setActiveTab("appearance")} style={tabStyle("appearance")}>
+            {t("settings.tab.appearance")}
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("profile")}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "6px",
-              border: "none",
-              background: activeTab === "profile" ? "var(--bg-elevated)" : "transparent",
-              color: activeTab === "profile" ? "var(--accent, #38BDF8)" : "var(--text-secondary)",
-              fontWeight: 700,
-              fontSize: "0.85rem",
-              cursor: "pointer",
-            }}
-          >
-            👤 Tài Khoản & Hạn Mức
+          <button type="button" onClick={() => setActiveTab("profile")} style={tabStyle("profile")}>
+            {t("settings.tab.profile")}
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("roles")}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "6px",
-              border: "none",
-              background: activeTab === "roles" ? "var(--bg-elevated)" : "transparent",
-              color: activeTab === "roles" ? "var(--accent, #38BDF8)" : "var(--text-secondary)",
-              fontWeight: 700,
-              fontSize: "0.85rem",
-              cursor: "pointer",
-            }}
-          >
-            🛡️ Phân Quyền Vai Trò
+          <button type="button" onClick={() => setActiveTab("roles")} style={tabStyle("roles")}>
+            {t("settings.tab.roles")}
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("wandb")}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "6px",
-              border: "none",
-              background: activeTab === "wandb" ? "var(--bg-elevated)" : "transparent",
-              color: activeTab === "wandb" ? "var(--accent, #38BDF8)" : "var(--text-secondary)",
-              fontWeight: 700,
-              fontSize: "0.85rem",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
-          >
-            <span>📊 Weights & Biases (W&B)</span>
+          <button type="button" onClick={() => setActiveTab("wandb")} style={tabStyle("wandb", true)}>
+            <span>{t("settings.tab.wandb")}</span>
             <span
               style={{
                 width: 7,
@@ -347,104 +304,63 @@ export default function SettingsPage() {
               {/* Theme Settings Card */}
               <div style={{ background: "var(--bg-elevated)", padding: "22px", borderRadius: "10px", border: "1px solid var(--border-subtle)" }}>
                 <h3 style={{ fontSize: "1rem", fontWeight: 800, margin: "0 0 8px 0", color: "var(--text-primary)" }}>
-                  🎨 Chủ Đề Hiển Thị (Theme)
+                  {t("settings.theme.title")}
                 </h3>
                 <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 16px 0" }}>
-                  Chọn tông màu giao diện phù hợp với môi trường làm việc của bạn.
+                  {t("settings.theme.desc")}
                 </p>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
-                  {/* Dark Mode */}
-                  <button
-                    type="button"
-                    onClick={() => handleThemeChange("dark")}
-                    style={{
-                      padding: "12px 10px",
-                      borderRadius: "8px",
-                      background: currentTheme === "dark" ? "rgba(56, 189, 248, 0.15)" : "var(--bg-primary)",
-                      border: currentTheme === "dark" ? "2px solid var(--accent, #38BDF8)" : "1px solid var(--border-subtle)",
-                      color: currentTheme === "dark" ? "var(--text-primary)" : "var(--text-secondary)",
-                      cursor: "pointer",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: "6px",
-                      fontWeight: 700,
-                      fontSize: "0.78rem",
-                    }}
-                  >
-                    <span style={{ fontSize: "1.3rem" }}>🌙</span>
-                    <span>Tối (Dark)</span>
-                  </button>
-
-                  {/* Light Mode */}
-                  <button
-                    type="button"
-                    onClick={() => handleThemeChange("light")}
-                    style={{
-                      padding: "12px 10px",
-                      borderRadius: "8px",
-                      background: currentTheme === "light" ? "rgba(56, 189, 248, 0.15)" : "var(--bg-primary)",
-                      border: currentTheme === "light" ? "2px solid var(--accent, #38BDF8)" : "1px solid var(--border-subtle)",
-                      color: currentTheme === "light" ? "var(--text-primary)" : "var(--text-secondary)",
-                      cursor: "pointer",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: "6px",
-                      fontWeight: 700,
-                      fontSize: "0.78rem",
-                    }}
-                  >
-                    <span style={{ fontSize: "1.3rem" }}>☀️</span>
-                    <span>Sáng (Light)</span>
-                  </button>
-
-                  {/* System Auto */}
-                  <button
-                    type="button"
-                    onClick={() => handleThemeChange("system")}
-                    style={{
-                      padding: "12px 10px",
-                      borderRadius: "8px",
-                      background: currentTheme === "system" ? "rgba(56, 189, 248, 0.15)" : "var(--bg-primary)",
-                      border: currentTheme === "system" ? "2px solid var(--accent, #38BDF8)" : "1px solid var(--border-subtle)",
-                      color: currentTheme === "system" ? "var(--text-primary)" : "var(--text-secondary)",
-                      cursor: "pointer",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: "6px",
-                      fontWeight: 700,
-                      fontSize: "0.78rem",
-                    }}
-                  >
-                    <span style={{ fontSize: "1.3rem" }}>💻</span>
-                    <span>Tự động</span>
-                  </button>
+                  {[
+                    { mode: "dark", icon: "🌙", labelKey: "settings.theme.dark" },
+                    { mode: "light", icon: "☀️", labelKey: "settings.theme.light" },
+                    { mode: "system", icon: "💻", labelKey: "settings.theme.system" },
+                  ].map(({ mode, icon, labelKey }) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => handleThemeChange(mode)}
+                      style={{
+                        padding: "12px 10px",
+                        borderRadius: "8px",
+                        background: currentTheme === mode ? "rgba(56, 189, 248, 0.15)" : "var(--bg-primary)",
+                        border: currentTheme === mode ? "2px solid var(--accent, #38BDF8)" : "1px solid var(--border-subtle)",
+                        color: currentTheme === mode ? "var(--text-primary)" : "var(--text-secondary)",
+                        cursor: "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontWeight: 700,
+                        fontSize: "0.78rem",
+                      }}
+                    >
+                      <span style={{ fontSize: "1.3rem" }}>{icon}</span>
+                      <span>{t(labelKey)}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
 
               {/* Language Settings Card */}
               <div style={{ background: "var(--bg-elevated)", padding: "22px", borderRadius: "10px", border: "1px solid var(--border-subtle)" }}>
                 <h3 style={{ fontSize: "1rem", fontWeight: 800, margin: "0 0 8px 0", color: "var(--text-primary)" }}>
-                  🌐 Ngôn Ngữ Hệ Thống (Language)
+                  {t("settings.language.title")}
                 </h3>
                 <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 16px 0" }}>
-                  Lựa chọn ngôn ngữ thể hiện giao diện và báo cáo thẩm định.
+                  {t("settings.language.desc")}
                 </p>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  {/* Vietnamese */}
                   <button
                     type="button"
                     onClick={() => handleLanguageChange("vi")}
                     style={{
                       padding: "12px 14px",
                       borderRadius: "8px",
-                      background: language === "vi" ? "rgba(56, 189, 248, 0.15)" : "var(--bg-primary)",
-                      border: language === "vi" ? "2px solid var(--accent, #38BDF8)" : "1px solid var(--border-subtle)",
-                      color: language === "vi" ? "var(--text-primary)" : "var(--text-secondary)",
+                      background: lang === "vi" ? "rgba(56, 189, 248, 0.15)" : "var(--bg-primary)",
+                      border: lang === "vi" ? "2px solid var(--accent, #38BDF8)" : "1px solid var(--border-subtle)",
+                      color: lang === "vi" ? "var(--text-primary)" : "var(--text-secondary)",
                       cursor: "pointer",
                       display: "flex",
                       alignItems: "center",
@@ -454,19 +370,18 @@ export default function SettingsPage() {
                     }}
                   >
                     <span style={{ fontSize: "1.3rem" }}>🇻🇳</span>
-                    <span>Tiếng Việt</span>
+                    <span>{t("settings.language.vi")}</span>
                   </button>
 
-                  {/* English */}
                   <button
                     type="button"
                     onClick={() => handleLanguageChange("en")}
                     style={{
                       padding: "12px 14px",
                       borderRadius: "8px",
-                      background: language === "en" ? "rgba(56, 189, 248, 0.15)" : "var(--bg-primary)",
-                      border: language === "en" ? "2px solid var(--accent, #38BDF8)" : "1px solid var(--border-subtle)",
-                      color: language === "en" ? "var(--text-primary)" : "var(--text-secondary)",
+                      background: lang === "en" ? "rgba(56, 189, 248, 0.15)" : "var(--bg-primary)",
+                      border: lang === "en" ? "2px solid var(--accent, #38BDF8)" : "1px solid var(--border-subtle)",
+                      color: lang === "en" ? "var(--text-primary)" : "var(--text-secondary)",
                       cursor: "pointer",
                       display: "flex",
                       alignItems: "center",
@@ -476,7 +391,7 @@ export default function SettingsPage() {
                     }}
                   >
                     <span style={{ fontSize: "1.3rem" }}>🇺🇸</span>
-                    <span>English</span>
+                    <span>{t("settings.language.en")}</span>
                   </button>
                 </div>
 
@@ -489,7 +404,7 @@ export default function SettingsPage() {
                       onChange={handleToggleMinimal}
                       style={{ width: "16px", height: "16px", cursor: "pointer" }}
                     />
-                    <span>✨ Chế độ Tinh gọn (Minimalist Workspace — Ẩn các badge và nút bấm dư thừa trên màn hình chính)</span>
+                    <span>{t("settings.minimal.label")}</span>
                   </label>
                 </div>
               </div>
@@ -515,7 +430,7 @@ export default function SettingsPage() {
               {/* Profile Card */}
               <div style={{ background: "var(--bg-elevated)", padding: "20px", borderRadius: "10px", border: "1px solid var(--border-subtle)" }}>
                 <h3 style={{ fontSize: "1rem", fontWeight: 800, margin: "0 0 16px 0", color: "var(--text-primary)" }}>
-                  Thông Tin Cá Nhân
+                  {t("settings.profile.title")}
                 </h3>
 
                 <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "20px" }}>
@@ -535,6 +450,7 @@ export default function SettingsPage() {
                     }}
                   >
                     {user?.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img src={user.avatar_url} alt={user.display_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     ) : (
                       user?.display_name?.charAt(0) || "U"
@@ -542,14 +458,14 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "var(--text-primary)" }}>
-                      {user?.display_name || "Chưa đặt tên"}
+                      {user?.display_name || t("settings.profile.unnamed")}
                     </div>
                     <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
                       {user?.email || "developer@advertest.ai"}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
                       <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "2px 8px", borderRadius: "4px", background: "#4285F425", color: "#4285F4" }}>
-                        🌐 Google SSO Authenticated
+                        {t("settings.profile.googleAuth")}
                       </span>
                     </div>
                   </div>
@@ -557,7 +473,7 @@ export default function SettingsPage() {
 
                 <form onSubmit={handleSaveProfile} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
                   <div>
-                    <label className="config-panel__label" style={{ fontSize: "0.75rem" }}>Tên hiển thị</label>
+                    <label className="config-panel__label" style={{ fontSize: "0.75rem" }}>{t("settings.profile.displayName")}</label>
                     <input
                       type="text"
                       className="select-field"
@@ -568,7 +484,7 @@ export default function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="config-panel__label" style={{ fontSize: "0.75rem" }}>Địa chỉ Email (Google)</label>
+                    <label className="config-panel__label" style={{ fontSize: "0.75rem" }}>{t("settings.profile.email")}</label>
                     <input
                       type="text"
                       disabled
@@ -584,7 +500,7 @@ export default function SettingsPage() {
                     className="action-button action-button--primary"
                     style={{ padding: "8px 16px", fontSize: "0.82rem", fontWeight: 700, alignSelf: "flex-start", marginTop: "6px" }}
                   >
-                    {isSavingProfile ? "Đang lưu..." : "💾 Lưu Thay Đổi"}
+                    {isSavingProfile ? t("settings.profile.saving") : t("settings.profile.save")}
                   </button>
                 </form>
               </div>
@@ -592,45 +508,45 @@ export default function SettingsPage() {
               {/* Resource Quotas Card */}
               <div style={{ background: "var(--bg-elevated)", padding: "20px", borderRadius: "10px", border: "1px solid var(--border-subtle)" }}>
                 <h3 style={{ fontSize: "1rem", fontWeight: 800, margin: "0 0 16px 0", color: "var(--text-primary)" }}>
-                  Hạn Mức Tài Nguyên (Quotas)
+                  {t("settings.quota.title")}
                 </h3>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
                   {/* Storage */}
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", fontWeight: 700, marginBottom: "6px" }}>
-                      <span>📦 Dung lượng lưu trữ Artifacts</span>
+                      <span>{t("settings.quota.storage")}</span>
                       <span style={{ color: "var(--accent)" }}>245 MB / 10,240 MB (2.4%)</span>
                     </div>
                     <div style={{ width: "100%", height: "8px", background: "var(--bg-primary)", borderRadius: "4px", overflow: "hidden" }}>
                       <div style={{ width: "2.4%", height: "100%", background: "#38BDF8", borderRadius: "4px" }} />
                     </div>
                     <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: "4px" }}>
-                      Lưu trữ ảnh Clean, Attacked, Noise Mask, và Checkpoint Retrained.
+                      {t("settings.quota.storage.desc")}
                     </div>
                   </div>
 
                   {/* GPU Compute */}
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", fontWeight: 700, marginBottom: "6px" }}>
-                      <span>⚡ Giờ tính toán GPU Benchmark</span>
+                      <span>{t("settings.quota.gpu")}</span>
                       <span style={{ color: "#10B981" }}>12.4 hrs / 100.0 hrs (12.4%)</span>
                     </div>
                     <div style={{ width: "100%", height: "8px", background: "var(--bg-primary)", borderRadius: "4px", overflow: "hidden" }}>
                       <div style={{ width: "12.4%", height: "100%", background: "#10B981", borderRadius: "4px" }} />
                     </div>
                     <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: "4px" }}>
-                      Thời gian GPU NVIDIA dùng để sinh gradient đối kháng và suy luận perception.
+                      {t("settings.quota.gpu.desc")}
                     </div>
                   </div>
 
                   {/* Status Badge */}
                   <div style={{ padding: "12px", borderRadius: "6px", background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.25)", marginTop: "8px" }}>
                     <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#10B981" }}>
-                      🟢 Trạng thái tài khoản: HOẠT ĐỘNG (ACTIVE)
+                      {t("settings.quota.statusActive")}
                     </div>
                     <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "2px" }}>
-                      Tài khoản của bạn có đầy đủ quyền truy cập các tính năng kiểm thử an toàn.
+                      {t("settings.quota.statusDesc")}
                     </div>
                   </div>
                 </div>
@@ -644,14 +560,14 @@ export default function SettingsPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
             <div style={{ background: "var(--bg-elevated)", padding: "16px 20px", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
               <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text-secondary)" }}>
-                Vai trò tài khoản hiện tại của bạn:
+                {t("settings.roles.current")}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "8px" }}>
                 <span style={{ fontSize: "1.2rem", fontWeight: 800, color: "var(--accent)" }}>
                   {ROLES_INFO.find((r) => r.id === currentRole)?.name || currentRole}
                 </span>
                 <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                  (Thuộc tính định danh của tài khoản được quản lý bởi Quản trị viên)
+                  {t("settings.roles.managedBy")}
                 </span>
               </div>
             </div>
@@ -678,22 +594,22 @@ export default function SettingsPage() {
                       </span>
                       {isActive && (
                         <span style={{ fontSize: "0.7rem", fontWeight: 800, padding: "3px 8px", borderRadius: "4px", background: r.color, color: "#000" }}>
-                          VAI TRÒ CỦA BẠN
+                          {t("settings.roles.yourRole")}
                         </span>
                       )}
                     </div>
 
                     <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", margin: 0 }}>
-                      {r.description}
+                      {t(r.descKey)}
                     </p>
 
                     <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "10px" }}>
                       <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "var(--text-muted)", marginBottom: "6px" }}>
-                        Quyền hạn chính:
+                        {t("settings.roles.permissions")}
                       </div>
                       <ul style={{ margin: 0, paddingLeft: "16px", fontSize: "0.72rem", color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: "4px" }}>
-                        {r.permissions.map((p, idx) => (
-                          <li key={idx}>{p}</li>
+                        {r.permissionKeys.map((k, idx) => (
+                          <li key={idx}>{t(k)}</li>
                         ))}
                       </ul>
                     </div>
@@ -726,7 +642,7 @@ export default function SettingsPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "18px" }}>
                 <div>
                   <h3 style={{ fontSize: "1.1rem", fontWeight: 800, margin: 0, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span>📊 Tích Hợp Weights & Biases (W&B)</span>
+                    <span>{t("settings.wandb.title")}</span>
                     <span
                       style={{
                         fontSize: "0.68rem",
@@ -737,11 +653,11 @@ export default function SettingsPage() {
                         color: wandbConnected ? "#10B981" : "#94A3B8",
                       }}
                     >
-                      {wandbConnected ? "✅ ĐÃ KẾT NỐI" : "⚪ CHƯA KẾT NỐI"}
+                      {wandbConnected ? t("settings.wandb.connected") : t("settings.wandb.disconnected")}
                     </span>
                   </h3>
                   <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", margin: "4px 0 0 0" }}>
-                    Tự động đồng bộ hóa các bài kiểm thử độ bền vững, ma trận IoU và hình ảnh bounding box lên nền tảng MLOps W&B.
+                    {t("settings.wandb.desc")}
                   </p>
                 </div>
 
@@ -761,7 +677,7 @@ export default function SettingsPage() {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  🔑 Lấy API Key tại wandb.ai ↗
+                  {t("settings.wandb.getApiKey")}
                 </a>
               </div>
 
@@ -770,26 +686,26 @@ export default function SettingsPage() {
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
                     <label className="config-panel__label" style={{ fontSize: "0.75rem" }}>
-                      W&B API Key (40 ký tự)
+                      {t("settings.wandb.apiKeyLabel")}
                     </label>
                     <button
                       type="button"
                       onClick={() => setShowWandbKey(!showWandbKey)}
                       style={{ background: "none", border: "none", color: "var(--accent)", fontSize: "0.7rem", cursor: "pointer", fontWeight: 600 }}
                     >
-                      {showWandbKey ? "Ẩn khóa" : "Hiện khóa"}
+                      {showWandbKey ? t("settings.wandb.toggle.hide") : t("settings.wandb.toggle.show")}
                     </button>
                   </div>
                   <input
                     type={showWandbKey ? "text" : "password"}
                     className="select-field"
-                    placeholder={wandbMaskedKey ? `Khóa hiện tại: ${wandbMaskedKey}` : "Nhập API Key từ wandb.ai/authorize..."}
+                    placeholder={wandbMaskedKey ? `${t("settings.wandb.currentKey")} ${wandbMaskedKey}` : t("settings.wandb.apiKeyPlaceholder")}
                     value={wandbKey}
                     onChange={(e) => setWandbKey(e.target.value)}
                     style={{ width: "100%", padding: "9px 12px", fontSize: "0.85rem", fontFamily: "var(--font-mono)" }}
                   />
                   <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: "4px" }}>
-                    Khóa API được lưu mã hóa an toàn trên hệ thống máy chủ nội bộ.
+                    {t("settings.wandb.apiKeySecurity")}
                   </div>
                 </div>
 
@@ -797,12 +713,12 @@ export default function SettingsPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
                   <div>
                     <label className="config-panel__label" style={{ fontSize: "0.75rem" }}>
-                      W&B Entity / Team (Tùy chọn)
+                      {t("settings.wandb.entityLabel")}
                     </label>
                     <input
                       type="text"
                       className="select-field"
-                      placeholder="vd: team-ai-safety hoặc tên tài khoản"
+                      placeholder={t("settings.wandb.entityPlaceholder")}
                       value={wandbEntity}
                       onChange={(e) => setWandbEntity(e.target.value)}
                       style={{ width: "100%", padding: "9px 12px", fontSize: "0.85rem" }}
@@ -810,7 +726,7 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <label className="config-panel__label" style={{ fontSize: "0.75rem" }}>
-                      W&B Project Name
+                      {t("settings.wandb.projectLabel")}
                     </label>
                     <input
                       type="text"
@@ -833,7 +749,7 @@ export default function SettingsPage() {
                     style={{ width: "16px", height: "16px", cursor: "pointer" }}
                   />
                   <label htmlFor="auto-sync" style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-primary)", cursor: "pointer" }}>
-                    Tự động đồng bộ hóa kết quả mỗi khi bấm "Run Test"
+                    {t("settings.wandb.autoSync")}
                   </label>
                 </div>
 
@@ -846,7 +762,7 @@ export default function SettingsPage() {
                     className="action-button action-button--secondary"
                     style={{ padding: "9px 18px", fontSize: "0.82rem", fontWeight: 700 }}
                   >
-                    {isTestingWandb ? "⏳ Đang kiểm tra..." : "⚡ Kiểm Tra Kết Nối"}
+                    {isTestingWandb ? t("settings.wandb.testing") : t("settings.wandb.test")}
                   </button>
 
                   <button
@@ -855,7 +771,7 @@ export default function SettingsPage() {
                     className="action-button action-button--primary"
                     style={{ padding: "9px 22px", fontSize: "0.82rem", fontWeight: 700 }}
                   >
-                    {isSavingWandb ? "Đang lưu..." : "💾 Lưu Cấu Hình W&B"}
+                    {isSavingWandb ? t("settings.wandb.saving") : t("settings.wandb.save")}
                   </button>
                 </div>
               </form>

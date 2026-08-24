@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 
 export default function AuthModal() {
   const {
@@ -13,6 +14,7 @@ export default function AuthModal() {
     loginWithCredentials,
     isLoading,
   } = useAuth();
+  const { t } = useLanguage();
 
   const [activeTab, setActiveTab] = useState("google");
   const [email, setEmail] = useState("");
@@ -65,7 +67,7 @@ export default function AuthModal() {
     try {
       await loginWithCredentials(email, password);
     } catch (err) {
-      setError(err.message || "Đăng nhập thất bại.");
+      setError(err.message || t("auth.loginFailed"));
     }
   };
 
@@ -103,10 +105,10 @@ export default function AuthModal() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <h2 style={{ fontSize: "1.2rem", fontWeight: 800, color: "var(--text-primary, #FFF)", margin: 0 }}>
-              🔐 Đăng Nhập Hệ Thống
+              {t("auth.title")}
             </h2>
             <p style={{ fontSize: "0.78rem", color: "var(--text-muted, #94A3B8)", margin: "4px 0 0 0" }}>
-              Nền tảng kiểm thử và đánh giá độ bền vững AdverTest AI
+              {t("auth.subtitle")}
             </p>
           </div>
           <button
@@ -154,7 +156,7 @@ export default function AuthModal() {
               gap: "6px",
             }}
           >
-            <span>🌐 Google SSO</span>
+            <span>{t("auth.tab.google")}</span>
           </button>
           <button
             type="button"
@@ -171,7 +173,7 @@ export default function AuthModal() {
               cursor: "pointer",
             }}
           >
-            <span>✉️ Email & Mật khẩu</span>
+            <span>{t("auth.tab.password")}</span>
           </button>
         </div>
 
@@ -202,7 +204,7 @@ export default function AuthModal() {
             {/* Quick-Access Google Profiles (One-Click SSO simulation for test review) */}
             <div>
               <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-secondary)", marginBottom: "8px" }}>
-                🚀 Chọn tài khoản Google SSO để đăng nhập nhanh:
+                {t("auth.demoProfiles")}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {(googleConfig.demo_profiles || []).map((prof) => (
@@ -272,7 +274,7 @@ export default function AuthModal() {
         {activeTab === "password" && (
           <form onSubmit={handlePasswordLogin} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <div>
-              <label className="config-panel__label" style={{ fontSize: "0.72rem" }}>Email</label>
+              <label className="config-panel__label" style={{ fontSize: "0.72rem" }}>{t("auth.email")}</label>
               <input
                 type="email"
                 required
@@ -285,7 +287,7 @@ export default function AuthModal() {
             </div>
 
             <div>
-              <label className="config-panel__label" style={{ fontSize: "0.72rem" }}>Mật khẩu</label>
+              <label className="config-panel__label" style={{ fontSize: "0.72rem" }}>{t("auth.password")}</label>
               <input
                 type="password"
                 required
@@ -303,7 +305,7 @@ export default function AuthModal() {
               className="run-button"
               style={{ marginTop: "6px", padding: "10px", fontSize: "0.85rem", fontWeight: 700 }}
             >
-              {isLoading ? "Đang xác thực..." : "Đăng Nhập"}
+              {isLoading ? t("auth.authenticating") : t("auth.signIn")}
             </button>
           </form>
         )}

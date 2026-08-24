@@ -1,4 +1,7 @@
+"use client";
+
 import React from "react";
+import { useLanguage } from "@/context/LanguageContext";
 import RAChart from "@/components/RAChart";
 import MetricsComparisonChart from "@/components/MetricsComparisonChart";
 import HeatmapMatrix from "@/components/HeatmapMatrix";
@@ -8,6 +11,7 @@ import { triggerAutoFlag } from "@/lib/api";
 import { getDescriptiveAttackName } from "@/lib/attackNaming";
 
 export default function ReportView({ report, onClearHistory }) {
+  const { t } = useLanguage();
   if (!report) {
     return (
       <div className="placeholder-view">
@@ -82,11 +86,10 @@ export default function ReportView({ report, onClearHistory }) {
             <span style={{ fontSize: "1.4rem" }}>📊</span>
             <div>
               <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "var(--accent, #38BDF8)" }}>
-                Báo Cáo Tổng Hợp Đa Phương Pháp (Multi-Attack Benchmark)
+                {t("report.multiRunTitle")}
               </div>
-              <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)", marginTop: "2px" }}>
-                Đang tích lũy <strong>{uniqueAttacks.length} dạng tấn công</strong> ({uniqueAttacks.join(", ")}) trên bộ dữ liệu <strong>{report.dataset}</strong> qua {report.accumulated_runs?.length || 1} đợt chạy.
-              </div>
+              {/* eslint-disable-next-line react/no-danger */}
+              <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)", marginTop: "2px" }} dangerouslySetInnerHTML={{ __html: t("report.multiRunDesc", { count: uniqueAttacks.length, attacks: uniqueAttacks.join(", "), dataset: report.dataset, runs: report.accumulated_runs?.length || 1 }) }} />
             </div>
           </div>
 
@@ -96,9 +99,9 @@ export default function ReportView({ report, onClearHistory }) {
               onClick={onClearHistory}
               className="action-button action-button--secondary"
               style={{ fontSize: "0.72rem", padding: "5px 12px", color: "var(--text-muted)" }}
-              title="Xóa kết quả đã tích lũy và vẽ lại báo cáo từ đầu"
+              title={t("report.clearHistory.title")}
             >
-              🔄 Xóa lịch sử vẽ lại
+              {t("report.clearHistory")}
             </button>
           )}
         </div>
@@ -124,7 +127,7 @@ export default function ReportView({ report, onClearHistory }) {
             {report.benchmark_metrics_available === false ? "—" : report.ap_clean?.toFixed(3)}
           </div>
           <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: 4 }}>
-            Độ chính xác chuẩn (Clean)
+            {t("report.cleanAccuracy")}
           </div>
         </div>
 
@@ -135,7 +138,7 @@ export default function ReportView({ report, onClearHistory }) {
             {report.benchmark_metrics_available === false ? "—" : `-${avgDegradation.toFixed(1)}%`}
           </div>
           <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: 4 }}>
-            Suy giảm trung bình ({cells.length} phép thử)
+            {t("report.avgDegradation", { count: cells.length })}
           </div>
         </div>
 
@@ -146,20 +149,20 @@ export default function ReportView({ report, onClearHistory }) {
             {asrPct.toFixed(1)}%
           </div>
           <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: 4 }}>
-            Tỷ lệ đánh lừa thành công
+            {t("report.asrLabel")}
           </div>
         </div>
 
         {/* Mean IoU Before vs After */}
         <div style={{ padding: "0 var(--space-md)", borderLeft: "1px solid var(--border-subtle)" }}>
-          <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>Mean IoU (Trước → Sau)</div>
+          <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>{t("report.meanIoU")}</div>
           <div className="text-mono" style={{ fontSize: "1.4rem", fontWeight: 800, color: "var(--text-primary)", lineHeight: 1, marginTop: 4 }}>
             <span style={{ color: "var(--success)" }}>{Number(cleanIoU).toFixed(2)}</span>
             <span style={{ color: "var(--text-tertiary)", margin: "0 4px" }}>→</span>
             <span style={{ color: "var(--danger)" }}>{Number(attackedIoU).toFixed(2)}</span>
           </div>
           <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: 4 }}>
-            Độ chính xác bao khớp IoU
+            {t("report.iouLabel")}
           </div>
         </div>
       </div>
@@ -199,12 +202,12 @@ export default function ReportView({ report, onClearHistory }) {
           <span style={{ fontSize: "1.3rem" }}>⚖️</span>
           <div>
             <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#FBBF24" }}>
-              Human-in-the-Loop Review Queue (Quy trình Kỹ sư Duyệt Lỗi)
+              {t("report.reviewQueueTitle")}
             </div>
             <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
               {flagResult
-                ? `✅ Đã chuyển thành công ${flagResult.count} ca lỗi nghiêm trọng vào Review Queue!`
-                : "Phân tích các ca phát hiện sai sót nghiêm trọng nhất, gán nhãn nhóm lỗi và đề xuất biện pháp phòng thủ."}
+                ? t("report.flaggedMsg", { count: flagResult.count })
+                : t("report.flagHint")}
             </div>
           </div>
         </div>
@@ -217,7 +220,7 @@ export default function ReportView({ report, onClearHistory }) {
             className="action-button action-button--secondary"
             style={{ fontSize: "0.75rem", padding: "6px 12px" }}
           >
-            {flagging ? "Đang chuyển..." : "Tự động gửi ca lỗi (Threshold ≥ 20%)"}
+            {flagging ? t("report.flagging") : t("report.autoFlag")}
           </button>
           <a
             href="/reviews"
@@ -235,7 +238,7 @@ export default function ReportView({ report, onClearHistory }) {
               gap: "6px",
             }}
           >
-            <span>Mở Review Queue</span>
+            <span>{t("report.openReviewQueue")}</span>
             <span>→</span>
           </a>
         </div>

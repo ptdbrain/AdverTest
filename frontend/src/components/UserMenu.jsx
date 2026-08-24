@@ -2,9 +2,11 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 
 export default function UserMenu() {
   const { user, isAuthenticated, openAuthModal, logout, switchRole } = useAuth();
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -57,7 +59,7 @@ export default function UserMenu() {
             d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
           />
         </svg>
-        <span>Đăng nhập Google SSO</span>
+        <span>{t("usermenu.loginGoogle")}</span>
       </button>
     );
   }
@@ -156,13 +158,13 @@ export default function UserMenu() {
               {user.email}
             </div>
             <div style={{ fontSize: "0.65rem", color: "#4285F4", fontWeight: 600, marginTop: "2px" }}>
-              🌐 Đăng nhập qua Google SSO
+              {t("usermenu.signedInGoogle")}
             </div>
           </div>
 
           {/* Account Role Display */}
           <div style={{ background: "var(--bg-primary)", padding: "8px 10px", borderRadius: "6px", border: "1px solid var(--border-subtle)" }}>
-            <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: 600 }}>Vai trò tài khoản:</div>
+            <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: 600 }}>{t("usermenu.role")}</div>
             <div style={{ fontSize: "0.78rem", fontWeight: 700, color: roleColors[currentRole] || "var(--text-primary)", marginTop: "2px" }}>
               {roleLabels[currentRole] || currentRole}
             </div>
@@ -185,7 +187,7 @@ export default function UserMenu() {
                 fontWeight: 600,
               }}
             >
-              <span>⚙️ Cài đặt & Weights & Biases</span>
+              <span>{t("usermenu.settings")}</span>
             </a>
             <a
               href="/admin"
@@ -197,7 +199,7 @@ export default function UserMenu() {
                 borderRadius: "4px",
               }}
             >
-              👑 Bảng Điều Khiển Admin
+              {t("usermenu.adminDashboard")}
             </a>
             <button
               type="button"
@@ -217,7 +219,7 @@ export default function UserMenu() {
                 cursor: "pointer",
               }}
             >
-              🚪 Đăng xuất
+              {t("usermenu.logout")}
             </button>
           </div>
         </div>

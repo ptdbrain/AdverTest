@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useLanguage } from "@/context/LanguageContext";
 import { getDescriptiveAttackName } from "@/lib/attackNaming";
 
 function cellColor(degradation) {
@@ -13,16 +14,16 @@ function cellColor(degradation) {
   return       { bg: "rgba(252, 129, 129, 0.25)", text: "#fc8181" };
 }
 
-const GROUP_LABELS = {
-  A: "Corruption (Biến dạng hình ảnh)",
-  B: "Weather (Thời tiết khắc nghiệt)",
-  C: "Occlusion (Vật cản che khuất)",
-  D: "Adversarial (Nhiễu tấn công Gradient)",
-  E: "Patch (Vùng dán vật lý)",
-  F: "Blackbox (Tấn công hộp đen)",
-};
-
 export default function HeatmapMatrix({ cells = [], heatmap = {}, report = null }) {
+  const { t } = useLanguage();
+  const groupLabels = {
+    A: t("heatmap.catA"),
+    B: t("heatmap.catB"),
+    C: t("heatmap.catC"),
+    D: t("heatmap.catD"),
+    E: t("heatmap.catE"),
+    F: t("heatmap.catF"),
+  };
   const { groupedRows, severities } = useMemo(() => {
     const sevSet = new Set();
     cells.forEach((c) => sevSet.add(c.severity));
@@ -64,17 +65,17 @@ export default function HeatmapMatrix({ cells = [], heatmap = {}, report = null 
   return (
     <div className="heatmap">
       <div className="heatmap__title">
-        Degradation Heatmap (Bản đồ nhiệt độ suy giảm theo cấp độ)
+        {t("heatmap.title")}
         <span style={{ fontSize: "0.55rem", color: "var(--text-muted)", fontWeight: 400, marginLeft: "auto" }}>
-          Cell = % degradation (D)
+          {t("heatmap.cellD")}
         </span>
       </div>
       <table className="heatmap__table">
         <thead>
           <tr>
-            <th>Dạng Tấn Công (Attack)</th>
+            <th>{t("heatmap.attackCol")}</th>
             {severities.map((s) => (
-              <th key={s}>Cấp {s}</th>
+              <th key={s}>{t("heatmap.levelCol", { level: s })}</th>
             ))}
           </tr>
         </thead>
@@ -84,7 +85,7 @@ export default function HeatmapMatrix({ cells = [], heatmap = {}, report = null 
               <tbody key={group}>
                 <tr className="heatmap__group-header">
                   <td colSpan={severities.length + 1}>
-                    {GROUP_LABELS[group] || group}
+                    {groupLabels[group] || group}
                   </td>
                 </tr>
                 {attacks.map((atk) => (

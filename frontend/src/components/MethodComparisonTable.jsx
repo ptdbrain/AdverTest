@@ -17,6 +17,7 @@
 
 import { useMemo } from "react";
 import { clsx } from "clsx";
+import { useLanguage } from "@/context/LanguageContext";
 import { getCanonicalAttackKey, getDescriptiveAttackName, SHORT_ATTACK_LABELS, ATTACK_LABELS } from "@/lib/attackNaming";
 
 // ─── colour helpers ────────────────────────────────────────────────────────
@@ -203,6 +204,7 @@ function AttackCell({ cell, apClean }) {
 // ─── main component ────────────────────────────────────────────────────────
 
 export default function MethodComparisonTable({ report }) {
+  const { t } = useLanguage();
   const { columnDefs, rows, apClean } = useMemo(() => buildPivotTable(report), [report]);
 
   if (!report || columnDefs.length === 0) {
@@ -211,7 +213,7 @@ export default function MethodComparisonTable({ report }) {
         <div className="heatmap__title">Method × Severity Report</div>
         <div className="empty-state">
           <div className="empty-state__message">
-            Chưa có dữ liệu — chạy ít nhất một method để hiển thị bảng.
+            {t("method.empty")}
           </div>
         </div>
       </div>
@@ -235,7 +237,7 @@ export default function MethodComparisonTable({ report }) {
       >
         <div>
           <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>
-            Bảng so sánh tích lũy (Method × Severity)
+            {t("method.pivotLabel")}
           </div>
           <div
             style={{
@@ -244,7 +246,7 @@ export default function MethodComparisonTable({ report }) {
               color: "var(--text-primary)",
             }}
           >
-            Baseline + {attackColumnCount} phương pháp tấn công tích lũy
+            {t("method.heading", { count: attackColumnCount })}
           </div>
         </div>
         <span

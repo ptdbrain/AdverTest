@@ -1,7 +1,10 @@
+"use client";
+
 import React, { useRef, useState } from "react";
 import UploadModal from "./UploadModal";
 import { getCheckpoint, uploadCheckpoint } from "@/lib/api";
 import { SHORT_ATTACK_LABELS, ATTACK_LABELS } from "@/lib/attackNaming";
+import { useLanguage } from "@/context/LanguageContext";
 
 const GROUP_LABELS = {
   A: "Corruption",
@@ -72,6 +75,7 @@ export default function ConfigPanel({
   runStatus,
   actions = {},
 }) {
+  const { t } = useLanguage();
   const {
     setSelectedDataset,
     addDataset,
@@ -387,7 +391,7 @@ export default function ConfigPanel({
                 <span>{SHORT_ATTACK_LABELS[step.attack_name] || ATTACK_LABELS[step.attack_name] || step.attack_name.replace(/_/g, " ")}</span>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.68rem", color: "var(--accent-light)" }}>
-                    Cấp {step.severity}
+                    {t("config.level", { level: step.severity })}
                   </span>
                   <input
                     aria-label={`${step.attack_name} severity`}
@@ -505,7 +509,7 @@ export default function ConfigPanel({
         const nAttacks = selectedAttacks.length;
         const hasExpensive = selectedAttacks.some((a) => ["cw_l2", "square_attack", "dag"].includes(a));
         const hasMedium = selectedAttacks.some((a) => ["pgd", "fgsm", "mi_fgsm", "tog", "sam2_pgd"].includes(a));
-        const complexityTier = hasExpensive ? "🔥 Nặng (Iterative Optimization)" : hasMedium ? "⚙️ Trung bình (Gradient Steps)" : "⚡ Nhẹ (Single-pass Transform)";
+        const complexityTier = hasExpensive ? t("config.complexity.heavy") : hasMedium ? t("config.complexity.medium") : t("config.complexity.light");
         const complexityColor = hasExpensive ? "var(--danger)" : hasMedium ? "var(--warning)" : "var(--success)";
         const estForwardPasses = (nAttacks + 1) * nSamples;
 
@@ -523,16 +527,16 @@ export default function ConfigPanel({
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>⚡ Khối lượng tính toán (Workload Budget)</span>
+              <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>{t("config.workloadBudget")}</span>
               <span style={{ color: complexityColor, fontWeight: 700, fontSize: "0.62rem" }}>
                 {complexityTier}
               </span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", color: "var(--text-muted)", marginTop: "2px" }}>
-              <div>Số phép thử (Cells): <strong style={{ color: "var(--text-primary)" }}>{nAttacks} đòn × {nSamples} mẫu</strong></div>
-              <div>Ước tính Forward Passes: <strong style={{ color: "var(--text-primary)" }}>{estForwardPasses} lần</strong></div>
-              <div>Prediction Caching: <strong style={{ color: "var(--success)" }}>SQLite Enabled</strong></div>
-              <div>Tài nguyên yêu cầu: <strong style={{ color: "var(--text-primary)" }}>Device Inferred</strong></div>
+              <div>{t("config.cells")} <strong style={{ color: "var(--text-primary)" }}>{t("config.attacksFormat", { attacks: nAttacks, samples: nSamples })}</strong></div>
+              <div>{t("config.forwardPasses")} <strong style={{ color: "var(--text-primary)" }}>{t("config.passesCount", { count: estForwardPasses })}</strong></div>
+              <div>{t("config.predCaching")} <strong style={{ color: "var(--success)" }}>SQLite Enabled</strong></div>
+              <div>{t("config.resourceNeed")} <strong style={{ color: "var(--text-primary)" }}>Device Inferred</strong></div>
             </div>
           </div>
         );
@@ -555,7 +559,7 @@ export default function ConfigPanel({
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "var(--accent)", display: "flex", alignItems: "center", gap: "6px" }}>
               <span className="status-beacon status-beacon--running" style={{ width: 8, height: 8 }} />
-              ĐANG CHẠY PHIÊN #{runId ? runId.slice(0, 8) : "INITIALIZING"}
+              {t("config.runningSession", { id: runId ? runId.slice(0, 8) : "INITIALIZING" })}
             </span>
             <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
               {progress}%
@@ -567,9 +571,9 @@ export default function ConfigPanel({
           </div>
 
           <div style={{ fontSize: "0.68rem", color: "var(--text-secondary)", lineHeight: 1.4 }}>
-            <div>📌 <strong>Đòn tấn công:</strong> {activeRunMeta?.attacks?.length ? activeRunMeta.attacks.map((a) => SHORT_ATTACK_LABELS[a] || ATTACK_LABELS[a] || a).join(" + ") : (selectedAttacks.length ? selectedAttacks.map((a) => SHORT_ATTACK_LABELS[a] || a).join(", ") : "Tự chọn")}</div>
-            <div>🤖 <strong>Mô hình:</strong> {activeRunMeta?.modelVersion || selectedModelVersion || "YOLO11"} | 📦 <strong>Dữ liệu:</strong> {activeRunMeta?.dataset || selectedDataset}</div>
-            <div style={{ color: "var(--text-muted)", marginTop: "2px" }}>{progressDetail || "Đang xử lý gradient đối kháng..."}</div>
+            <div>📌 <strong>{t("config.attackLabel")}</strong> {activeRunMeta?.attacks?.length ? activeRunMeta.attacks.map((a) => SHORT_ATTACK_LABELS[a] || ATTACK_LABELS[a] || a).join(" + ") : (selectedAttacks.length ? selectedAttacks.map((a) => SHORT_ATTACK_LABELS[a] || a).join(", ") : t("config.custom"))}</div>
+            <div>🤖 <strong>{t("common.model")}</strong> {activeRunMeta?.modelVersion || selectedModelVersion || "YOLO11"} | 📦 <strong>{t("common.data")}</strong> {activeRunMeta?.dataset || selectedDataset}</div>
+            <div style={{ color: "var(--text-muted)", marginTop: "2px" }}>{progressDetail || t("config.processGradient")}</div>
           </div>
         </div>
       )}
@@ -591,7 +595,7 @@ export default function ConfigPanel({
               padding: "10px 14px",
             }}
           >
-            🛑 HỦY & DỪNG PHIÊN NÀY NGAY
+            {t("config.cancelStop")}
           </button>
 
           <button
@@ -607,9 +611,9 @@ export default function ConfigPanel({
               fontSize: "0.75rem",
               padding: "8px 12px",
             }}
-            title="Hủy ngay phiên chạy cũ và bắt đầu chạy lại với cấu hình bạn vừa thay đổi"
+            title={t("config.cancelRerun.title")}
           >
-            ⚡ Hủy Cũ & Chạy Ngay Với Cấu Hình Mới
+            {t("config.cancelRerun")}
           </button>
         </div>
       ) : (
@@ -619,7 +623,7 @@ export default function ConfigPanel({
           onClick={handleRun}
           disabled={blocked || selectedAttacks.length === 0}
         >
-          {blocked ? "Waiting for artifacts" : "Run Test"}
+          {blocked ? t("config.waitingArtifacts") : t("config.runTest")}
         </button>
       )}
     </aside>

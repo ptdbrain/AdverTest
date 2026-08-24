@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import UserMenu from "@/components/UserMenu.jsx";
+import { useLanguage } from "@/context/LanguageContext";
 import {
   getReviews,
   resolveReview,
@@ -25,6 +26,7 @@ const DEFAULT_PRESET_TAGS = [
 ];
 
 export default function ReviewPage() {
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState("PENDING");
   const [reviews, setReviews] = useState(null);
   const [selectedReview, setSelectedReview] = useState(null);
@@ -82,7 +84,7 @@ export default function ReviewPage() {
       .catch((err) => {
         console.error("Failed to load reviews:", err);
         setReviews([]);
-        setError("Không thể tải danh sách review queue.");
+        setError(t("review.loadFailed"));
       });
   }, [activeTab]);
 
@@ -143,7 +145,7 @@ export default function ReviewPage() {
     }
     setSelectedTag(trimmed);
     setNewTagInput("");
-    setActionSuccessMsg(`✨ Đã thêm và chọn nhóm lỗi: "${trimmed}"`);
+    setActionSuccessMsg(t("review.tagAdded", { tag: trimmed }));
   };
 
   const handleSelectDecision = (chosenDecision) => {
@@ -177,11 +179,11 @@ export default function ReviewPage() {
         }
       }
 
-      setActionSuccessMsg(`Đã nạp ${totalCreated} ca lỗi từ cơ sở dữ liệu.`);
+      setActionSuccessMsg(t("review.scanned", { count: totalCreated }));
       loadReviews("PENDING");
       setActiveTab("PENDING");
     } catch (err) {
-      setError(`Lỗi: ${err.message}`);
+      setError(t("review.error", { message: err.message }));
     } finally {
       setIsAutoScanning(false);
     }
@@ -194,9 +196,9 @@ export default function ReviewPage() {
       if (backlog?.id) {
         await addRetrainingBacklogItem(backlog.id, selectedReview.review_id);
       }
-      setActionSuccessMsg(`✅ Đã thêm vào Retraining Backlog!`);
+      setActionSuccessMsg(t("review.backlogAdded"));
     } catch (err) {
-      alert(`Lỗi: ${err.message}`);
+      alert(t("review.error", { message: err.message }));
     }
   };
 
@@ -224,9 +226,9 @@ export default function ReviewPage() {
       setSelectedReview(null);
       setDecision("");
       setDecisionNote("");
-      setActionSuccessMsg(`✅ Đã lưu quyết định thẩm định!`);
+      setActionSuccessMsg(t("review.decisionSaved"));
     } catch (err) {
-      alert(`Lỗi: ${err.message}`);
+      alert(t("review.error", { message: err.message }));
     }
   };
 
@@ -271,10 +273,10 @@ export default function ReviewPage() {
               border: "1px solid rgba(56, 189, 248, 0.25)",
             }}
           >
-            ← Quay lại Dashboard
+            {t("review.backDashboard")}
           </a>
           <span style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FBBF24" }}>
-            ⚖️ Review Queue
+            {t("review.title")}
           </span>
         </div>
 
@@ -286,7 +288,7 @@ export default function ReviewPage() {
             className="action-button action-button--secondary"
             style={{ fontSize: "0.78rem", padding: "6px 14px", color: "#FBBF24", fontWeight: 700 }}
           >
-            {isAutoScanning ? "⏳ Đang quét..." : "⚡ Quét ca lỗi từ DB"}
+            {isAutoScanning ? t("review.scanBtn.running") : t("review.scanBtn")}
           </button>
           <UserMenu />
         </div>
@@ -329,7 +331,7 @@ export default function ReviewPage() {
                 borderBottom: activeTab === "PENDING" ? "2px solid var(--accent)" : "2px solid transparent",
               }}
             >
-              Chờ duyệt {reviews && activeTab === "PENDING" ? `(${reviews.length})` : ""}
+              {t("review.tab.pending", { count: reviews && activeTab === "PENDING" ? `(${reviews.length})` : "" })}
             </button>
             <button
               type="button"
@@ -346,7 +348,7 @@ export default function ReviewPage() {
                 borderBottom: activeTab === "RESOLVED" ? "2px solid var(--success)" : "2px solid transparent",
               }}
             >
-              Đã duyệt {reviews && activeTab === "RESOLVED" ? `(${reviews.length})` : ""}
+              {t("review.tab.resolved", { count: reviews && activeTab === "RESOLVED" ? `(${reviews.length})` : "" })}
             </button>
           </div>
 
@@ -354,7 +356,7 @@ export default function ReviewPage() {
           <div style={{ flex: 1, overflowY: "auto", padding: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
             {loading ? (
               <div style={{ padding: "30px", textAlign: "center", color: "var(--text-muted)", fontSize: "0.82rem" }}>
-                ⏳ Đang tải...
+                ⏳ {t("common.loading")}
               </div>
             ) : error ? (
               <div style={{ padding: "14px", color: "var(--danger)", fontSize: "0.78rem", textAlign: "center" }}>
@@ -362,7 +364,7 @@ export default function ReviewPage() {
               </div>
             ) : reviews.length === 0 ? (
               <div style={{ padding: "30px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: "0.82rem" }}>
-                Hàng đợi rỗng
+                {t("review.emptyQueue")}
               </div>
             ) : (
               reviews.map((review) => {
@@ -389,7 +391,7 @@ export default function ReviewPage() {
                           {review.review_id}
                         </div>
                         <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--text-primary)" }}>
-                          {review.attack?.replace(/_/g, " ")} (Cấp {review.severity})
+                          {t("review.levelInList", { attack: review.attack?.replace(/_/g, " "), severity: review.severity })}
                         </span>
                       </div>
                       <span style={{ color: "var(--danger)", fontWeight: 800, fontSize: "0.85rem", fontFamily: "var(--font-mono)" }}>
@@ -442,7 +444,7 @@ export default function ReviewPage() {
 
           {!selectedReview ? (
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "0.95rem" }}>
-              Chọn ca lỗi ở danh sách bên trái để xem chi tiết
+              {t("review.selectHint")}
             </div>
           ) : (
             <>
@@ -460,7 +462,7 @@ export default function ReviewPage() {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                   <strong style={{ fontSize: "1.1rem", color: "var(--text-primary)" }}>
-                    {selectedReview.attack?.toUpperCase()} (Cấp độ {selectedReview.severity})
+                    {t("review.levelHeader", { attack: selectedReview.attack?.toUpperCase(), severity: selectedReview.severity })}
                   </strong>
                   <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
                     ID: {selectedReview.review_id}
@@ -482,7 +484,7 @@ export default function ReviewPage() {
                 {/* 1. Clean Model Prediction */}
                 <div style={{ background: "var(--bg-elevated)", borderRadius: "8px", padding: "14px", border: "1px solid var(--border-subtle)" }}>
                   <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#38BDF8", marginBottom: "8px" }}>
-                    1. Clean Prediction (Mô hình nhận diện trên ảnh gốc)
+                    {t("review.cleanPred")}
                   </div>
                   <div
                     style={{
@@ -499,7 +501,7 @@ export default function ReviewPage() {
                       <Image src={currentSample.clean_overlay} alt="Clean Model Prediction" fill unoptimized style={{ objectFit: "contain" }} />
                     ) : (
                       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "0.85rem" }}>
-                        Clean Model Prediction
+                        {t("review.cleanPredEmpty")}
                       </div>
                     )}
                   </div>
@@ -508,7 +510,7 @@ export default function ReviewPage() {
                 {/* 2. Attacked Model Prediction */}
                 <div style={{ background: "var(--bg-elevated)", borderRadius: "8px", padding: "14px", border: "1px solid var(--border-subtle)" }}>
                   <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#F59E0B", marginBottom: "8px" }}>
-                    2. Attacked Prediction (Mô hình nhận diện sau tấn công - Lỗi / Mất Hộp)
+                    {t("review.attackedPred")}
                   </div>
                   <div
                     style={{
@@ -525,7 +527,7 @@ export default function ReviewPage() {
                       <Image src={currentSample.attacked_overlay} alt="Attacked Model Prediction" fill unoptimized style={{ objectFit: "contain" }} />
                     ) : (
                       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "0.85rem" }}>
-                        Attacked Model Prediction
+                        {t("review.attackedPredEmpty")}
                       </div>
                     )}
                   </div>
@@ -548,7 +550,7 @@ export default function ReviewPage() {
                   {/* 1. Failure Category Tagging with Expanded Chips */}
                   <div>
                     <div style={{ fontSize: "0.85rem", fontWeight: 700, marginBottom: "8px", color: "var(--text-primary)" }}>
-                      1. Gán Nhóm Lỗi (Failure Tag)
+                      {t("review.failureTag")}
                     </div>
                     
                     {/* Chips suggestions - Taller & more comfortable */}
@@ -583,7 +585,7 @@ export default function ReviewPage() {
                       <input
                         type="text"
                         className="select-field"
-                        placeholder="Hoặc nhập nhóm lỗi khác (vd: Lỗi bóng đổ)..."
+                        placeholder={t("review.tagPlaceholder")}
                         value={newTagInput}
                         onChange={(e) => setNewTagInput(e.target.value)}
                         onKeyDown={(e) => {
@@ -600,7 +602,7 @@ export default function ReviewPage() {
                         className="action-button action-button--secondary"
                         style={{ fontSize: "0.8rem", padding: "8px 16px", height: "38px", whiteSpace: "nowrap", fontWeight: 700 }}
                       >
-                        + Thêm
+                        {t("review.add")}
                       </button>
                     </div>
                   </div>
@@ -608,7 +610,7 @@ export default function ReviewPage() {
                   {/* 2. Decision & Note - Taller Cards & Inputs */}
                   <div>
                     <div style={{ fontSize: "0.85rem", fontWeight: 700, marginBottom: "8px", color: "var(--text-primary)" }}>
-                      2. Quyết Định Thẩm Định
+                      {t("review.decisionStep")}
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "10px" }}>
                       <button
@@ -664,7 +666,7 @@ export default function ReviewPage() {
                       <input
                         type="text"
                         className="select-field"
-                        placeholder="Ghi chú (Tùy chọn)..."
+                        placeholder={t("review.notePlaceholder")}
                         value={decisionNote}
                         onChange={(e) => setDecisionNote(e.target.value)}
                         style={{ flex: 1, padding: "10px 14px", fontSize: "0.82rem", height: "42px" }}
@@ -682,7 +684,7 @@ export default function ReviewPage() {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        Phê Duyệt
+                        {t("review.approve")}
                       </button>
                     </div>
                   </div>
@@ -702,7 +704,7 @@ export default function ReviewPage() {
                         padding: "4px 8px",
                       }}
                     >
-                      + Đưa mẫu này vào Retraining Backlog
+                      {t("review.toBacklog")}
                     </button>
                   </div>
                 </div>
@@ -716,7 +718,7 @@ export default function ReviewPage() {
                     fontSize: "0.85rem",
                   }}
                 >
-                  <strong style={{ color: "#10B981" }}>✅ Đã Thẩm Định: {selectedReview.decision}</strong>
+                  <strong style={{ color: "#10B981" }}>{t("review.resolved", { decision: selectedReview.decision })}</strong>
                   <div style={{ color: "var(--text-muted)", marginTop: "4px" }}>
                     {selectedReview.decision_note}
                   </div>

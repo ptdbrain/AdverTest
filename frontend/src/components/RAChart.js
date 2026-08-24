@@ -14,6 +14,7 @@ import {
   LabelList,
 } from "recharts";
 import { getCanonicalAttackKey, getDescriptiveAttackName } from "@/lib/attackNaming";
+import { useLanguage } from "@/context/LanguageContext";
 
 const ATTACK_PALETTE = [
   "#EF4444", // Red
@@ -29,6 +30,7 @@ const ATTACK_PALETTE = [
 ];
 
 function CustomBarTooltip({ active, payload }) {
+  const { t } = useLanguage();
   if (!active || !payload?.length) return null;
   const data = payload[0]?.payload;
   if (!data) return null;
@@ -66,21 +68,21 @@ function CustomBarTooltip({ active, payload }) {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "0.78rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ color: "var(--text-secondary)" }}>Độ bền giữ được (RA):</span>
+          <span style={{ color: "var(--text-secondary)" }}>{t("ra.raLabel")}</span>
           <strong style={{ color: isBaseline ? "var(--success, #16A34A)" : raVal > 70 ? "var(--success, #16A34A)" : raVal > 40 ? "var(--warning, #F59E0B)" : "var(--danger, #EF4444)", fontFamily: "var(--font-mono)" }}>
             {raVal.toFixed(1)}%
           </strong>
         </div>
         {!isBaseline && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ color: "var(--text-secondary)" }}>Mức suy giảm (Degradation):</span>
+            <span style={{ color: "var(--text-secondary)" }}>{t("ra.degradation")}</span>
             <strong style={{ color: "var(--danger, #EF4444)", fontFamily: "var(--font-mono)" }}>
               ↓ {degradation.toFixed(1)}%
             </strong>
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "2px" }}>
-          <span>mAP thực tế:</span>
+          <span>{t("ra.mapActual")}</span>
           <span style={{ fontFamily: "var(--font-mono)" }}>{Number(data.ap ?? 0).toFixed(3)}</span>
         </div>
       </div>
@@ -89,6 +91,7 @@ function CustomBarTooltip({ active, payload }) {
 }
 
 export default function RAChart({ cells = [], apClean = 1, report = null }) {
+  const { t } = useLanguage();
   const chartData = useMemo(() => {
     if (cells.length === 0 || apClean === 0) return [];
 
@@ -134,9 +137,9 @@ export default function RAChart({ cells = [], apClean = 1, report = null }) {
   if (chartData.length === 0) {
     return (
       <div className="chart-container">
-        <div className="chart-container__title">Biểu đồ cột Robustness Accuracy (%)</div>
+        <div className="chart-container__title">{t("ra.chartTitle")}</div>
         <div className="empty-state">
-          <div className="empty-state__message">Chưa có dữ liệu kiểm thử</div>
+          <div className="empty-state__message">{t("ra.empty")}</div>
         </div>
       </div>
     );
@@ -148,10 +151,10 @@ export default function RAChart({ cells = [], apClean = 1, report = null }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "8px" }}>
         <div>
           <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>
-            Chỉ số độ bền vững (%) theo từng tổ hợp
+            {t("ra.axisLabel")}
           </div>
           <h3 style={{ fontSize: "1.05rem", fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>
-            Robustness Accuracy Bar Chart — RA % (Baseline vs Tổ hợp Attack)
+            {t("ra.subtitle")}
           </h3>
         </div>
         <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
@@ -213,15 +216,15 @@ export default function RAChart({ cells = [], apClean = 1, report = null }) {
       <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap", fontSize: "0.72rem", color: "var(--text-secondary)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <span style={{ width: 10, height: 10, borderRadius: "2px", background: "var(--success)" }} />
-          <span>Tốt (RA &gt; 70%)</span>
+          <span>{t("ra.legendGood")}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <span style={{ width: 10, height: 10, borderRadius: "2px", background: "var(--warning)" }} />
-          <span>Suy giảm trung bình (40% - 70%)</span>
+          <span>{t("ra.avgRange")}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <span style={{ width: 10, height: 10, borderRadius: "2px", background: "var(--danger)" }} />
-          <span>Lỗ hổng nghiêm trọng (RA &lt; 40%)</span>
+          <span>{t("ra.legendSevere")}</span>
         </div>
       </div>
     </div>

@@ -2,6 +2,8 @@
 
 import React, { useRef, useState } from "react";
 import { getCheckpoint, uploadCheckpoint } from "@/lib/api";
+import DefenceVisualComparison from "@/components/DefenceVisualComparison";
+import { useLanguage } from "@/context/LanguageContext";
 
 /**
  * DefencePanel — Đánh giá mô hình phòng thủ & so sánh hiệu năng cải tiến
@@ -22,6 +24,7 @@ export default function DefencePanel({
   onEvaluate,
   onRefreshCandidates,
 }) {
+  const { t } = useLanguage();
   const [candidateId, setCandidateId] = useState("");
   const [parentId, setParentId] = useState("");
   const [uploadState, setUploadState] = useState("");
@@ -33,7 +36,7 @@ export default function DefencePanel({
     const parent = baseCheckpoints.find((item) => item.id === parentId);
     if (!parent) return;
 
-    setUploadState("⏳ Đang tải lên: 0%...");
+    setUploadState(t("defence.upload.start", { pct: 0 }));
     try {
       const created = await uploadCheckpoint(
         file,
@@ -44,27 +47,27 @@ export default function DefencePanel({
           role: "fine_tuned",
           parentCheckpointId: parentId,
         },
-        (ratio) => setUploadState(`⏳ Đang tải lên: ${Math.round(ratio * 100)}%...`)
+        (ratio) => setUploadState(t("defence.upload.start", { pct: Math.round(ratio * 100) }))
       );
 
       for (let attempt = 0; attempt < 60; attempt += 1) {
         const status = await getCheckpoint(created.checkpoint_id);
         if (status.status === "READY") {
-          setUploadState("✅ Checkpoint hợp lệ và đã sẵn sàng kiểm thử!");
+          setUploadState(t("defence.upload.ready"));
           await onRefreshCandidates?.();
           setCandidateId(created.checkpoint_id);
           return;
         }
         if (status.status === "REJECTED") {
-          setUploadState(`❌ Checkpoint bị từ chối: ${status.validation_reason || "Lỗi kiểm tra tính toàn vẹn"}`);
+          setUploadState(t("defence.upload.rejected", { reason: status.validation_reason || "Integrity check failed" }));
           return;
         }
-        setUploadState("🛡️ Đang quét cách ly & kiểm tra tính toàn vẹn...");
+        setUploadState(t("defence.upload.scanning"));
         await new Promise((resolve) => setTimeout(resolve, 600));
       }
-      setUploadState("⏳ Đang kiểm tra trong hàng đợi — vui lòng làm mới sau.");
+      setUploadState(t("defence.upload.queued"));
     } catch (error) {
-      setUploadState(`❌ Tải lên thất bại: ${error.message || "Lỗi mạng"}`);
+      setUploadState(t("defence.upload.failed", { error: error.message || "Network error" }));
     } finally {
       event.target.value = "";
     }
@@ -81,25 +84,28 @@ export default function DefencePanel({
         display: "flex",
         flexDirection: "column",
         gap: "18px",
+        flex: "1 1 auto",
+        minHeight: 0,
+        overflowY: "auto",
+        overscrollBehavior: "contain",
       }}
     >
       {/* Header Info */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "10px" }}>
         <div>
           <div style={{ fontSize: "0.68rem", fontWeight: 800, color: "var(--accent, #38BDF8)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-            🛡️ PHÒNG THỦ & ĐÁNH GIÁ CẢI TIẾN (DEFENCE BENCHMARK)
+            {t("defence.eyebrow")}
           </div>
           <h2 style={{ fontSize: "1.05rem", fontWeight: 800, margin: "4px 0 2px", color: "var(--text-primary)" }}>
-            Đánh Giá Trọng Số Fine-Tuned / Repaired
+            {t("defence.title")}
           </h2>
-          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: 0, lineHeight: 1.5 }}>
-            Mô hình phòng thủ sẽ được kiểm thử đối kháng trên <strong>cùng bộ tham số đã khóa</strong> (Locked Protocol: cùng dataset, seed, và công thức tấn công).
-          </p>
+          {/* eslint-disable-next-line react/no-danger */}
+          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: 0, lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: t("defence.desc") }} />
         </div>
 
         {baselineRunId && (
           <div style={{ padding: "4px 10px", borderRadius: "6px", background: "rgba(56, 189, 248, 0.1)", border: "1px solid rgba(56, 189, 248, 0.25)", fontSize: "0.72rem", color: "var(--accent, #38BDF8)", fontWeight: 600 }}>
-            🔒 Phiên cơ sở: <code style={{ fontFamily: "var(--font-mono)" }}>{baselineRunId.slice(0, 10)}...</code>
+            {t("defence.baseline")} <code style={{ fontFamily: "var(--font-mono)" }}>{baselineRunId.slice(0, 10)}...</code>
           </div>
         )}
       </div>
@@ -115,9 +121,9 @@ export default function DefencePanel({
           }}
         >
           <span style={{ fontSize: "2rem", display: "block", marginBottom: "8px" }}>⚡</span>
-          <strong style={{ fontSize: "0.85rem", color: "var(--text-primary)" }}>Chưa Có Bài Test Cơ Sở (No Baseline Run)</strong>
+          <strong style={{ fontSize: "0.85rem", color: "var(--text-primary)" }}>{t("defence.noBaseline.title")}</strong>
           <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", maxWidth: "380px", margin: "6px auto 0" }}>
-            Vui lòng chạy một bài kiểm thử tấn công (Attack Run) trước để hệ thống ghi nhận các ca lỗi làm dữ liệu đối chiếu.
+            {t("defence.noBaseline.desc")}
           </p>
         </div>
       ) : (
@@ -127,7 +133,7 @@ export default function DefencePanel({
             {/* Parent Base Checkpoint */}
             <div style={{ background: "var(--bg-primary)", padding: "14px", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
               <label className="config-panel__label" style={{ fontSize: "0.72rem", marginBottom: "6px", display: "block" }}>
-                1. Chọn Model Gốc (Parent Base Checkpoint)
+                {t("defence.step1")}
               </label>
               <select
                 aria-label="Parent checkpoint"
@@ -136,7 +142,7 @@ export default function DefencePanel({
                 onChange={(event) => setParentId(event.target.value)}
                 style={{ width: "100%", padding: "7px 10px", fontSize: "0.78rem" }}
               >
-                <option value="">-- Chọn mô hình cơ sở --</option>
+                <option value="">{t("defence.step1.placeholder")}</option>
                 {baseCheckpoints.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.model_name} ({item.id})
@@ -149,7 +155,7 @@ export default function DefencePanel({
             <div style={{ background: "var(--bg-primary)", padding: "14px", borderRadius: "8px", border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
               <div>
                 <label className="config-panel__label" style={{ fontSize: "0.72rem", marginBottom: "6px", display: "block" }}>
-                  2. Tải Lên Trọng Số Fine-tuned Mới (.pt / .pth)
+                  {t("defence.step2")}
                 </label>
                 <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                   <button
@@ -159,10 +165,10 @@ export default function DefencePanel({
                     onClick={() => fileInputRef.current?.click()}
                     style={{ padding: "7px 14px", fontSize: "0.72rem", fontWeight: 700, whiteSpace: "nowrap" }}
                   >
-                    📁 Chọn File Trọng Số (.pt)
+                    {t("defence.step2.button")}
                   </button>
                   <span style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>
-                    {parentId ? "Sẵn sàng tải lên" : "Cần chọn Model Gốc trước"}
+                    {parentId ? t("defence.step2.ready") : t("defence.step2.needParent")}
                   </span>
                 </div>
                 <input
@@ -186,7 +192,7 @@ export default function DefencePanel({
           {/* Step 3: Select Candidate & Run */}
           <div style={{ background: "var(--bg-primary)", padding: "16px", borderRadius: "8px", border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: "12px" }}>
             <label className="config-panel__label" style={{ fontSize: "0.75rem", margin: 0 }}>
-              3. Chọn Checkpoint Cải Tiến Cần Đánh Giá (Validated Candidates)
+              {t("defence.step3")}
             </label>
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
               <select
@@ -196,10 +202,10 @@ export default function DefencePanel({
                 onChange={(event) => setCandidateId(event.target.value)}
                 style={{ flex: 1, minWidth: "240px", padding: "8px 12px", fontSize: "0.82rem" }}
               >
-                <option value="">-- Chọn checkpoint phòng thủ đã xác thực --</option>
+                <option value="">{t("defence.step3.placeholder")}</option>
                 {candidates.map((item) => (
                   <option key={item.id} value={item.id} disabled={!item.runnable}>
-                    {item.model_name} — [{item.checkpoint_role}] {item.blocked_reason ? `(${item.blocked_reason})` : "✓ Sẵn sàng"}
+                    {item.model_name} — [{item.checkpoint_role}] {item.blocked_reason ? `(${item.blocked_reason})` : t("defence.readyBadge")}
                   </option>
                 ))}
               </select>
@@ -211,7 +217,7 @@ export default function DefencePanel({
                 onClick={() => onEvaluate(candidateId)}
                 style={{ minWidth: "180px", padding: "8px 18px", fontSize: "0.82rem", fontWeight: 700 }}
               >
-                {running ? `⏳ Đang Đánh Giá ${progress}%` : "🚀 Chạy Đánh Giá Phòng Thủ"}
+                {running ? t("defence.runningButton", { progress }) : t("defence.runButton")}
               </button>
             </div>
           </div>
@@ -231,37 +237,37 @@ export default function DefencePanel({
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <strong style={{ fontSize: "0.85rem", color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span>📊 Kết Quả So Sánh: Model Gốc vs Fine-Tuned (Delta)</span>
+                  <span>{t("defence.compareTitle")}</span>
                 </strong>
                 <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "2px 8px", borderRadius: "4px", background: "rgba(16, 185, 129, 0.15)", color: "#10B981" }}>
-                  ĐÃ ĐỐI CHIẾU CÙNG PROTOCOL
+                  {t("defence.pairedBadge")}
                 </span>
               </div>
 
               {!comparison.paired ? (
                 <div style={{ color: "var(--danger)", fontSize: "0.78rem", padding: "8px 12px", background: "rgba(239, 68, 68, 0.1)", borderRadius: "6px" }}>
-                  Không thể ghép cặp đối chiếu: {comparison.incompatibilities?.join(", ")}
+                  {t("defence.notPaired", { reason: comparison.incompatibilities?.join(", ") })}
                 </div>
               ) : (
                 <>
                   {/* Summary Metric Cards */}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "10px" }}>
                     <div style={{ padding: "12px", background: "var(--bg-elevated)", borderRadius: "6px", border: "1px solid var(--border-subtle)" }}>
-                      <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: 600 }}>Base Clean AP</span>
+                      <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: 600 }}>{t("defence.baseCleanAP")}</span>
                       <p style={{ fontSize: "1.1rem", fontWeight: 800, fontFamily: "var(--font-mono)", margin: "4px 0 0", color: "var(--text-primary)" }}>
                         {comparison.recovery_report?.baseline_clean?.toFixed?.(3) ?? "—"}
                       </p>
                     </div>
 
                     <div style={{ padding: "12px", background: "var(--bg-elevated)", borderRadius: "6px", border: "1px solid var(--border-subtle)" }}>
-                      <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: 600 }}>Fine-tuned Clean AP</span>
+                      <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: 600 }}>{t("defence.finetunedCleanAP")}</span>
                       <p style={{ fontSize: "1.1rem", fontWeight: 800, fontFamily: "var(--font-mono)", margin: "4px 0 0", color: "var(--accent)" }}>
                         {comparison.recovery_report?.candidate_clean?.toFixed?.(3) ?? "—"}
                       </p>
                     </div>
 
                     <div style={{ padding: "12px", background: "rgba(16, 185, 129, 0.1)", borderRadius: "6px", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
-                      <span style={{ fontSize: "0.68rem", color: "#10B981", fontWeight: 700 }}>Tỷ Lệ Phục Hồi (Recovery)</span>
+                      <span style={{ fontSize: "0.68rem", color: "#10B981", fontWeight: 700 }}>{t("defence.recovery")}</span>
                       <p style={{ fontSize: "1.1rem", fontWeight: 800, fontFamily: "var(--font-mono)", margin: "4px 0 0", color: "#10B981" }}>
                         {comparison.recovery_report?.recovery_rate?.percent_value == null
                           ? "—"
@@ -274,7 +280,7 @@ export default function DefencePanel({
                   {comparison.metric_deltas && Object.keys(comparison.metric_deltas).length > 0 && (
                     <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "12px" }}>
                       <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-secondary)", marginBottom: "8px" }}>
-                        Độ Lệch Chỉ Số Chi Tiết (Metric Deltas):
+                        {t("defence.metricDeltas")}
                       </div>
                       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                         {Object.entries(comparison.metric_deltas)
@@ -303,6 +309,11 @@ export default function DefencePanel({
                       </div>
                     </div>
                   )}
+
+                  <DefenceVisualComparison
+                    baselineRunId={comparison.baseline_run_id}
+                    candidateRunId={comparison.candidate_run_id}
+                  />
                 </>
               )}
             </div>

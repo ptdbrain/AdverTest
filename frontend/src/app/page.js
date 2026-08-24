@@ -11,6 +11,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import AdvisorPanel from "@/components/AdvisorPanel.jsx";
 import UserMenu from "@/components/UserMenu.jsx";
 import { useAdverTest } from "@/hooks/useAdverTest";
+import { useLanguage } from "@/context/LanguageContext";
 
 const MODE_LABELS = {
   detection2d: "2D Object Detection",
@@ -19,7 +20,7 @@ const MODE_LABELS = {
 };
 
 function HeaderBar({ mode, runStatus, isRunning }) {
-  const [wbConnected, setWbConnected] = useState(true);
+  const { t } = useLanguage();
 
   const statusClass = isRunning
     ? "app-header__status--running"
@@ -28,12 +29,12 @@ function HeaderBar({ mode, runStatus, isRunning }) {
     : "app-header__status--ready";
 
   const statusLabel = isRunning
-    ? "Running"
+    ? t("common.running")
     : runStatus === "FAILED"
-    ? "Failed"
+    ? t("common.failed")
     : runStatus === "COMPLETED"
-    ? "Complete"
-    : "Ready";
+    ? t("common.complete")
+    : t("common.ready");
 
   return (
     <header className="app-header" style={{ backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}>
@@ -41,7 +42,7 @@ function HeaderBar({ mode, runStatus, isRunning }) {
         <span className="app-header__brand">AdverTest</span>
         <div className="app-header__divider" />
         <span className="app-header__info">
-          Task: <strong>{MODE_LABELS[mode] || mode}</strong>
+          {t("common.task")} <strong>{MODE_LABELS[mode] || mode}</strong>
         </span>
       </div>
 
@@ -51,9 +52,9 @@ function HeaderBar({ mode, runStatus, isRunning }) {
           href="/reviews"
           className="rounded-md border border-amber-600/40 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 hover:text-amber-200 transition-colors"
           style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: "4px" }}
-          title="Human-in-the-loop review queue for failure cases"
+          title={t("workspace.reviewQueue.title")}
         >
-          <span>⚖️ Review Queue (HITL)</span>
+          <span>{t("workspace.reviewQueue")}</span>
         </a>
 
         {/* Status Beacon */}
@@ -71,6 +72,7 @@ function HeaderBar({ mode, runStatus, isRunning }) {
 
 export default function HomePage() {
   const { state, actions } = useAdverTest();
+  const { t } = useLanguage();
   const [gridIndex, setGridIndex] = useState(0);
   const [configWidth, setConfigWidth] = useState(25); // percentage (15% to 30%)
   const isDraggingRef = React.useRef(false);
@@ -212,12 +214,12 @@ export default function HomePage() {
           aria-valuenow={Math.round(configWidth)}
           aria-valuemin={15}
           aria-valuemax={30}
-          title={`Kéo để thay đổi độ rộng cột cài đặt (${Math.round(configWidth)}%, tối đa 30%)`}
+          title={t("workspace.resizeHint", { pct: Math.round(configWidth) })}
         >
           <div className="resize-divider__handle" />
         </div>
 
-        <section className="center-view" aria-label="Robustness evidence workspace">
+        <section className="center-view" aria-label={t("workspace.evidenceWorkspace")}>
           {state.isRunning ? (
             <div
               className="progress-overlay"
@@ -234,18 +236,18 @@ export default function HomePage() {
               <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "6px 14px", borderRadius: "20px", background: "rgba(56, 189, 248, 0.12)", border: "1px solid rgba(56, 189, 248, 0.3)" }}>
                 <span className="status-beacon status-beacon--running" />
                 <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "var(--accent)" }}>
-                  ĐANG CHẠY PHIÊN: #{state.runId ? state.runId.slice(0, 10) : "INITIALIZING"}
+                  {t("workspace.runningSession", { id: state.runId ? state.runId.slice(0, 10) : "INITIALIZING" })}
                 </span>
               </div>
 
               <div style={{ maxWidth: "460px" }}>
                 <h3 style={{ fontSize: "1.1rem", fontWeight: 800, margin: "0 0 6px", color: "var(--text-primary)" }}>
-                  {state.progressDetail || "Đang xử lý kiểm thử đối kháng..."}
+                  {state.progressDetail || t("workspace.processing")}
                 </h3>
                 <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                  🎯 <strong>Tác vụ:</strong> {state.mode} &nbsp;|&nbsp; 🤖 <strong>Model:</strong> {state.selectedModelVersion || "YOLO11"} &nbsp;|&nbsp; 📦 <strong>Dữ liệu:</strong> {state.selectedDataset}
+                  🎯 <strong>{t("common.task")}</strong> {state.mode} &nbsp;|&nbsp; 🤖 <strong>{t("common.model")}</strong> {state.selectedModelVersion || "YOLO11"} &nbsp;|&nbsp; 📦 <strong>{t("common.data")}</strong> {state.selectedDataset}
                   <br />
-                  ⚡ <strong>Chuỗi đòn:</strong> {state.selectedAttacks?.length ? state.selectedAttacks.join(", ") : "Attack Recipe"} (Cấp {state.recipe.steps?.[0]?.severity || 3})
+                  ⚡ <strong>{t("common.attackChain")}</strong> {state.selectedAttacks?.length ? state.selectedAttacks.join(", ") : "Attack Recipe"} (Cấp {state.recipe.steps?.[0]?.severity || 3})
                 </div>
               </div>
 
@@ -273,7 +275,7 @@ export default function HomePage() {
                     background: "rgba(239, 68, 68, 0.1)",
                   }}
                 >
-                  🛑 Dừng & Hủy Phiên Này
+                  {t("workspace.cancelSession")}
                 </button>
               </div>
             </div>
@@ -303,23 +305,23 @@ export default function HomePage() {
                       alignItems: "center",
                       gap: "4px",
                     }}
-                    title="Xóa phiên kiểm thử hiện tại để bắt đầu phiên mới"
+                    title={t("workspace.clearSession.title")}
                   >
-                    <span>🔄 Xóa phiên hiện tại</span>
+                    <span>{t("workspace.clearSession")}</span>
                   </button>
                 )}
               </nav>
 
               {state.runStatus === "FAILED" && (
                 <p className="empty-state" role="alert" style={{ padding: "var(--space-md)", color: "var(--danger)", fontSize: "0.75rem" }}>
-                  Run failed: {state.progressDetail}
+                  {t("workspace.runFailed", { detail: state.progressDetail })}
                 </p>
               )}
 
               {state.resultLoadStatus === "failed" && (
                 <p className="empty-state" role="alert" style={{ padding: "var(--space-md)", color: "var(--danger)", fontSize: "0.75rem" }}>
-                  Evidence could not be loaded: {state.resultLoadError}{" "}
-                  <button type="button" onClick={actions.retryEvidence} className="action-button action-button--secondary" style={{ display: "inline", padding: "2px 8px", marginLeft: 6 }}>Retry</button>
+                  {t("workspace.evidenceLoadFailed", { error: state.resultLoadError })}{" "}
+                  <button type="button" onClick={actions.retryEvidence} className="action-button action-button--secondary" style={{ display: "inline", padding: "2px 8px", marginLeft: 6 }}>{t("common.retry")}</button>
                 </p>
               )}
 

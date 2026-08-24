@@ -607,6 +607,7 @@ export function useAdverTest() {
   const runDefence = useCallback(async (checkpointId) => {
     if (!runId || !checkpointId) return;
     setDefenceBaselineRunId(runId); defenceBaselineRef.current = runId; setDefenceComparison(null);
+    finalizedRef.current = false;
     setIsRunning(true); setRunStatus("PREFLIGHT"); setProgress(0); setProgressDetail("Locking the base-run protocol for Defence...");
     try {
       const job = await createDefenceRun(runId, checkpointId);
