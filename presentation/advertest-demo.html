@@ -502,8 +502,139 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font
   </div>
 </div>
 
-<!-- ===== SLIDE 8 — THANK YOU ===== -->
-<div class="slide" data-slide="8">
+<!-- ===== SLIDE 8 — TECH STACK ===== -->
+<div class="slide">
+  <div style="position:absolute; inset:0; background:var(--bg-deep); z-index:-1;">
+    <div style="position:absolute; inset:0; opacity:0.1; background:radial-gradient(circle at 80% 20%, var(--accent-1) 0%, transparent 60%);"></div>
+  </div>
+  <div class="header">
+    <div class="logo">
+      <span class="logo-text">Adver<span class="grad">Test</span></span>
+    </div>
+    <div class="tag" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2);">
+      08 / Tech Stack
+    </div>
+  </div>
+  <div class="content" style="justify-content:center;">
+    <div class="rv d1">
+      <h2 class="h-lg" style="margin-bottom:16px;">Core Technologies</h2>
+      <p class="body-lg" style="color:var(--text-muted); max-width:800px; margin-bottom:64px;">Xây dựng nền tảng Robustness Testing Model-Agnostic với hiệu năng vượt trội.</p>
+    </div>
+    <div class="rv d2" style="display:flex; gap:32px;">
+      <div class="card-glass" style="flex:1; border-top:4px solid var(--accent-1);">
+        <h3 class="h-sm" style="margin-bottom:24px;">Backend & Platform</h3>
+        <ul style="list-style:none; padding:0; display:flex; flex-direction:column; gap:16px; color:var(--text-primary); font-size:24px;">
+          <li>⚡ <b>FastAPI</b> & <b>Uvicorn</b></li>
+          <li>🗄️ <b>SQLAlchemy</b> & <b>SQLite</b></li>
+          <li>⚙️ <b>Celery</b> & <b>Redis</b></li>
+        </ul>
+      </div>
+      <div class="card-glass" style="flex:1; border-top:4px solid var(--accent-2);">
+        <h3 class="h-sm" style="margin-bottom:24px;">AI / Vision Models</h3>
+        <ul style="list-style:none; padding:0; display:flex; flex-direction:column; gap:16px; color:var(--text-primary); font-size:24px;">
+          <li>🔥 <b>PyTorch</b> (Core GPU)</li>
+          <li>👁️ <b>Ultralytics</b> (YOLO11)</li>
+          <li>🧩 <b>MMDet3D / SAM2</b></li>
+          <li>🛡️ <b>Torchattacks</b> & <b>Kornia</b></li>
+        </ul>
+      </div>
+      <div class="card-glass" style="flex:1; border-top:4px solid var(--accent-3);">
+        <h3 class="h-sm" style="margin-bottom:24px;">Tracking & Metrics</h3>
+        <ul style="list-style:none; padding:0; display:flex; flex-direction:column; gap:16px; color:var(--text-primary); font-size:24px;">
+          <li>📈 <b>Weights & Biases</b> (W&B)</li>
+          <li>🎯 <b>Optuna</b> (Auto Search)</li>
+          <li>📊 <b>PyCOCOTools</b></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 9 — TRACTION ===== -->
+<div class="slide">
+  <div style="position:absolute; inset:0; background:var(--bg-deep); z-index:-1;"></div>
+  <div class="header">
+    <div class="logo">
+      <span class="logo-text">Adver<span class="grad">Test</span></span>
+    </div>
+    <div class="tag" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2);">
+      09 / Traction
+    </div>
+  </div>
+  <div class="content" style="justify-content:center;">
+    <div class="rv d1">
+      <h2 class="h-lg" style="margin-bottom:16px;">Tiến Độ & Hiệu Suất Thực Tế</h2>
+      <p class="body-lg" style="color:var(--text-muted); max-width:800px; margin-bottom:64px;">Các chỉ số đo lường trực tiếp từ Source Code dự án.</p>
+    </div>
+    <div class="rv d2" style="display:grid; grid-template-columns:1fr 1fr; gap:32px;">
+      <div class="card-glass" style="padding:40px; display:flex; flex-direction:column; align-items:flex-start;">
+        <div class="metric-val c-accent">100%</div>
+        <div class="h-sm" style="margin-top:16px;">Core Engine & Protocol</div>
+        <div class="body-md" style="color:var(--text-muted); margin-top:12px;">Hoàn thành toàn bộ (12/12 Module) của Core CPU, Dataset Generator, Defense Manifest. Đã pass Unit Tests.</div>
+      </div>
+      <div class="card-glass" style="padding:40px; display:flex; flex-direction:column; align-items:flex-start;">
+        <div class="metric-val c-purple">6 Nhóm</div>
+        <div class="h-sm" style="margin-top:16px;">Adversarial Attacks</div>
+        <div class="body-md" style="color:var(--text-muted); margin-top:12px;">Hỗ trợ toàn diện từ Digital (FGSM/PGD), Weather (Sương/Mưa) đến Physical Patch. Sẵn sàng tích hợp YOLO11 & SAM2.</div>
+      </div>
+      <div class="card-glass" style="padding:40px; display:flex; flex-direction:column; align-items:flex-start;">
+        <div class="metric-val c-amber">< 50ms</div>
+        <div class="h-sm" style="margin-top:16px;">Latency Inference Target</div>
+        <div class="body-md" style="color:var(--text-muted); margin-top:12px;">Kiến trúc GPU Red-teaming được thiết kế tối ưu hóa, đảm bảo sinh nhiễu và infer với tốc độ thời gian thực.</div>
+      </div>
+      <div class="card-glass" style="padding:40px; display:flex; flex-direction:column; align-items:flex-start;">
+        <div class="metric-val c-blue">15+</div>
+        <div class="h-sm" style="margin-top:16px;">REST Endpoints Chuẩn SOC 2</div>
+        <div class="body-md" style="color:var(--text-muted); margin-top:12px;">Hoàn thành Backend API, RBAC, Audit Logging. Tích hợp W&B API Key Encryption bằng thuật toán AES Fernet.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 10 — MARKET ===== -->
+<div class="slide">
+  <div style="position:absolute; inset:0; background:var(--bg-deep); z-index:-1;"></div>
+  <div class="header">
+    <div class="logo">
+      <span class="logo-text">Adver<span class="grad">Test</span></span>
+    </div>
+    <div class="tag" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2);">
+      10 / Market
+    </div>
+  </div>
+  <div class="content" style="justify-content:center;">
+    <div class="rv d1">
+      <h2 class="h-lg" style="margin-bottom:16px;">Quy Mô & Ứng Dụng</h2>
+      <p class="body-lg" style="color:var(--text-muted); max-width:800px; margin-bottom:64px;">Nhu cầu về AI Robustness Testing là nền tảng cho kỷ nguyên Agentic AI.</p>
+    </div>
+    <div class="rv d2" style="display:flex; flex-direction:column; gap:24px;">
+      <div class="card-glass" style="display:flex; align-items:center; padding:32px; gap:40px;">
+        <div class="metric-val c-accent" style="min-width:120px; text-align:center;">🚗</div>
+        <div>
+          <h3 class="h-sm" style="margin-bottom:8px;">Autonomous Vehicles (Xe tự hành)</h3>
+          <p class="body-md" style="color:var(--text-muted);">Đánh giá độ an toàn của hệ thống cảm biến (LiDAR, Camera) trước các điều kiện thời tiết xấu và các cuộc tấn công vật lý (sticker lừa đảo).</p>
+        </div>
+      </div>
+      <div class="card-glass" style="display:flex; align-items:center; padding:32px; gap:40px;">
+        <div class="metric-val c-purple" style="min-width:120px; text-align:center;">🛡️</div>
+        <div>
+          <h3 class="h-sm" style="margin-bottom:8px;">Defense & Security (An ninh - Quốc phòng)</h3>
+          <p class="body-md" style="color:var(--text-muted);">Đảm bảo hệ thống AI nhận diện mục tiêu ổn định, chống lại các kỹ thuật spoofing và adversarial attacks (tàng hình AI) trong môi trường tác chiến.</p>
+        </div>
+      </div>
+      <div class="card-glass" style="display:flex; align-items:center; padding:32px; gap:40px;">
+        <div class="metric-val c-amber" style="min-width:120px; text-align:center;">🤖</div>
+        <div>
+          <h3 class="h-sm" style="margin-bottom:8px;">Healthcare & Robotics</h3>
+          <p class="body-md" style="color:var(--text-muted);">Robot y tế và trợ lý AI đòi hỏi độ tin cậy tuyệt đối. Bất kỳ sai lệch nhỏ nào trong Perception Model đều có thể dẫn đến hậu quả nghiêm trọng.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 11 — THANK YOU ===== -->
+<div class="slide">
   <div style="position:absolute; inset:0; background:var(--bg-deep); z-index:-1;"></div>
   
   <div class="content" style="justify-content:center; align-items:center; text-align:center;">

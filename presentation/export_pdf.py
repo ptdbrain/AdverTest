@@ -29,8 +29,14 @@ def export_to_pdf():
         # Give fonts and images some time to load visually
         page.wait_for_timeout(3000)
         
-        # The presentation has 9 slides
-        for i in range(9):
+        # Hide the navigation bar for PDF export
+        page.evaluate("document.querySelector('.nav').style.display = 'none'")
+        
+        # Get dynamic slide count
+        num_slides = page.evaluate("document.querySelectorAll('.slide').length")
+        print(f"Detected {num_slides} slides.")
+        
+        for i in range(num_slides):
             # Allow animations to settle
             page.wait_for_timeout(1000)
             
