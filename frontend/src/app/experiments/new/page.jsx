@@ -19,7 +19,9 @@ import {
   Sparkles,
   Info,
   Database,
-  Search,
+  FolderCheck,
+  FolderOpen,
+  FileCheck,
 } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import Card from "@/components/common/Card";
@@ -39,9 +41,9 @@ export default function ConfigureProblemPage() {
   const [selectedTask, setSelectedTask] = useState("detection2d");
   const [selectedArch, setSelectedArch] = useState("yolo");
   
-  // Active selected dataset and model objects
-  const [selectedDatasetId, setSelectedDatasetId] = useState("traffic_urban_v1");
-  const [selectedModelId, setSelectedModelId] = useState("yolov8n");
+  // Active selected dataset and model objects (Defaulting to the local files in workspace)
+  const [selectedDatasetId, setSelectedDatasetId] = useState("kitti_anonymized_de");
+  const [selectedModelId, setSelectedModelId] = useState("local_yolo11s_clean");
 
   const [dataSource, setDataSource] = useState("repository");
   const [modelSource, setModelSource] = useState("default_lib");
@@ -49,8 +51,8 @@ export default function ConfigureProblemPage() {
   const [batchSize, setBatchSize] = useState(16);
   const [gpuCount, setGpuCount] = useState(1);
   const [expName, setExpName] = useState("EXP-2025-05-12-001");
-  const [expDesc, setExpDesc] = useState("Đánh giá khả năng phát hiện đối tượng của YOLOv8n trên bộ dữ liệu giao thông đô thị.");
-  const [expTags, setExpTags] = useState("yolov8, object-detection, traffic");
+  const [expDesc, setExpDesc] = useState("Đánh giá khả năng phát hiện đối tượng trên tập dữ liệu KITTI có sẵn trong máy.");
+  const [expTags, setExpTags] = useState("yolo11, kitti, object-detection, local");
 
   const currentDataset = AVAILABLE_DATASETS.find((d) => d.id === selectedDatasetId) || AVAILABLE_DATASETS[0];
   const currentModel = AVAILABLE_MODELS.find((m) => m.id === selectedModelId) || AVAILABLE_MODELS[0];
@@ -73,13 +75,31 @@ export default function ConfigureProblemPage() {
     <div className="space-y-5 animate-fade-in">
       <PageHeader
         title="Cấu hình bài toán"
-        subtitle="Thiết lập bài toán, mô hình, dữ liệu và các tùy chọn để bắt đầu thí nghiệm đánh giá & phòng thủ AI đối kháng."
+        subtitle="Thiết lập bài toán, mô hình, dữ liệu có sẵn trong workspace và các tùy chọn để bắt đầu thí nghiệm đánh giá & phòng thủ AI đối kháng."
         breadcrumb={[
           { label: "Trang chủ", href: "/dashboard" },
           { label: "Cấu hình bài toán", href: "/experiments/new" },
           { label: "Tạo thí nghiệm mới" },
         ]}
       />
+
+      {/* BANNER: LOCAL WORKSPACE RESOURCES DETECTED */}
+      <div className="p-3.5 rounded-lg bg-blue-50/80 border border-blue-200 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold">
+            <FolderCheck className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-blue-900">
+              Đã nhận diện tài nguyên có sẵn trong thư mục máy (Local Workspace)
+            </div>
+            <div className="text-[11px] text-blue-700">
+              Bao gồm: Checkpoints <strong>yolo11s-clean-b0_best.pt</strong>, <strong>pointpillars_kitti_3class.pth</strong>, <strong>yolo11n-face.onnx</strong> và dữ liệu <strong>data/anonymized/kitti-de/</strong>.
+            </div>
+          </div>
+        </div>
+        <Badge variant="primary">5 Models · 5 Datasets Local</Badge>
+      </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
         {/* LEFT & CENTER: Form Controls (2 Columns) */}
@@ -96,7 +116,14 @@ export default function ConfigureProblemPage() {
                 return (
                   <div
                     key={task.id}
-                    onClick={() => setSelectedTask(task.id)}
+                    onClick={() => {
+                      setSelectedTask(task.id);
+                      if (task.id === "detection3d") {
+                        setSelectedArch("pointpillars");
+                        setSelectedModelId("local_pointpillars_kitti");
+                        setSelectedDatasetId("kitti_3d_lidar");
+                      }
+                    }}
                     className={cn(
                       "p-3 rounded-lg border text-left cursor-pointer transition-all relative flex flex-col justify-between h-[104px]",
                       isSelected
@@ -138,7 +165,7 @@ export default function ConfigureProblemPage() {
             title="2. Chọn họ kiến trúc mô hình"
             subtitle="Chọn họ kiến trúc deep learning và phiên bản checkpoints cần kiểm thử"
           >
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {MODEL_ARCHITECTURES.map((arch) => {
                 const isSelected = selectedArch === arch.id;
                 return (
@@ -210,8 +237,11 @@ export default function ConfigureProblemPage() {
                     className="mt-0.5 text-blue-600"
                   />
                   <div className="flex-1">
-                    <div className="font-semibold text-slate-800">Kho dữ liệu có sẵn (Repository)</div>
-                    <div className="text-[11px] text-slate-500 mb-2">Chọn bộ dữ liệu chuẩn đã có trong hệ thống</div>
+                    <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                      <span>Kho dữ liệu có sẵn trong máy & chuẩn</span>
+                      <Badge variant="success" className="text-[9px] py-0 px-1">Local / Repo</Badge>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mb-2">Chọn bộ dữ liệu KITTI, DPatch hoặc chuẩn COCO/VOC</div>
                     
                     {/* Dataset Dropdown Selector */}
                     <select
@@ -221,34 +251,10 @@ export default function ConfigureProblemPage() {
                     >
                       {AVAILABLE_DATASETS.map((d) => (
                         <option key={d.id} value={d.id}>
-                          📦 {d.name} ({d.samples.toLocaleString()} ảnh · {d.size})
+                          {d.isLocal ? "📍 [Local] " : "📦 [Chuẩn] "} {d.name} ({d.samples.toLocaleString()} samples · {d.size})
                         </option>
                       ))}
                     </select>
-                  </div>
-                </label>
-
-                <label
-                  className={cn(
-                    "flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors",
-                    dataSource === "sample"
-                      ? "border-blue-500 bg-blue-50/40"
-                      : "border-slate-200 hover:bg-slate-50"
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="data_src"
-                    checked={dataSource === "sample"}
-                    onChange={() => {
-                      setDataSource("sample");
-                      setSelectedDatasetId("sample_demo_50");
-                    }}
-                    className="text-blue-600"
-                  />
-                  <div>
-                    <div className="font-semibold text-slate-800">Dataset mẫu thử nhanh (50 ảnh)</div>
-                    <div className="text-[11px] text-slate-500">Tập con VOC 50 ảnh benchmark nhanh</div>
                   </div>
                 </label>
 
@@ -297,8 +303,11 @@ export default function ConfigureProblemPage() {
                     className="mt-0.5 text-blue-600"
                   />
                   <div className="flex-1">
-                    <div className="font-semibold text-slate-800">Thư viện mô hình sẵn có (Pretrained)</div>
-                    <div className="text-[11px] text-slate-500 mb-2">Checkpoints chuẩn đã được benchmark</div>
+                    <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                      <span>Mô hình & Checkpoints có sẵn</span>
+                      <Badge variant="success" className="text-[9px] py-0 px-1">Local / Pretrained</Badge>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mb-2">Checkpoints đã có trong `checkpoints/` và `data/`</div>
 
                     {/* Model Dropdown Selector */}
                     <select
@@ -314,34 +323,10 @@ export default function ConfigureProblemPage() {
                     >
                       {AVAILABLE_MODELS.map((m) => (
                         <option key={m.id} value={m.id}>
-                          🤖 {m.name} ({m.params} params · {m.format})
+                          {m.isLocal ? "📍 [Local] " : "🤖 "} {m.name} ({m.params} · {m.format})
                         </option>
                       ))}
                     </select>
-                  </div>
-                </label>
-
-                <label
-                  className={cn(
-                    "flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors",
-                    modelSource === "trained"
-                      ? "border-blue-500 bg-blue-50/40"
-                      : "border-slate-200 hover:bg-slate-50"
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="model_src"
-                    checked={modelSource === "trained"}
-                    onChange={() => {
-                      setModelSource("trained");
-                      setSelectedModelId("yolov8n_trades_defended");
-                    }}
-                    className="text-blue-600"
-                  />
-                  <div>
-                    <div className="font-semibold text-slate-800">Mô hình đã tôi luyện phòng thủ (Defended)</div>
-                    <div className="text-[11px] text-slate-500">YOLOv8n + TRADES (v2.1)</div>
                   </div>
                 </label>
 
@@ -361,7 +346,7 @@ export default function ConfigureProblemPage() {
                     className="mt-0.5 text-blue-600"
                   />
                   <div>
-                    <div className="font-semibold text-slate-800">Tải lên file trọng số người dùng</div>
+                    <div className="font-semibold text-slate-800">Tải lên file trọng số tùy chỉnh</div>
                     <div className="text-[11px] text-slate-500">Hỗ trợ .pt, .pth, .onnx, .engine</div>
                     <Button variant="secondary" size="sm" icon={Upload} className="mt-1.5 text-xs">
                       Tải lên Weights
@@ -391,12 +376,17 @@ export default function ConfigureProblemPage() {
                     </div>
                   ))}
                   <div className="h-20 rounded bg-blue-900/80 border border-blue-700 text-white font-bold text-xs flex items-center justify-center p-2 text-center">
-                    + {(currentDataset.samples - 5).toLocaleString()} ảnh
+                    + {(Math.max(1, currentDataset.samples - 5)).toLocaleString()} mẫu
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-500 italic">
-                  {currentDataset.description}
-                </p>
+                <div className="p-2 rounded bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1">
+                  <p>{currentDataset.description}</p>
+                  {currentDataset.localPath && (
+                    <p className="font-mono text-blue-700 font-semibold text-[10px]">
+                      📂 Thư mục: {currentDataset.localPath}
+                    </p>
+                  )}
+                </div>
               </div>
             </Card>
 
@@ -442,6 +432,12 @@ export default function ConfigureProblemPage() {
                   <span className="text-slate-500">Tên mô hình</span>
                   <span className="font-semibold text-slate-800 font-mono">{currentModel.name}</span>
                 </div>
+                {currentModel.localPath && (
+                  <div className="flex justify-between py-1 bg-blue-50/50 px-1 rounded">
+                    <span className="text-blue-800 font-semibold">File path</span>
+                    <span className="font-mono text-blue-700 text-[11px]">{currentModel.localPath}</span>
+                  </div>
+                )}
                 <div className="flex justify-between py-1">
                   <span className="text-slate-500">Họ kiến trúc</span>
                   <span className="text-slate-800">{currentModel.family}</span>
@@ -576,7 +572,7 @@ export default function ConfigureProblemPage() {
                 </span>
               </div>
               <div className="flex justify-between py-1">
-                <span className="text-slate-500">Kiến trúc mô hình</span>
+                <span className="text-slate-500">Mô hình đã chọn</span>
                 <span className="font-mono text-blue-600 font-bold">{currentModel.name}</span>
               </div>
               <div className="flex justify-between py-1">
@@ -584,12 +580,12 @@ export default function ConfigureProblemPage() {
                 <span className="text-slate-800 font-semibold">{currentDataset.name}</span>
               </div>
               <div className="flex justify-between py-1">
-                <span className="text-slate-500">Tổng số ảnh</span>
-                <span className="text-slate-800 font-mono">{currentDataset.samples?.toLocaleString()}</span>
+                <span className="text-slate-500">Vị trí lưu trữ</span>
+                <span className="text-slate-800 font-mono text-[11px]">{currentDataset.localPath || "Remote Standard"}</span>
               </div>
               <div className="flex justify-between py-1">
-                <span className="text-slate-500">Dung lượng dataset</span>
-                <span className="text-slate-800 font-mono">{currentDataset.size}</span>
+                <span className="text-slate-500">Tổng số mẫu</span>
+                <span className="text-slate-800 font-mono">{currentDataset.samples?.toLocaleString()}</span>
               </div>
               <div className="flex justify-between py-1">
                 <span className="text-slate-500">Số tham số model</span>
@@ -615,7 +611,7 @@ export default function ConfigureProblemPage() {
               <div className="text-xs">
                 <div className="font-bold text-emerald-800">✓ Hợp lệ & Sẵn sàng</div>
                 <p className="text-emerald-700 text-[11px] mt-0.5">
-                  Đã liên kết mô hình <strong>{currentModel.name}</strong> với tập dữ liệu <strong>{currentDataset.name}</strong>.
+                  Đã tải file trọng số <strong>{currentModel.name}</strong> và dữ liệu <strong>{currentDataset.name}</strong>.
                 </p>
               </div>
             </div>

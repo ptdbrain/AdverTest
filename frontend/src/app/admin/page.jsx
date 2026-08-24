@@ -354,18 +354,18 @@ export default function AdminPage() {
           {/* Model Catalog Table */}
           <Card
             title="Danh mục mô hình sẵn có (Model Catalog)"
-            subtitle="Danh sách các checkpoints và weights được tích hợp sẵn trong hệ thống"
+            subtitle="Danh sách các checkpoints và weights thực tế trong thư mục máy & chuẩn hệ thống"
           >
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500 font-semibold bg-slate-50">
-                    <th className="py-2.5 px-3">Tên mô hình</th>
+                    <th className="py-2.5 px-3">Tên mô hình & Checkpoint</th>
+                    <th className="py-2.5 px-3">Nguồn</th>
                     <th className="py-2.5 px-3">Kiến trúc</th>
                     <th className="py-2.5 px-3">Nhiệm vụ</th>
                     <th className="py-2.5 px-3">Số tham số</th>
                     <th className="py-2.5 px-3">Kích thước</th>
-                    <th className="py-2.5 px-3">Độ phân giải</th>
                     <th className="py-2.5 px-3">Baseline</th>
                     <th className="py-2.5 px-3">FPS (RTX 4090)</th>
                     <th className="py-2.5 px-3 text-right">Hành động</th>
@@ -373,9 +373,24 @@ export default function AdminPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                   {AVAILABLE_MODELS.map((m) => (
-                    <tr key={m.id} className="hover:bg-slate-50">
-                      <td className="py-2.5 px-3 font-bold text-slate-900 font-mono flex items-center gap-2">
-                        <span>🤖</span> {m.name}
+                    <tr key={m.id} className={cn("hover:bg-slate-50", m.isLocal && "bg-blue-50/20")}>
+                      <td className="py-2.5 px-3">
+                        <div className="font-bold text-slate-900 font-mono flex items-center gap-1.5">
+                          <span>{m.isLocal ? "📍" : "🤖"}</span>
+                          <span>{m.name}</span>
+                        </div>
+                        {m.localPath && (
+                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                            {m.localPath}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        {m.isLocal ? (
+                          <Badge variant="success">Local Máy</Badge>
+                        ) : (
+                          <Badge variant="default">Pretrained</Badge>
+                        )}
                       </td>
                       <td className="py-2.5 px-3">
                         <Badge variant="primary">{m.family}</Badge>
@@ -383,7 +398,6 @@ export default function AdminPage() {
                       <td className="py-2.5 px-3 text-slate-600">{m.task}</td>
                       <td className="py-2.5 px-3 font-mono font-bold text-blue-600">{m.params}</td>
                       <td className="py-2.5 px-3 font-mono text-slate-500">{m.fileSize}</td>
-                      <td className="py-2.5 px-3 font-mono text-slate-500">{m.inputSize}</td>
                       <td className="py-2.5 px-3 font-mono font-bold text-emerald-600">{m.mapBaseline}</td>
                       <td className="py-2.5 px-3 font-mono text-purple-600">{m.fpsRtx4090}</td>
                       <td className="py-2.5 px-3 text-right">
@@ -403,36 +417,48 @@ export default function AdminPage() {
           {/* Dataset Catalog Table */}
           <Card
             title="Danh mục tập dữ liệu sẵn có (Dataset Catalog)"
-            subtitle="Các bộ benchmark chuẩn được lưu trữ sẵn trong Storage Cluster"
+            subtitle="Các bộ benchmark & dữ liệu thực tế lưu trữ trong workspace"
           >
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500 font-semibold bg-slate-50">
                     <th className="py-2.5 px-3">Tên tập dữ liệu</th>
+                    <th className="py-2.5 px-3">Nguồn</th>
                     <th className="py-2.5 px-3">Nhiệm vụ</th>
-                    <th className="py-2.5 px-3">Số lượng ảnh / frame</th>
-                    <th className="py-2.5 px-3">Số lớp đối tượng</th>
+                    <th className="py-2.5 px-3">Số lượng mẫu</th>
+                    <th className="py-2.5 px-3">Số lớp</th>
                     <th className="py-2.5 px-3">Dung lượng</th>
                     <th className="py-2.5 px-3">Định dạng</th>
-                    <th className="py-2.5 px-3">Độ phân giải</th>
                     <th className="py-2.5 px-3 text-right">Hành động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                   {AVAILABLE_DATASETS.map((d) => (
-                    <tr key={d.id} className="hover:bg-slate-50">
-                      <td className="py-2.5 px-3 font-bold text-slate-900 flex items-center gap-2">
-                        <span>📦</span> {d.name}
+                    <tr key={d.id} className={cn("hover:bg-slate-50", d.isLocal && "bg-emerald-50/20")}>
+                      <td className="py-2.5 px-3">
+                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                          <span>{d.isLocal ? "📍" : "📦"}</span>
+                          <span>{d.name}</span>
+                        </div>
+                        {d.localPath && (
+                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                            {d.localPath}
+                          </div>
+                        )}
                       </td>
                       <td className="py-2.5 px-3">
-                        <Badge variant="teal">{d.task}</Badge>
+                        {d.isLocal ? (
+                          <Badge variant="success">Local Máy</Badge>
+                        ) : (
+                          <Badge variant="teal">Dataset Repo</Badge>
+                        )}
                       </td>
+                      <td className="py-2.5 px-3 text-slate-600">{d.task}</td>
                       <td className="py-2.5 px-3 font-mono font-bold text-blue-600">{d.samples.toLocaleString()}</td>
                       <td className="py-2.5 px-3 font-mono text-slate-700">{d.classes} lớp</td>
                       <td className="py-2.5 px-3 font-mono text-purple-600 font-bold">{d.size}</td>
                       <td className="py-2.5 px-3 font-mono text-slate-500">{d.format}</td>
-                      <td className="py-2.5 px-3 font-mono text-slate-500">{d.resolution}</td>
                       <td className="py-2.5 px-3 text-right">
                         <Link href="/experiments/new">
                           <Button variant="secondary" size="sm" className="text-[11px] py-1 px-2">
