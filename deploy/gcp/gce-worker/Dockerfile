@@ -8,4 +8,4 @@ COPY deploy/gcp/gce-worker/requirements-gcp.txt /tmp/requirements-gcp.txt
 RUN uv pip install --python .venv/bin/python -r /tmp/requirements-gcp.txt
 ENV PATH="/app/.venv/bin:$PATH"
 COPY . .
-CMD ["python", "-m", "src.gce_worker"]
+CMD ["uvicorn", "src.cloud_run_gpu_worker:app", "--host", "0.0.0.0", "--port", "8080"]
