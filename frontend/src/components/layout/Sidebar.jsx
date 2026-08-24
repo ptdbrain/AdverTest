@@ -17,8 +17,10 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  LogIn,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
 
 const MENU_ITEMS = [
   { name: "Tổng quan hệ thống", href: "/dashboard", icon: LayoutDashboard },
@@ -35,6 +37,7 @@ export default function Sidebar() {
   const rawPathname = usePathname();
   const pathname = rawPathname || "/";
   const [collapsed, setCollapsed] = useState(false);
+  const { user, isAuthenticated, openAuthModal } = useAuth();
 
   const isActive = (href) => {
     if (!pathname) return false;
@@ -44,6 +47,15 @@ export default function Sidebar() {
     if (href.includes("/results") && pathname.includes("/results")) return true;
     return pathname.startsWith(href);
   };
+
+  const displayName = user?.display_name || "Admin";
+  const roleName = user?.role === "ADMIN" ? "Quản trị viên" : "Nghiên cứu viên";
+  const initials = displayName
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
     <aside
@@ -97,22 +109,34 @@ export default function Sidebar() {
       <div className="p-3 border-t border-slate-100 space-y-2">
         {/* User Card */}
         {!collapsed ? (
-          <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-150">
+          <button
+            type="button"
+            onClick={openAuthModal}
+            className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors text-left"
+            title="Nhấp để đổi tài khoản / xem phân quyền"
+          >
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">
-                AD
+                {initials || "AD"}
               </div>
-              <div className="text-left">
-                <div className="text-xs font-semibold text-slate-800 leading-tight">admin</div>
-                <div className="text-[10px] text-slate-500">Quản trị viên</div>
+              <div className="text-left overflow-hidden">
+                <div className="text-xs font-semibold text-slate-800 leading-tight truncate">
+                  {displayName}
+                </div>
+                <div className="text-[10px] text-slate-500 truncate">{roleName}</div>
               </div>
             </div>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-          </div>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+          </button>
         ) : (
-          <div className="w-8 h-8 mx-auto rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">
-            AD
-          </div>
+          <button
+            type="button"
+            onClick={openAuthModal}
+            className="w-8 h-8 mx-auto rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center hover:opacity-90"
+            title="Đăng nhập / Tài khoản"
+          >
+            {initials || "AD"}
+          </button>
         )}
 
         {/* Light Theme Tag & Collapse Toggle */}
