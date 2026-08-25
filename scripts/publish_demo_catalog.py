@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -97,7 +98,11 @@ def build(destination: Path) -> None:
 
 
 def upload(root: Path, bucket: str) -> None:
-    token = subprocess.check_output(["gcloud", "auth", "print-access-token"], text=True).strip()
+    # CI and WSL sessions can provide a short-lived token without depending on
+    # a platform-specific ``gcloud`` launcher.
+    token = os.environ.get("GCS_ACCESS_TOKEN") or subprocess.check_output(
+        ["gcloud", "auth", "print-access-token"], text=True
+    ).strip()
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
         name = f"{PREFIX}/{path.relative_to(root).as_posix()}"
         url = "https://storage.googleapis.com/upload/storage/v1/b/" + bucket + "/o?uploadType=media&name=" + urllib.parse.quote(name, safe="")
