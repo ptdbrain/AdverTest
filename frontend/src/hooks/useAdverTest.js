@@ -310,17 +310,26 @@ export function useAdverTest() {
 
   const buildRunConfig = useCallback(() => {
     const dataset = datasets.find((item) => (item.id || item.name) === selectedDataset) || { name: selectedDataset };
-    const datasetParams = {
-      merge_van_truck: true,
-      ...(dataset.dataset_params || {}),
-      ...(runOptions.split ? { split: runOptions.split } : {}),
-      ...(runOptions.difficulty ? { difficulty: runOptions.difficulty } : {}),
-    };
+    const datasetName = dataset.dataset || dataset.name || selectedDataset;
+    const datasetParams = { ...(dataset.dataset_params || {}) };
+
+    // Only override controls that the selected dataset advertises.  In
+    // particular, ``merge_van_truck`` and ``difficulty`` are KITTI-specific;
+    // sending them to BDD100K violates its strict parameter schema.
+    if (runOptions.split && Object.hasOwn(datasetParams, "split")) {
+      datasetParams.split = runOptions.split;
+    }
+    if (datasetName === "kitti") {
+      datasetParams.merge_van_truck = true;
+    }
+    if (["kitti", "kitti3d"].includes(datasetName) && runOptions.difficulty) {
+      datasetParams.difficulty = runOptions.difficulty;
+    }
     return {
       model_family_id: selectedModelFamily,
       checkpoint_id: selectedModelVersion,
       task_id: mode,
-      dataset: dataset.dataset || dataset.name || selectedDataset,
+      dataset: datasetName,
       dataset_params: datasetParams,
       recipe,
       limit: runOptions.limit === "all" || runOptions.limit === null || runOptions.limit === 0 || runOptions.limit === "" ? null : Number(runOptions.limit),
