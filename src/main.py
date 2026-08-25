@@ -36,7 +36,7 @@ from src.config import get_settings
 from src.core.registry import UnknownPluginError
 from src.datasets import load_datasets
 from src.datasets.base import AnonymizationRequiredError
-from src.demo_bootstrap import ensure_demo_checkpoint, ensure_demo_kitti
+from src.demo_bootstrap import ensure_demo_catalog, ensure_demo_checkpoint, ensure_demo_kitti
 
 SIMULATION_BANNER = "SIMULATION ONLY — chưa validate, không dùng để quyết định triển khai"
 
@@ -66,6 +66,18 @@ async def lifespan(app: FastAPI):
         if kitti_root is not None:
             os.environ["ADVERTEST_KITTI_ROOT"] = str(kitti_root)
             print(f"Demo KITTI ready: {kitti_root}")
+    # The public production catalog advertises only server-maintained demo
+    # bundles.  The API preflights jobs before the GPU worker receives them,
+    # so it must materialize the same catalog rather than relying on the
+    # worker's private filesystem.
+    if settings.bootstrap_demo_catalog or settings.app_env == "production":
+        catalog_root = ensure_demo_catalog(
+            enabled=True,
+            storage=storage or get_platform_storage(),
+            storage_prefix=settings.demo_catalog_storage_prefix,
+            data_root=settings.data_root,
+        )
+        print(f"Demo catalog ready: {catalog_root}")
     attacks, models, datasets = load_attacks(), load_adapters(), load_datasets()
     print(
         f"Starting {settings.app_name} in {settings.app_env} mode — "
