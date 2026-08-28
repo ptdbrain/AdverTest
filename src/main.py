@@ -31,8 +31,10 @@ from src.api.routers import (
     defence,
     exports,
     jobs,
+    live_inference,
     platform_datasets,
     runs,
+    system,
 )
 from src.api.routers import (
     settings as settings_router,
@@ -116,7 +118,10 @@ app.include_router(platform_datasets.router, prefix="/api/v1")
 app.include_router(defence.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")
 app.include_router(advisor.router, prefix="/api/v1")
-app.include_router(settings_router.router, prefix="/api/v1")
+app.include_router(system.router, prefix="/api/v1")
+from src.api.routers import sessions
+app.include_router(live_inference.router, prefix="/api/v1")
+app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")
 app.mount("/data", StaticFiles(directory=str(data_root)), name="data")
 

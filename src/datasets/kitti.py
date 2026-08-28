@@ -62,7 +62,24 @@ class Kitti(DatasetSource):
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
         settings: KittiParams = self.params  # type: ignore[assignment]
-        self.root = Path(settings.root).expanduser().resolve()
+        candidate_root = Path(settings.root).expanduser()
+        if not candidate_root.is_absolute():
+            from src.config import PROJECT_ROOT
+            if (PROJECT_ROOT / candidate_root).exists():
+                candidate_root = PROJECT_ROOT / candidate_root
+            elif (PROJECT_ROOT.parent.parent / candidate_root).exists():
+                candidate_root = PROJECT_ROOT.parent.parent / candidate_root
+            else:
+                candidate_root = candidate_root.resolve()
+        elif not candidate_root.exists():
+            from src.config import PROJECT_ROOT
+            try:
+                rel = candidate_root.relative_to(PROJECT_ROOT)
+                if (PROJECT_ROOT.parent.parent / rel).exists():
+                    candidate_root = PROJECT_ROOT.parent.parent / rel
+            except ValueError:
+                pass
+        self.root = candidate_root.resolve()
         self.image_dir = self._find_dir("image_2")
         self.label_dir = self._find_dir("label_2")
         self.anonymized = settings.anonymize == "required" and self._has_manifest()

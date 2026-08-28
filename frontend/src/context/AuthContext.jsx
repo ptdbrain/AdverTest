@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { loginGoogleSSO, getGoogleAuthConfig, getAuthMe, loginUser } from "@/lib/api";
+import { loginGoogleSSO, getGoogleAuthConfig, getAuthMe, loginUser, registerUser } from "@/lib/api";
 
 const AuthContext = createContext(null);
 
@@ -88,6 +88,17 @@ export function AuthProvider({ children }) {
     }
   }, [handleAuthSuccess]);
 
+  const registerWithCredentials = useCallback(async (payload) => {
+    setIsLoading(true);
+    try {
+      const res = await registerUser(payload);
+      handleAuthSuccess(res);
+      return res;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [handleAuthSuccess]);
+
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);
@@ -123,6 +134,7 @@ export function AuthProvider({ children }) {
         loginWithGoogle,
         loginWithDemoProfile,
         loginWithCredentials,
+        registerWithCredentials,
         logout,
         switchRole,
       }}
@@ -145,6 +157,7 @@ const DEFAULT_AUTH_FALLBACK = {
   loginWithGoogle: async () => {},
   loginWithDemoProfile: async () => {},
   loginWithCredentials: async () => {},
+  registerWithCredentials: async () => {},
   logout: () => {},
   switchRole: () => {},
 };

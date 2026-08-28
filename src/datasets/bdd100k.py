@@ -33,13 +33,24 @@ class BDD100KSemanticDataset(DatasetSource):
     input_schema: ClassVar[tuple[str, ...]] = ("image",)
     annotation_schema: ClassVar[tuple[str, ...]] = ("semantic_masks", "class_labels")
     ground_truth_status: ClassVar[str] = "semantic_only"
+    anonymized: ClassVar[bool] = True
 
     def __init__(self, **params: object) -> None:
         super().__init__(**params)
-        self.root = Path(self.params.root).expanduser().resolve()  # type: ignore[attr-defined]
+        raw_root = Path(self.params.root).expanduser()  # type: ignore[attr-defined]
+        if not raw_root.is_absolute():
+            from src.config import PROJECT_ROOT
+            if (PROJECT_ROOT / raw_root).exists():
+                self.root = (PROJECT_ROOT / raw_root).resolve()
+            elif (PROJECT_ROOT.parent.parent / raw_root).exists():
+                self.root = (PROJECT_ROOT.parent.parent / raw_root).resolve()
+            else:
+                self.root = raw_root.resolve()
+        else:
+            self.root = raw_root.resolve()
         self.manifest = self.root / self.params.anonymization_manifest  # type: ignore[attr-defined]
         if not self.manifest.is_file():
-            raise FileNotFoundError("BDD100K external loader requires an anonymization manifest")
+            raise FileNotFoundError(f"BDD100K external loader requires an anonymization manifest at {self.manifest}")
 
     def info(self) -> DatasetInfo:
         return DatasetInfo(name=self.name, anonymized=True, classes=tuple(_LABELS.values()), note="external semantic-only; non-paired")

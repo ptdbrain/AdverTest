@@ -160,7 +160,24 @@ class Kitti3D(DatasetSource):
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
         settings: Kitti3DParams = self.params  # type: ignore[assignment]
-        self.root = Path(settings.root).expanduser().resolve()
+        candidate_root = Path(settings.root).expanduser()
+        if not candidate_root.is_absolute():
+            from src.config import PROJECT_ROOT
+            if (PROJECT_ROOT / candidate_root).exists():
+                candidate_root = PROJECT_ROOT / candidate_root
+            elif (PROJECT_ROOT.parent.parent / candidate_root).exists():
+                candidate_root = PROJECT_ROOT.parent.parent / candidate_root
+            else:
+                candidate_root = candidate_root.resolve()
+        elif not candidate_root.exists():
+            from src.config import PROJECT_ROOT
+            try:
+                rel = candidate_root.relative_to(PROJECT_ROOT)
+                if (PROJECT_ROOT.parent.parent / rel).exists():
+                    candidate_root = PROJECT_ROOT.parent.parent / rel
+            except ValueError:
+                pass
+        self.root = candidate_root.resolve()
         self.image_dir = self._find_dir("image_2")
         self.velodyne_dir = self._find_dir("velodyne")
         self.calib_dir = self._find_dir("calib")
@@ -176,7 +193,8 @@ class Kitti3D(DatasetSource):
 
     def _manifest_path(self, configured: str | None) -> Path | None:
         if configured is None:
-            return None
+            default_manifest = self.root / "manifest.jsonl"
+            return default_manifest if default_manifest.is_file() else None
         path = Path(configured).expanduser()
         return path if path.is_absolute() else self.root / path
 

@@ -77,6 +77,50 @@ async def get_run_report(
         raise HTTPException(status_code=404, detail="Report not ready")
     return RunReportOut(**record["report"])
 
+@router.get("/{run_id}/download-zip")
+async def download_run_artifacts_zip(
+    run_id: str,
+    store: SqliteRunStore = Depends(get_store),
+):
+    """Bundle report, config, sample metrics and artifacts into a single downloadable zip file."""
+    import io
+    import json
+    import zipfile
+    from pathlib import Path
+    from fastapi.responses import StreamingResponse
+    from src.config import get_settings
+
+    record = store.get(run_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        if "report" in record and record["report"]:
+            zf.writestr("metrics_report.json", json.dumps(record["report"], indent=2))
+        
+        if "config" in record:
+            zf.writestr("run_config.json", json.dumps(record["config"], indent=2))
+            
+        samples = store.list_samples(run_id)
+        if samples:
+            zf.writestr("samples_diagnostics.json", json.dumps(samples, indent=2))
+            
+        settings = get_settings()
+        artifacts_dir = Path(settings.artifact_root) / run_id
+        if artifacts_dir.is_dir():
+            for file_path in artifacts_dir.glob("**/*"):
+                if file_path.is_file():
+                    rel_name = f"artifacts/{file_path.relative_to(artifacts_dir)}"
+                    zf.write(file_path, arcname=rel_name)
+                    
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=adversai_run_{run_id}.zip"}
+    )
+
 @router.post("/{run_id}/cancel", response_model=RunJobOut)
 async def cancel_run(
     run_id: str,

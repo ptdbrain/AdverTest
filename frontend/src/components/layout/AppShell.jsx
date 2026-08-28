@@ -3,21 +3,30 @@
 import React from "react";
 import Sidebar from "./Sidebar";
 import TopNavigation from "./TopNavigation";
+import { useSidebar } from "@/context/SidebarContext";
+import { cn } from "@/lib/utils";
 
 export default function AppShell({ children }) {
+  const { isCollapsed } = useSidebar();
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex">
-      {/* Fixed Sidebar */}
+      {/* Fixed Collapsible Sidebar */}
       <Sidebar />
 
-      {/* Main App Container */}
-      <div className="flex-1 flex flex-col pl-[220px] transition-all duration-300 min-w-0">
+      {/* Main App Container that smoothly adapts padding */}
+      <div
+        className={cn(
+          "flex-1 flex flex-col transition-all duration-300 min-w-0",
+          isCollapsed ? "pl-[68px]" : "pl-[220px]"
+        )}
+      >
         {/* Top Navbar */}
         <TopNavigation />
 
         {/* Dynamic Page Content */}
-        <main className="mt-[58px] p-5 md:p-6 flex-1 min-w-0 overflow-y-auto">
-          <div className="max-w-[1600px] mx-auto space-y-5">
+        <main className="mt-[58px] p-4 md:p-6 flex-1 min-w-0 overflow-y-auto">
+          <div className="max-w-[1700px] mx-auto space-y-5">
             {children}
           </div>
         </main>

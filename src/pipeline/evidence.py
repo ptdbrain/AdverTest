@@ -126,10 +126,19 @@ class EvidenceWriter:
         attacked_png = root / "attacked.png"
         clean_prediction_png = root / "clean-prediction.png"
         attacked_prediction_png = root / "attacked-prediction.png"
+        diff_png = root / "diff.png"
+        pert_png = root / "perturbation.png"
         _save_png(clean_png, clean.image)
         _save_png(attacked_png, attacked.image)
         _save_prediction(clean_prediction_png, clean.image, clean_prediction, "#00a651")
         _save_prediction(attacked_prediction_png, attacked.image, attacked_prediction, "#d92828")
+
+        diff = np.abs(attacked.image.astype(np.float32) - clean.image.astype(np.float32))
+        _save_png(diff_png, np.clip(diff * 5.0, 0.0, 1.0))
+
+        pert = attacked.image.astype(np.float32) - clean.image.astype(np.float32)
+        _save_png(pert_png, np.clip(pert * 5.0 + 0.5, 0.0, 1.0))
+
         payload = {"clean": prediction_payload(clean_prediction), "attacked": prediction_payload(attacked_prediction)}
         (root / "predictions.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return {
@@ -137,6 +146,8 @@ class EvidenceWriter:
             "attacked_image": str(attacked_png),
             "clean_prediction": str(clean_prediction_png),
             "attacked_prediction": str(attacked_prediction_png),
+            "diff_image": str(diff_png),
+            "perturbation_image": str(pert_png),
         }
 
 

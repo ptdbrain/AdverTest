@@ -201,6 +201,50 @@ export function approveRetrainingBacklog(backlogId) {
   });
 }
 
+// ── Session Management ──────────────────────────────────
+export function listSessions() {
+  return apiFetch("/api/v1/sessions");
+}
+
+export function getSession(sessionId) {
+  return apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export function createOrUpdateSession(sessionData) {
+  return apiFetch("/api/v1/sessions", {
+    method: "POST",
+    body: JSON.stringify(sessionData),
+  });
+}
+
+export function addRunToSession(sessionId, runRecord) {
+  return apiFetch(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/runs`,
+    { method: "POST", body: JSON.stringify(runRecord) }
+  );
+}
+
+export function deleteRunFromSession(sessionId, runId) {
+  return apiFetch(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export function updateRunNote(sessionId, runId, note) {
+  return apiFetch(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/note`,
+    { method: "PATCH", body: JSON.stringify({ note }) }
+  );
+}
+
+export function endSession(sessionId) {
+  return apiFetch(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/end`,
+    { method: "POST" }
+  );
+}
+
 /* ---- Recipe API ---- */
 export function getRecipePresets() {
   return apiFetch("/api/v1/catalog/recipes/presets");

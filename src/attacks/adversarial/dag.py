@@ -19,7 +19,7 @@ class DagParams(AttackParams):
         8 / 255,
         16 / 255,
     )
-    iterations: int = 150
+    iterations: int = 20
 
 
 @ATTACKS.register

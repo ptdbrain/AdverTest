@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -10,182 +10,596 @@ import {
   Play,
   CheckCircle2,
   Trash2,
-  GripVertical,
   Plus,
-  RefreshCw,
   Sparkles,
   ArrowRight,
-  ShieldAlert,
-  SlidersHorizontal,
-  ChevronDown,
+  ArrowLeft,
   CloudRain,
   CloudFog,
   Snowflake,
   Sun,
   Camera,
   Layers,
+  Zap,
+  Check,
+  Eye,
+  SlidersHorizontal,
+  Info,
+  ShieldAlert,
+  Database,
+  Box,
+  Target,
+  RefreshCw,
+  Cpu,
+  Link2,
 } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import Card from "@/components/common/Card";
 import Badge from "@/components/common/Badge";
 import Button from "@/components/common/Button";
-import { ATTACK_CATEGORIES } from "@/data/mockData";
+import { ATTACK_CATEGORIES, ATTACK_PRESETS } from "@/data/mockData";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
+import {
+  createRun,
+  getCatalogAttacks,
+  getCatalogDatasets,
+  getModelVersions,
+  getRun,
+  getRunReport,
+  getRunSamples,
+  preflightRun,
+  addRunToSession,
+} from "@/lib/api";
+
+const TERMINAL_RUN_STATES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
+const ATTACK_ID_ALIASES = {
+  low_light: "brightness",
+  lidar_jitter: "lidar_xyz_noise",
+  cw: "cw_l2",
+};
+
+export function normalizeAttackQueue(queue) {
+  return queue.map((attack) => ({
+    ...attack,
+    id: ATTACK_ID_ALIASES[attack.id] || attack.id,
+  }));
+}
+
+function basename(value) {
+  return String(value || "").split(/[\\/]/).pop()?.toLowerCase() || "";
+}
+
+function resolveBackendModel(context, versions) {
+  const requestedFile = basename(String(context.selectedModelName || "").split(" (")[0]);
+  const requestedTokens = requestedFile
+    .replace(/\.[^.]+$/, "")
+    .split(/[-_ ]+/)
+    .filter((token) => token.length > 1 && token !== "best");
+  
+  const baseVersions = versions.filter(
+    (version) => version.runnable && version.checkpoint_role === "base" && (!context.selectedTask || version.task === context.selectedTask),
+  );
+  const taskVersions = versions.filter(
+    (version) => version.runnable && (!context.selectedTask || version.task === context.selectedTask),
+  );
+
+  return baseVersions.find((version) => version.id === context.selectedModelId)
+    || baseVersions.find((version) => basename(version.checkpoint_path) === requestedFile)
+    || baseVersions.find((version) => requestedFile && basename(version.checkpoint_path).includes(requestedFile))
+    || baseVersions.find((version) => {
+      const modelName = String(version.model_name || "").toLowerCase();
+      return modelName.length > 1 && requestedFile.includes(modelName);
+    })
+    || baseVersions.find((version) => {
+      const identity = `${version.id} ${version.model_name} ${version.checkpoint_path || ""}`.toLowerCase();
+      return requestedTokens.length > 0 && requestedTokens.every((token) => identity.includes(token));
+    })
+    || baseVersions[0]
+    || taskVersions.find((version) => version.checkpoint_role === "base")
+    || taskVersions[0]
+    || versions.find((version) => version.runnable)
+    || versions[0];
+}
+
+function resolveBackendDataset(context, datasets) {
+  const requestedName = String(context.selectedDatasetName || "").toLowerCase();
+  return datasets.find((dataset) => dataset.name === context.selectedDatasetId)
+    || datasets.find((dataset) => dataset.title === context.selectedDatasetName)
+    || datasets.find((dataset) => requestedName && requestedName.includes(String(dataset.name || "").toLowerCase()))
+    || datasets.find((dataset) => dataset.anonymized)
+    || datasets[0];
+}
+
+function buildRealRunConfig(context, attackQueue, model, dataset, attackMode = "combined") {
+  const isCombined = attackMode === "combined";
+  if (isCombined) {
+    return {
+      checkpoint_id: model.id,
+      model_family_id: model.model_family_id,
+      task_id: context.selectedTask,
+      dataset: dataset.name,
+      dataset_params: { split: "val", difficulty: "all", merge_van_truck: true },
+      recipe: {
+        name: `recipe-${attackQueue.map((a) => a.id).join("-")}`,
+        steps: attackQueue.map((attack, index) => ({
+          position: index,
+          attack_name: attack.id,
+          implementation_version: (
+            { cw_l2: "2.0.0", dpatch: "2.0.0", thys_patch: "2.0.0" }[attack.id] || "1.0.0"
+          ),
+          severity: Number(attack.severity) || 3,
+          parameters: {},
+          seed: 42 + index,
+          expected_cost: 1.0,
+        })),
+      },
+      limit: 8,
+      seed: 42,
+      iou_threshold: 0.5,
+      confidence_threshold: 0.25,
+    };
+  }
+
+  return {
+    checkpoint_id: model.id,
+    model_family_id: model.model_family_id,
+    task_id: context.selectedTask,
+    dataset: dataset.name,
+    dataset_params: { split: "val", difficulty: "all", merge_van_truck: true },
+    attacks: attackQueue.map((attack) => attack.id),
+    severities: Array.from(new Set(attackQueue.map((attack) => Number(attack.severity)))),
+    limit: 8,
+    seed: 42,
+    iou_threshold: 0.5,
+    confidence_threshold: 0.25,
+  };
+}
+
+async function waitForRealRun(runId, onProgress) {
+  while (true) {
+    const job = await getRun(runId);
+    onProgress(job);
+    if (TERMINAL_RUN_STATES.has(job.status)) {
+      if (job.status !== "COMPLETED") throw new Error(job.error || `Run kết thúc với trạng thái ${job.status}.`);
+      const report = await getRunReport(runId);
+      const samples = await getRunSamples(runId);
+      if (!report || (!samples.length && !report.sample_results?.length)) {
+        throw new Error("Backend hoàn tất run nhưng không trả về report/sample evidence.");
+      }
+      return { job, report, samples: samples.length ? samples : report.sample_results };
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 750));
+  }
+}
 
 export default function ConfigureAttackPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const mode = searchParams?.get("mode"); // "reset" | "extend" | null
   const expId = params?.id || "EXP-2025-0512-001";
 
-  const [mode, setMode] = useState("single"); // 'single' | 'combo'
+  // Experiment Context from Step 1
+  const [expContext, setExpContext] = useState({
+    expName: expId,
+    selectedTask: "detection2d",
+    taskName: "Object Detection",
+    selectedModelId: "local_yolo11s_clean",
+    selectedModelName: "yolo11s-clean-b0_best.pt (Local Workspace)",
+    selectedDatasetId: "kitti_anonymized_de",
+    selectedDatasetName: "KITTI De-anonymized Set (Local Workspace)",
+    batchSize: 16,
+    mixedPrecision: true,
+  });
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedAttackId, setSelectedAttackId] = useState("depth_fog");
-  const [targetMode, setTargetMode] = useState("untargeted"); // 'untargeted' | 'targeted'
-  const [lossFunction, setLossFunction] = useState("Cross Entropy");
-  const [normType, setNormType] = useState("Linf");
-  const [strength, setStrength] = useState(0.70);
-  const [epsilonNum, setEpsilonNum] = useState(8);
   const [severityLevel, setSeverityLevel] = useState(3);
-  const [stepSize, setStepSize] = useState("2/255");
-  const [iterations, setIterations] = useState(20);
-  const [randomInit, setRandomInit] = useState(true);
-  const [clipImage, setClipImage] = useState(true);
-  const [randomSeed, setRandomSeed] = useState(42);
-  const [scope, setScope] = useState("full"); // 'full' | 'roi'
-  const [patchSize, setPatchSize] = useState("64 × 64");
-  const [patchPos, setPatchPos] = useState("bottom_right");
-  const [depthAware, setDepthAware] = useState(true);
+  const [attackMode, setAttackMode] = useState("combined"); // "combined" | "individual"
   const [isExecuting, setIsExecuting] = useState(false);
+  const [executionStep, setExecutionStep] = useState(0);
+  const [executionError, setExecutionError] = useState("");
 
-  // Attack Queue for combo
+  // Attack Recipe Summary (The active queue of confirmed attacks)
   const [attackQueue, setAttackQueue] = useState([
-    { id: "depth_fog", name: "Depth Fog (Severity 3)", eps: "Sev-3", alpha: "Depth", iters: 1 },
-    { id: "pgd", name: "PGD (ε=8/255)", eps: "8/255", alpha: "2/255", iters: 20 },
+    {
+      id: "depth_fog",
+      name: "Depth Fog (Sương mù)",
+      severity: 3,
+      eps: "Severity 3",
+      norm: "Natural",
+      desc: "Sương mù 3D tán xạ quang học làm mờ đối tượng ở xa.",
+    },
+    {
+      id: "pgd",
+      name: "PGD (Projected Gradient)",
+      severity: 3,
+      eps: "8/255",
+      norm: "Linf",
+      desc: "Nhiễu gradient đối kháng lặp 20 bước kiểm thử điểm yếu.",
+    },
   ]);
 
-  const allAttacksList = ATTACK_CATEGORIES.flatMap((c) => c.attacks);
-  const currentAttack = allAttacksList.find((a) => a.id === selectedAttackId) || allAttacksList[0];
-  const isWeatherAttack = currentAttack?.isWeather || selectedAttackId.startsWith("depth_") || selectedAttackId.includes("noise") || selectedAttackId.includes("blur") || selectedAttackId.includes("frost");
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("adversai_active_experiment");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        window.setTimeout(() => {
+          setExpContext((prev) => ({ ...prev, ...parsed }));
+          if (mode === "reset") {
+            if (parsed.selectedTask === "detection3d") {
+              setSelectedAttackId("lidar_beam_drop");
+              setAttackQueue([{ id: "lidar_beam_drop", name: "Beam Drop (LiDAR 3D)", severity: 3, eps: "Drop 30%", norm: "Spatial 3D", desc: "Mất chùm tia cảm biến LiDAR mô phỏng bụi bám và thời tiết." }]);
+            } else {
+              setSelectedAttackId("depth_rain");
+              setAttackQueue([{ id: "depth_rain", name: "Depth Rain (Mưa giông)", severity: 3, eps: "Severity 3", norm: "Weather", desc: "Mưa giông tán xạ quang học làm suy giảm tương phản." }]);
+            }
+          } else if (parsed.selectedTask === "detection3d") {
+            setSelectedAttackId("lidar_beam_drop");
+            setAttackQueue([
+              { id: "lidar_beam_drop", name: "Beam Drop (LiDAR 3D)", severity: 3, eps: "Drop 30%", norm: "Spatial 3D", desc: "Mất chùm tia cảm biến LiDAR mô phỏng bụi bám và thời tiết." },
+              { id: "lidar_jitter", name: "Point Jitter (LiDAR 3D)", severity: 3, eps: "σ=0.05m", norm: "Gaussian 3D", desc: "Nhiễu rung tọa độ 3D làm biến dạng voxels." },
+            ]);
+          }
+        }, 0);
+      }
+    } catch {}
+  }, [mode]);
 
-  const handleAddCombo = (attack) => {
-    if (attackQueue.some((a) => a.id === attack.id)) return;
-    setAttackQueue([...attackQueue, { id: attack.id, name: attack.name, eps: attack.defaultEps, alpha: "Auto", iters: 20 }]);
+  const allAttacksList = ATTACK_CATEGORIES.flatMap((c) => c.attacks);
+  const currentAttack =
+    allAttacksList.find((a) => a.id === selectedAttackId) || allAttacksList[0];
+
+  // 1. Preset Selector: Instantly populate queue
+  const handleApplyPreset = (preset) => {
+    setAttackQueue(
+      preset.attacks.map((a) => {
+        const found = allAttacksList.find((x) => x.id === a.id);
+        return {
+          id: a.id,
+          name: a.name || found?.name || a.id,
+          severity: a.severity || 3,
+          eps: a.eps || `Sev-${a.severity || 3}`,
+          norm: found?.norm || "Linf",
+          desc: found?.desc || "Đòn tấn công đối kháng mô phỏng.",
+        };
+      })
+    );
   };
 
-  const handleRemoveQueue = (id) => {
+  const handleAddCurrentAttackToQueue = () => {
+    const existingIndex = attackQueue.findIndex((a) => a.id === currentAttack.id);
+    const newEntry = {
+      id: currentAttack.id,
+      name: currentAttack.name,
+      severity: severityLevel,
+      eps: currentAttack.isWeather ? `Severity ${severityLevel}` : `${severityLevel * 2}/255`,
+      norm: currentAttack.norm,
+      desc: currentAttack.desc,
+    };
+
+    if (existingIndex >= 0) {
+      const updated = [...attackQueue];
+      updated[existingIndex] = newEntry;
+      setAttackQueue(updated);
+    } else {
+      setAttackQueue([...attackQueue, newEntry]);
+    }
+  };
+
+  const handleRemoveQueueItem = (id) => {
     if (attackQueue.length <= 1) return;
     setAttackQueue(attackQueue.filter((a) => a.id !== id));
   };
 
-  const handleStartAttack = () => {
+  const handleStartExecution = async () => {
     setIsExecuting(true);
-    setTimeout(() => {
+    setExecutionStep(1);
+    setExecutionError("");
+    try {
+      const [versions, datasets] = await Promise.all([
+        getModelVersions(),
+        getCatalogDatasets({ task_id: expContext.selectedTask }),
+      ]);
+      const model = resolveBackendModel(expContext, versions);
+      const dataset = resolveBackendDataset(expContext, datasets);
+      if (!model) throw new Error("Mô hình đã chọn chưa có base checkpoint hợp lệ để chạy attack.");
+      if (!dataset) throw new Error("Bộ dữ liệu đã chọn chưa được backend đăng ký.");
+
+      const normalizedAttackQueue = normalizeAttackQueue(attackQueue);
+      const attackCatalog = await getCatalogAttacks({
+        task_id: expContext.selectedTask,
+        model_family_id: model.model_family_id,
+        checkpoint_id: model.id,
+        dataset: dataset.name,
+      });
+      const catalogByName = new Map(attackCatalog.map((attack) => [attack.name, attack]));
+      const unsupportedAttacks = normalizedAttackQueue.filter(
+        (attack) => !catalogByName.has(attack.id) || catalogByName.get(attack.id)?.available === false,
+      );
+      if (unsupportedAttacks.length) {
+        throw new Error(`Đòn tấn công không có trong catalog backend hoặc không tương thích: ${unsupportedAttacks.map((attack) => attack.id).join(", ")}.`);
+      }
+
+      const config = buildRealRunConfig(expContext, normalizedAttackQueue, model, dataset, attackMode);
+      const preflight = await preflightRun(config);
+      if (preflight.fatal_errors?.length) throw new Error(preflight.fatal_errors.join(" "));
+      setExecutionStep(2);
+      const created = await createRun(config);
+      const { job, report, samples } = await waitForRealRun(created.run_id, (currentJob) => {
+        setExecutionStep(currentJob.status === "INFERENCING" ? 3 : currentJob.status === "COMPUTING_METRICS" ? 4 : 2);
+      });
+
+      const executedAt = new Date().toISOString();
+      const resultData = {
+        ...expContext,
+        attackMode,
+        attackQueue: normalizedAttackQueue,
+        selectedModelId: model.id,
+        selectedModelName: report.model_version || report.model || expContext.selectedModelName,
+        selectedDatasetId: dataset.name,
+        selectedDatasetName: report.dataset || dataset.title || dataset.name,
+        executedAt,
+        status: job.status,
+        activeRunId: job.run_id,
+      };
+      localStorage.setItem("adversai_active_experiment", JSON.stringify(resultData));
+      setExecutionStep(5);
+      const previous = JSON.parse(localStorage.getItem("advertest_last_session") || "{}");
+      localStorage.setItem("advertest_last_session", JSON.stringify({
+        ...previous,
+        runId: job.run_id,
+        report,
+        samples,
+        recipe: attackMode === "combined" ? config.recipe : null,
+        attackMode,
+        selectedAttacks: normalizedAttackQueue.map((attack) => attack.id),
+        selectedDataset: dataset.name,
+        selectedModelFamily: model.model_family_id,
+        selectedModelVersion: model.id,
+        activeTab: "evidence",
+        runStatus: job.status,
+      }));
+
+      // ── Auto-push RunRecord to Session API ──
+      const lastCell = report.cells?.[report.cells.length - 1];
+      const cleanApVal = report.ap_clean ?? report.metrics?.clean?.ap50 ?? 0;
+      const attackedApVal = lastCell?.metrics?.ap50 ?? lastCell?.ap ?? 0;
+      const mapDropPctVal = cleanApVal > 0
+        ? parseFloat(((cleanApVal - attackedApVal) / cleanApVal * 100).toFixed(1))
+        : 0;
+      const sampleCleanBoxes = samples?.[0]?.clean_prediction?.boxes || [];
+      const sampleAttackedBoxes = samples?.[0]?.attacked_prediction?.boxes || [];
+      const avgCleanConfVal = sampleCleanBoxes.length > 0
+        ? sampleCleanBoxes.reduce((sum, b) => sum + (b.score || 0), 0) / sampleCleanBoxes.length
+        : 0;
+      const avgAttackedConfVal = sampleAttackedBoxes.length > 0
+        ? sampleAttackedBoxes.reduce((sum, b) => sum + (b.score || 0), 0) / sampleAttackedBoxes.length
+        : 0;
+
+      const sessionRunIndex = (() => {
+        try {
+          return Number(localStorage.getItem("advertest_session_run_count") || "0") + 1;
+        } catch { return 1; }
+      })();
+      localStorage.setItem("advertest_session_run_count", String(sessionRunIndex));
+
+      const sessionRunRecord = {
+        id: job.run_id,
+        name: `Lần ${sessionRunIndex}: ${normalizedAttackQueue.map(a => a.name || a.id).join(" + ")}`,
+        timestamp: new Date().toLocaleString("vi-VN"),
+        attack_type: normalizedAttackQueue.map(a => a.id).join("+"),
+        attack_name: normalizedAttackQueue.map(a => a.name || a.id).join(" + "),
+        severity: normalizedAttackQueue[0]?.severity || 3,
+        clean_map: parseFloat(cleanApVal.toFixed(4)),
+        attacked_map: parseFloat(attackedApVal.toFixed(4)),
+        map_drop_pct: mapDropPctVal,
+        clean_conf: parseFloat(avgCleanConfVal.toFixed(3)),
+        attacked_conf: parseFloat(avgAttackedConfVal.toFixed(3)),
+        psnr: String(lastCell?.psnr ?? "N/A"),
+        ssim: String(lastCell?.ssim ?? "N/A"),
+        inference_ms: parseFloat(
+          ((report.duration_seconds ?? 0) * 1000 / Math.max(report.n_samples || 1, 1)).toFixed(1)
+        ),
+        robustness_score: parseFloat(Math.max(0, 100 - mapDropPctVal).toFixed(1)),
+        clean_bbox_count: sampleCleanBoxes.length,
+        attacked_bbox_count: sampleAttackedBoxes.length,
+        sample_id: samples?.[0]?.sample_id ?? "000000",
+        is_combined: attackMode === "combined" && normalizedAttackQueue.length > 1,
+        attack_components: normalizedAttackQueue.map(a => a.id),
+        seed: config.seed ?? 42,
+        backend_run_id: job.run_id,
+      };
+      if (typeof addRunToSession === "function") {
+        addRunToSession(expId, sessionRunRecord).catch(syncErr =>
+          console.warn("Could not sync run to session:", syncErr)
+        );
+      }
+
+      // ── Cache report for RunHistoryBar ──
+      try {
+        const existingCache = JSON.parse(localStorage.getItem("advertest_run_reports") || "{}");
+        const cacheKeys = Object.keys(existingCache);
+        if (cacheKeys.length >= 10) {
+          delete existingCache[cacheKeys[0]];
+        }
+        existingCache[job.run_id] = {
+          report,
+          samples,
+          attackQueue: normalizedAttackQueue,
+          executedAt: new Date().toISOString(),
+          attackMode,
+        };
+        localStorage.setItem("advertest_run_reports", JSON.stringify(existingCache));
+      } catch (cacheErr) {
+        console.warn("Could not cache run report:", cacheErr);
+      }
+
       router.push(`/experiments/${expId}/results`);
-    }, 1200);
+    } catch (error) {
+      setExecutionError(error.message || "Không thể chạy attack bằng backend.");
+      setIsExecuting(false);
+      setExecutionStep(0);
+    }
   };
 
-  const filteredCategories = ATTACK_CATEGORIES.map((cat) => ({
-    ...cat,
-    attacks: cat.attacks.filter(
-      (a) =>
-        a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        a.fullName.toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-  })).filter((cat) => cat.attacks.length > 0);
+  const isTask3D = expContext.selectedTask === "detection3d";
+  const filteredCategories = ATTACK_CATEGORIES.filter((cat) => {
+    if (isTask3D) return cat.task_compatibility?.includes("detection3d");
+    return cat.task_compatibility?.includes("detection2d");
+  })
+    .map((cat) => ({
+      ...cat,
+      attacks: cat.attacks.filter(
+        (a) =>
+          a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          a.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          a.desc.toLowerCase().includes(searchQuery.toLowerCase())
+      ),
+    }))
+    .filter((cat) => cat.attacks.length > 0);
 
   return (
     <div className="space-y-5 animate-fade-in">
       <PageHeader
-        title="Cấu hình tấn công & Nhiễu môi trường đối kháng"
-        subtitle="Chọn phương pháp tấn công gradient (PGD, FGSM), nhiễu vật lý (DPatch), hoặc nhiễu thời tiết thực tế (Depth Fog, Rain, Snow, Glare)."
+        title="Cấu hình phương pháp tấn công & Tổ hợp đối kháng"
+        subtitle="Chọn các kịch bản tổ hợp mẫu sẵn có hoặc tùy chỉnh từng phương pháp tấn công, xem ảnh ví dụ trực quan và nạp vào chuỗi tác động."
         breadcrumb={[
           { label: "Trang chủ", href: "/dashboard" },
           { label: "Cấu hình bài toán", href: "/experiments/new" },
+          { label: expId, href: `/experiments/${expId}/attack` },
           { label: "Cấu hình tấn công" },
         ]}
-        actions={
-          <div className="flex items-center bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setMode("single")}
-              className={cn(
-                "px-3 py-1 text-xs font-semibold rounded-md transition-colors",
-                mode === "single" ? "bg-blue-600 text-white" : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              Tấn công đơn
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("combo")}
-              className={cn(
-                "px-3 py-1 text-xs font-semibold rounded-md transition-colors",
-                mode === "combo" ? "bg-blue-600 text-white" : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              Tổ hợp tấn công (Combo)
-            </button>
-          </div>
-        }
       />
 
+      {/* TOP BANNER: ACTIVE EXPERIMENT SELECTION CONTEXT */}
+      <div className="p-3.5 rounded-xl bg-gradient-to-r from-blue-950 via-slate-900 to-slate-900 border border-blue-800/60 text-white flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-md">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold">
+            {isTask3D ? <Box className="w-4 h-4" /> : <Target className="w-4 h-4" />}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-blue-400 uppercase tracking-wide">
+                Đang cấu hình tấn công cho bài toán: {expContext.taskName}
+              </span>
+            </div>
+            <div className="text-xs text-slate-200 mt-0.5 flex flex-wrap items-center gap-2">
+              <span>Mô hình: <strong className="text-white">{expContext.selectedModelName}</strong></span>
+              <span className="text-slate-500">•</span>
+              <span>Dữ liệu: <strong className="text-blue-300">{expContext.selectedDatasetName}</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Link href="/experiments/new">
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={ArrowLeft}
+              className="bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700 text-xs py-1"
+            >
+              Đổi Model / Data
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      {/* 1. PREDEFINED ATTACK PRESETS BAR */}
+      <Card
+        title="1. Chọn tổ hợp kịch bản mẫu sẵn có (Attack Presets)"
+        subtitle={`Các kịch bản chuẩn tối ưu cho ${expContext.taskName}`}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {ATTACK_PRESETS.filter((p) => (isTask3D ? p.task === "detection3d" : p.task === "detection2d")).map((preset) => (
+            <div
+              key={preset.id}
+              onClick={() => handleApplyPreset(preset)}
+              className="p-3.5 rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/70 hover:border-blue-500 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between space-y-2 group"
+            >
+              <div>
+                <div className="text-xs font-bold text-slate-800 group-hover:text-blue-600 transition-colors">
+                  {preset.name}
+                </div>
+                <p className="text-[11px] text-slate-500 line-clamp-2 mt-1">
+                  {preset.desc}
+                </p>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                  {preset.attacks.length} Đòn phối hợp
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium group-hover:text-blue-600 flex items-center gap-0.5">
+                  Áp dụng ➔
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* 2. MAIN ATTACK PICKER + INSPECTOR & RECIPE SUMMARY */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
-        {/* LEFT: Attack Library (4 Columns) */}
+        {/* LEFT COLUMN: Attack Category Catalog (4 Columns) */}
         <div className="xl:col-span-4 space-y-4">
           <Card
-            title="Thư viện tấn công & Nhiễu tự nhiên"
-            subtitle="7 nhóm phương pháp (Thời tiết, Gradient, Black-box, Patch, 3D...)"
+            title="2. Danh mục phương pháp tấn công"
+            subtitle={`Lọc theo bài toán [${expContext.taskName}]`}
           >
-            {/* Search Input */}
+            {/* Search */}
             <div className="relative mb-3">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <input
                 type="text"
-                placeholder="Tìm kiếm phương pháp hoặc thời tiết (Fog, Rain, PGD...)"
+                placeholder="Tìm phương pháp tấn công..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-500"
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500 bg-slate-50/50"
               />
             </div>
 
-            {/* Categories & Algorithm Tiles */}
-            <div className="space-y-3.5 max-h-[660px] overflow-y-auto pr-1">
+            {/* Accordion/Category List */}
+            <div className="space-y-4 max-h-[580px] overflow-y-auto pr-1">
               {filteredCategories.map((cat) => (
                 <div key={cat.category} className="space-y-1.5">
-                  <div className="text-[11px] font-bold text-slate-700 bg-slate-100 py-1 px-2 rounded flex items-center justify-between">
-                    <span>{cat.category}</span>
-                    <span className="text-[10px] text-slate-400 font-mono">({cat.attacks.length})</span>
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-1">
+                    {cat.category}
                   </div>
-                  <div className="grid grid-cols-1 gap-1.5">
+                  <div className="space-y-1">
                     {cat.attacks.map((atk) => {
                       const isSelected = selectedAttackId === atk.id;
+                      const isInQueue = attackQueue.some((q) => q.id === atk.id);
                       return (
                         <div
                           key={atk.id}
                           onClick={() => {
                             setSelectedAttackId(atk.id);
-                            if (mode === "combo") handleAddCombo(atk);
                           }}
                           className={cn(
-                            "p-2 rounded-lg border text-left cursor-pointer transition-all flex items-center justify-between",
+                            "p-2.5 rounded-lg border text-left cursor-pointer transition-all flex items-center justify-between",
                             isSelected
-                              ? "border-blue-600 bg-blue-50/70 shadow-sm ring-1 ring-blue-500/20"
+                              ? "border-blue-600 bg-blue-50/60 shadow-xs ring-1 ring-blue-500"
                               : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                           )}
                         >
-                          <div>
-                            <div className="text-xs font-bold text-slate-800 leading-tight flex items-center gap-1.5">
-                              {atk.isWeather ? <span>🌦️</span> : <span>🎯</span>}
-                              <span>{atk.name}</span>
+                          <div className="flex-1 pr-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-slate-800">
+                                {atk.name}
+                              </span>
+                              {isInQueue && (
+                                <span className="w-2 h-2 rounded-full bg-emerald-500" title="Đã có trong chuỗi đòn" />
+                              )}
                             </div>
-                            <div className="text-[10px] text-slate-500 leading-tight mt-0.5">
+                            <div className="text-[10px] text-slate-500 line-clamp-1">
                               {atk.fullName}
                             </div>
                           </div>
-                          <Badge
-                            variant={atk.isWeather ? "teal" : atk.norm === "Linf" ? "purple" : "primary"}
-                            className="text-[10px] font-mono"
-                          >
+                          <Badge variant="neutral" className="text-[10px] font-mono">
                             {atk.norm}
                           </Badge>
                         </div>
@@ -198,319 +612,299 @@ export default function ConfigureAttackPage() {
           </Card>
         </div>
 
-        {/* CENTER: Attack Configuration (4 Columns) */}
-        <div className="xl:col-span-4 space-y-4">
-          {/* Section 1: Thuật toán & Mục tiêu */}
-          <Card title="1. Phương pháp & Mục tiêu tác động">
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="text-slate-500 font-medium block mb-1">Phương pháp đã chọn</label>
-                <div className="p-2 rounded border border-slate-300 bg-slate-50 font-bold text-blue-700 font-mono flex items-center justify-between">
-                  <span>{currentAttack.name}</span>
-                  <Badge variant={isWeatherAttack ? "teal" : "primary"}>
-                    {isWeatherAttack ? "Môi trường thực tế" : "Adversarial"}
-                  </Badge>
+        {/* CENTER COLUMN: Visual Example Preview & Severity Slider & OK Button (5 Columns) */}
+        <div className="xl:col-span-5 space-y-4">
+          <Card
+            title={`Chi tiết & Tác động của: ${currentAttack.name}`}
+            subtitle={currentAttack.fullName}
+            headerAction={<Badge variant="primary">{currentAttack.norm}</Badge>}
+          >
+            <div className="space-y-4">
+              {/* Description */}
+              <div className="p-3 rounded-lg bg-blue-50/60 border border-blue-200 text-xs text-blue-900 leading-relaxed">
+                <div className="font-bold mb-1 flex items-center gap-1.5 text-blue-800">
+                  <Info className="w-3.5 h-3.5" />
+                  <span>Mô tả & Nguyên lý tác động:</span>
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1 italic">
-                  {currentAttack.fullName}
-                </p>
+                {currentAttack.desc}
               </div>
 
-              {!isWeatherAttack && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-slate-500 font-medium block mb-1">Hàm mất mát (Loss)</label>
-                    <select
-                      value={lossFunction}
-                      onChange={(e) => setLossFunction(e.target.value)}
-                      className="w-full p-2 rounded border border-slate-300 bg-white"
-                    >
-                      <option value="Cross Entropy">Cross Entropy</option>
-                      <option value="CW Loss">CW Margin Loss</option>
-                      <option value="Focal Loss">Focal Loss</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-slate-500 font-medium block mb-1">Chuẩn ràng buộc (Norm)</label>
-                    <div className="flex gap-1.5">
-                      {["Linf", "L2", "L1"].map((n) => (
-                        <button
-                          key={n}
-                          type="button"
-                          onClick={() => setNormType(n)}
-                          className={cn(
-                            "flex-1 py-1.5 rounded border text-xs font-semibold transition-colors",
-                            normType === n
-                              ? "bg-blue-600 text-white border-blue-600"
-                              : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                          )}
-                        >
-                          {n === "Linf" ? "L∞" : n}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+              {/* Visual Example Preview (Before vs After) */}
+              <div className="space-y-2">
+                <div className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                  <span>Ví dụ minh họa trực quan (Visual Example Preview):</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Mức độ {severityLevel}/5</span>
                 </div>
-              )}
-            </div>
-          </Card>
 
-          {/* Section 2: Tham số tấn công / Cường độ thời tiết */}
-          <Card title="2. Thiết lập mức độ & Tham số chi tiết">
-            <div className="space-y-4 text-xs">
-              {isWeatherAttack ? (
-                /* Weather & Corruption Controls */
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex justify-between font-medium mb-1">
-                      <span className="text-slate-700 font-semibold">Cấp độ khắc nghiệt (Severity Level)</span>
-                      <span className="font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
-                        Cấp {severityLevel} / 5 ({severityLevel === 1 ? "Nhẹ" : severityLevel === 2 ? "Vừa" : severityLevel === 3 ? "Nặng" : severityLevel === 4 ? "Rất nặng" : "Cực đoan"})
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Clean Preview Frame */}
+                  <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-900 relative group aspect-4/3 flex flex-col justify-between p-2 shadow-inner">
+                    <img
+                      src={currentAttack.previewClean || "https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=600&auto=format&fit=crop&q=80"}
+                      alt="Clean sample"
+                      className="absolute inset-0 w-full h-full object-cover opacity-85"
+                    />
+                    <span className="z-10 bg-black/70 text-white text-[10px] font-semibold px-2 py-0.5 rounded w-max">
+                      Ảnh gốc (Clean)
+                    </span>
+                    {/* Simulated Clean Bbox */}
+                    <div className="z-10 absolute left-[20%] top-[35%] w-[45%] h-[40%] border-2 border-emerald-400 bg-emerald-500/10 rounded pointer-events-none">
+                      <span className="bg-emerald-600 text-white text-[8px] px-1 rounded absolute -top-4 left-0 font-mono">
+                        {isTask3D ? "Car 3D 0.94" : "car 0.95"}
                       </span>
                     </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      step="1"
-                      value={severityLevel}
-                      onChange={(e) => setSeverityLevel(parseInt(e.target.value))}
-                      className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600"
-                    />
-                    <div className="flex justify-between text-[10px] text-slate-500 mt-1 font-mono">
-                      <span>1 (Sương/Mưa nhẹ)</span>
-                      <span>3 (Trung bình)</span>
-                      <span>5 (Bão/Tuyết dày)</span>
-                    </div>
                   </div>
 
-                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-slate-700 font-medium">Mô phỏng chiều sâu quang học (Depth-Aware)</span>
-                      <input
-                        type="checkbox"
-                        checked={depthAware}
-                        onChange={(e) => setDepthAware(e.target.checked)}
-                        className="rounded text-teal-600"
-                      />
-                    </label>
-                    <p className="text-[10px] text-slate-500">
-                      Tự động tính ma trận Depth Map từ stereo/monocular camera để hạt sương/tuyết/mưa dày hơn ở các đối tượng ở xa.
-                    </p>
+                  {/* Attacked Preview Frame */}
+                  <div className="rounded-xl overflow-hidden border border-red-300 bg-slate-900 relative group aspect-4/3 flex flex-col justify-between p-2 shadow-inner">
+                    <img
+                      src={currentAttack.previewAttacked || "https://images.unsplash.com/photo-1517411032315-54ef2cb783bb?w=600&auto=format&fit=crop&q=80"}
+                      alt="Attacked sample"
+                      className={cn(
+                        "absolute inset-0 w-full h-full object-cover transition-all duration-300",
+                        severityLevel >= 4 ? "opacity-90 blur-[1px]" : "opacity-80"
+                      )}
+                    />
+                    <span className="z-10 bg-red-600 text-white text-[10px] font-semibold px-2 py-0.5 rounded w-max flex items-center gap-1">
+                      <ShieldAlert className="w-2.5 h-2.5" /> Sau tác động
+                    </span>
+                    {/* Simulated Missed / Degraded Bbox */}
+                    <div className="z-10 absolute left-[20%] top-[35%] w-[45%] h-[40%] border-2 border-dashed border-red-400 bg-red-500/20 rounded pointer-events-none">
+                      <span className="bg-red-600 text-white text-[8px] px-1 rounded absolute -top-4 left-0 font-mono">
+                        {isTask3D ? "Car 3D 0.42 (Lệch)" : "car 0.38 (Lệch)"}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              ) : (
-                /* Adversarial Perturbation Controls */
-                <div className="space-y-3">
-                  {/* Strength slider */}
-                  <div>
-                    <div className="flex justify-between font-medium mb-1">
-                      <span className="text-slate-700">Mức độ tấn công (Strength)</span>
-                      <span className="font-bold text-blue-600">{strength.toFixed(2)}</span>
+              </div>
+
+              {/* Severity Slider (1 to 5) */}
+              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/80 space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-800">
+                    Mức độ nghiêm trọng (Severity Ladder):
+                  </span>
+                  <span className="font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                    Cấp {severityLevel} / 5
+                  </span>
+                </div>
+
+                <input
+                  type="range"
+                  min="1"
+                  max="5"
+                  step="1"
+                  value={severityLevel}
+                  onChange={(e) => setSeverityLevel(Number(e.target.value))}
+                  className="w-full accent-blue-600 h-2 bg-slate-200 rounded-lg cursor-pointer"
+                />
+
+                <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                  <span>1 (Rất nhẹ)</span>
+                  <span>2 (Nhẹ)</span>
+                  <span>3 (Vừa)</span>
+                  <span>4 (Mạnh)</span>
+                  <span>5 (Khắc nghiệt)</span>
+                </div>
+              </div>
+
+              {/* OK / Add to Recipe Button */}
+              <Button
+                variant="primary"
+                onClick={handleAddCurrentAttackToQueue}
+                icon={Check}
+                className="w-full justify-center py-2.5 shadow-sm text-xs font-bold"
+              >
+                Xác nhận: Thêm vào Tóm tắt cấu hình tác động (OK)
+              </Button>
+            </div>
+          </Card>
+        </div>
+
+        {/* RIGHT COLUMN: Attack Recipe Summary (3 Columns) */}
+        <div className="xl:col-span-3 space-y-4">
+          <Card
+            title={attackMode === "combined" ? "3. Chuỗi kết hợp tác động (Recipe)" : "3. Tác động riêng lẻ (Individual)"}
+            subtitle={`${attackQueue.length} đòn đối kháng đã nạp`}
+          >
+            {/* Mode Switcher */}
+            <div className="p-1 rounded-xl bg-slate-100 border border-slate-200 grid grid-cols-2 gap-1 mb-3">
+              <button
+                type="button"
+                data-testid="mode-combined-btn"
+                onClick={() => setAttackMode("combined")}
+                className={cn(
+                  "flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all",
+                  attackMode === "combined"
+                    ? "bg-white text-blue-700 shadow-sm border border-slate-200"
+                    : "text-slate-600 hover:text-slate-900",
+                )}
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                <span>Chuỗi kết hợp</span>
+              </button>
+              <button
+                type="button"
+                data-testid="mode-individual-btn"
+                onClick={() => setAttackMode("individual")}
+                className={cn(
+                  "flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all",
+                  attackMode === "individual"
+                    ? "bg-white text-blue-700 shadow-sm border border-slate-200"
+                    : "text-slate-600 hover:text-slate-900",
+                )}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Tách riêng lẻ</span>
+              </button>
+            </div>
+
+            {/* Mode Explanation Banner */}
+            <div className={cn(
+              "p-2.5 rounded-lg text-[11px] leading-relaxed border mb-3 flex items-start gap-2",
+              attackMode === "combined"
+                ? "bg-blue-50/70 border-blue-200 text-blue-800"
+                : "bg-amber-50/70 border-amber-200 text-amber-800",
+            )}>
+              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <div>
+                {attackMode === "combined" ? (
+                  <span>
+                    <strong>Chế độ kết hợp (Pipeline):</strong> {attackQueue.length} đòn tấn công sẽ được <strong>chồng liên tiếp lên cùng 1 ảnh</strong>.
+                  </span>
+                ) : (
+                  <span>
+                    <strong>Chế độ riêng lẻ (Matrix):</strong> Từng đòn tấn công sẽ được chạy độc lập trên <strong>từng ảnh riêng biệt</strong>.
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              {attackQueue.map((item, idx) => (
+                <div key={`${item.id}-${idx}`}>
+                  <div
+                    className={cn(
+                      "p-3 rounded-lg border flex items-start justify-between gap-2 transition-all",
+                      attackMode === "combined"
+                        ? "border-blue-200 bg-blue-50/30"
+                        : "border-slate-200 bg-slate-50/60",
+                    )}
+                  >
+                    <div>
+                      <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className={cn(
+                          "w-4 h-4 rounded-full text-white text-[10px] flex items-center justify-center font-mono",
+                          attackMode === "combined" ? "bg-blue-600" : "bg-slate-700",
+                        )}>
+                          {idx + 1}
+                        </span>
+                        <span>{item.name}</span>
+                        {attackMode === "combined" ? (
+                          <span className="text-[9px] font-semibold text-blue-600 bg-blue-100 px-1.5 py-0.2 rounded">Bước {idx + 1}</span>
+                        ) : (
+                          <span className="text-[9px] font-semibold text-slate-600 bg-slate-200 px-1.5 py-0.2 rounded">Độc lập</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-1">
+                        Mức độ: <strong>Cấp {item.severity}</strong> · Chuẩn: <code>{item.norm}</code>
+                      </div>
                     </div>
-                    <input
-                      type="range"
-                      min="0.0"
-                      max="1.0"
-                      step="0.05"
-                      value={strength}
-                      onChange={(e) => setStrength(parseFloat(e.target.value))}
-                      className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                    />
+
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveQueueItem(item.id)}
+                      disabled={attackQueue.length <= 1}
+                      className="text-slate-400 hover:text-red-600 disabled:opacity-30 p-1"
+                      title="Xóa đòn này"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
 
-                  {/* Epsilon slider */}
-                  <div>
-                    <div className="flex justify-between font-medium mb-1">
-                      <span className="text-slate-700">Ngưỡng nhiễu Epsilon (ε)</span>
-                      <span className="font-bold font-mono text-red-600">{epsilonNum}/255 ({ (epsilonNum/255).toFixed(4) })</span>
+                  {attackMode === "combined" && idx < attackQueue.length - 1 && (
+                    <div className="flex justify-center my-1 text-blue-500 font-bold text-[10px] tracking-wide">
+                      ↓ Chồng tiếp đòn tiếp theo
                     </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="16"
-                      step="1"
-                      value={epsilonNum}
-                      onChange={(e) => setEpsilonNum(parseInt(e.target.value))}
-                      className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-red-600"
-                    />
-                  </div>
+                  )}
+                </div>
+              ))}
+            </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-slate-500 font-medium block mb-1">Bước nhảy (Alpha)</label>
-                      <input
-                        type="text"
-                        value={stepSize}
-                        onChange={(e) => setStepSize(e.target.value)}
-                        className="w-full px-2.5 py-1.5 rounded border border-slate-300 font-mono text-slate-800"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-500 font-medium block mb-1">Số vòng lặp (Iters)</label>
-                      <input
-                        type="number"
-                        value={iterations}
-                        onChange={(e) => setIterations(parseInt(e.target.value) || 1)}
-                        className="w-full px-2.5 py-1.5 rounded border border-slate-300 font-mono text-slate-800"
-                      />
-                    </div>
-                  </div>
+            {/* Actions */}
+            <div className="mt-5 space-y-2 pt-3 border-t border-slate-100">
+              <Button
+                variant="primary"
+                onClick={handleStartExecution}
+                disabled={isExecuting || attackQueue.length === 0}
+                icon={isExecuting ? Sparkles : Play}
+                className="w-full justify-center py-2.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 shadow-sm"
+              >
+                {isExecuting ? "Đang chạy suy luận đối kháng..." : "Bắt đầu chạy suy luận"}
+              </Button>
+              {executionError && (
+                <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] leading-relaxed text-red-700">
+                  {executionError}
                 </div>
               )}
 
-              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={randomInit}
-                    onChange={(e) => setRandomInit(e.target.checked)}
-                    className="rounded text-blue-600"
-                  />
-                  <span className="text-slate-700 font-medium">Khởi tạo ngẫu nhiên (Random Init)</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={clipImage}
-                    onChange={(e) => setClipImage(e.target.checked)}
-                    className="rounded text-blue-600"
-                  />
-                  <span className="text-slate-700 font-medium">Cắt ngưỡng ảnh [0, 1]</span>
-                </label>
-              </div>
+              <Link href="/experiments/new" className="block">
+                <Button variant="secondary" size="sm" icon={ArrowLeft} className="w-full justify-center text-xs">
+                  Quay lại Cấu hình bài toán
+                </Button>
+              </Link>
             </div>
-          </Card>
-
-          {/* Section 3: Ràng buộc & Cài đặt Patch */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card title="3. Ràng buộc vùng">
-              <div className="space-y-2 text-xs">
-                <div>
-                  <label className="text-slate-500 font-medium block mb-1">Phạm vi áp dụng</label>
-                  <select
-                    value={scope}
-                    onChange={(e) => setScope(e.target.value)}
-                    className="w-full p-1.5 rounded border border-slate-300 bg-white"
-                  >
-                    <option value="full">Toàn bộ ảnh (Full scene)</option>
-                    <option value="roi">Vùng ROI xe cộ / người đi bộ</option>
-                  </select>
-                </div>
-              </div>
-            </Card>
-
-            <Card title="4. Physical Patch (Nếu có)">
-              <div className="space-y-2 text-xs">
-                <div>
-                  <label className="text-slate-500 font-medium block mb-1">Kích thước Patch</label>
-                  <select
-                    value={patchSize}
-                    onChange={(e) => setPatchSize(e.target.value)}
-                    className="w-full p-1.5 rounded border border-slate-300 bg-white"
-                  >
-                    <option value="64 × 64">64 × 64 px (Chuẩn)</option>
-                    <option value="128 × 128">128 × 128 px (Lớn)</option>
-                  </select>
-                </div>
-              </div>
-            </Card>
-          </div>
-        </div>
-
-        {/* RIGHT: Attack Summary, Queue & Live Preview (4 Columns) */}
-        <div className="xl:col-span-4 space-y-4 sticky top-[74px]">
-          {/* Attack Summary */}
-          <Card title="Tóm tắt cấu hình tác động">
-            <div className="space-y-1.5 text-xs divide-y divide-slate-100 font-medium mb-3">
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Thuật toán / Nhiễu</span>
-                <span className="font-bold text-blue-600">{currentAttack.name}</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Phân loại</span>
-                <span className="text-slate-800">{isWeatherAttack ? "Thời tiết tự nhiên" : "Đối kháng nhân tạo"}</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Mức độ / Cường độ</span>
-                <span className="font-mono text-red-600 font-bold">
-                  {isWeatherAttack ? `Severity ${severityLevel} / 5` : `L∞ (ε = ${epsilonNum}/255)`}
-                </span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Vùng tác động</span>
-                <span className="text-slate-800">{scope === "full" ? "Toàn bộ khung hình" : "Vùng ROI"}</span>
-              </div>
-            </div>
-
-            {/* Attack Queue */}
-            <div className="mb-3">
-              <div className="text-[11px] font-bold text-slate-500 mb-1.5">
-                Thứ tự chuỗi tác động (Queue)
-              </div>
-              <div className="space-y-1.5">
-                {attackQueue.map((item, idx) => (
-                  <div
-                    key={item.id}
-                    className="p-2 rounded bg-slate-50 border border-slate-200 flex items-center justify-between text-xs font-mono"
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <GripVertical className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                      <span className="font-bold text-blue-600 truncate">{idx + 1}. {item.name}</span>
-                    </div>
-                    {attackQueue.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveQueue(item.id)}
-                        className="text-red-500 hover:text-red-700 ml-2"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Live Perturbation Preview */}
-            <div className="mb-4">
-              <div className="text-[11px] font-bold text-slate-500 mb-1.5">
-                Xem trước tác động (Live Preview)
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="h-24 rounded bg-slate-200 border border-slate-300 flex flex-col items-center justify-center text-slate-600 text-[10px] font-medium text-center p-1">
-                  <span>Ảnh KITTI gốc</span>
-                  <span className="text-[9px] text-slate-400 font-mono">1242 × 375</span>
-                </div>
-                <div className="h-24 rounded bg-slate-300 border border-blue-400 flex flex-col items-center justify-center text-blue-900 text-[10px] font-medium text-center p-1 relative overflow-hidden bg-gradient-to-b from-slate-200 to-slate-400">
-                  <span>{currentAttack.name}</span>
-                  <span className="text-[9px] text-blue-700 font-bold">
-                    {isWeatherAttack ? `Cấp độ ${severityLevel}` : `ε = ${epsilonNum}/255`}
-                  </span>
-                  <span className="absolute bottom-1 right-1 px-1 rounded bg-blue-600 text-white text-[8px] font-bold">
-                    SIMULATED
-                  </span>
-                </div>
-              </div>
-              <div className="mt-1.5 text-[10px] text-emerald-600 font-medium">
-                ✓ Sẵn sàng suy luận đánh giá trên mô hình đã cấu hình
-              </div>
-            </div>
-
-            {/* CTA Button */}
-            <Button
-              variant="primary"
-              size="lg"
-              className="w-full text-sm font-bold bg-blue-600 hover:bg-blue-700 py-3 shadow-md"
-              icon={isExecuting ? RefreshCw : Play}
-              disabled={isExecuting}
-              onClick={handleStartAttack}
-            >
-              {isExecuting ? "Đang chạy suy luận & tác động..." : "▶ Bắt đầu tấn công / Tác động"}
-            </Button>
           </Card>
         </div>
       </div>
+
+      {/* LIVE INFERENCE PROGRESS MODAL */}
+      {isExecuting && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-5 shadow-2xl border border-slate-200 animate-scale-in">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center animate-spin">
+                <RefreshCw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Đang thực thi suy luận đối kháng</h3>
+                <p className="text-xs text-slate-500 font-mono">Mô hình: {expContext.selectedModelName}</p>
+              </div>
+            </div>
+
+            {/* Step Progress Checklist */}
+            <div className="space-y-2.5 text-xs border border-slate-100 p-3 rounded-xl bg-slate-50">
+              <div className={cn("flex items-center gap-2", executionStep >= 1 ? "text-emerald-700 font-semibold" : "text-slate-400")}>
+                {executionStep >= 1 ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <div className="w-4 h-4 rounded-full border border-slate-300" />}
+                <span>1. Nạp checkpoint & cấu hình dữ liệu {expContext.selectedDatasetName}...</span>
+              </div>
+              <div className={cn("flex items-center gap-2", executionStep >= 2 ? "text-emerald-700 font-semibold" : "text-slate-400")}>
+                {executionStep >= 2 ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <div className="w-4 h-4 rounded-full border border-slate-300" />}
+                <span>2. Sinh nhiễu đối kháng ({attackQueue.map((a) => a.name).join(", ")})...</span>
+              </div>
+              <div className={cn("flex items-center gap-2", executionStep >= 3 ? "text-emerald-700 font-semibold" : "text-slate-400")}>
+                {executionStep >= 3 ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <div className="w-4 h-4 rounded-full border border-slate-300" />}
+                <span>3. Chạy suy luận song song Clean vs Attacked Model Output...</span>
+              </div>
+              <div className={cn("flex items-center gap-2", executionStep >= 4 ? "text-emerald-700 font-semibold" : "text-slate-400")}>
+                {executionStep >= 4 ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <div className="w-4 h-4 rounded-full border border-slate-300" />}
+                <span>4. Tính toán độ lệch Bounding Box, IoU & Confidence Drop...</span>
+              </div>
+              <div className={cn("flex items-center gap-2", executionStep >= 5 ? "text-emerald-700 font-bold" : "text-slate-400")}>
+                {executionStep >= 5 ? <Sparkles className="w-4 h-4 text-emerald-600" /> : <div className="w-4 h-4 rounded-full border border-slate-300" />}
+                <span>5. Hoàn thành! Đang chuẩn bị màn hình kết quả trực quan...</span>
+              </div>
+            </div>
+
+            <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-blue-600 h-2 transition-all duration-300"
+                style={{ width: `${(executionStep / 5) * 100}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

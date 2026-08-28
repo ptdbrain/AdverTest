@@ -38,9 +38,9 @@ const FALLBACK_ATTACKS = [
   { name: "fgsm", threat_model: "white_box", attack_type: "gradient", scenario_kind: "digital", available: true, version: "1.0.0" },
   { name: "pgd", threat_model: "white_box", attack_type: "gradient", scenario_kind: "digital", available: true, version: "1.0.0" },
   { name: "mi_fgsm", threat_model: "white_box", attack_type: "gradient", scenario_kind: "digital", available: true, version: "1.0.0" },
-  { name: "cw_l2", threat_model: "white_box", attack_type: "optimization", scenario_kind: "digital", available: true, version: "1.0.0" },
+  { name: "cw_l2", threat_model: "white_box", attack_type: "optimization", scenario_kind: "digital", available: true, version: "2.0.0" },
   { name: "tog", threat_model: "white_box", attack_type: "targeted", scenario_kind: "digital", available: true, version: "1.0.0" },
-  { name: "dpatch", threat_model: "white_box", attack_type: "patch", scenario_kind: "physical", available: true, version: "1.0.0" },
+  { name: "dpatch", threat_model: "white_box", attack_type: "patch", scenario_kind: "physical", available: true, version: "2.0.0" },
   { name: "depth_fog", threat_model: "gray_box", attack_type: "weather", scenario_kind: "physical", available: true, version: "1.0.0" },
   { name: "depth_rain", threat_model: "gray_box", attack_type: "weather", scenario_kind: "physical", available: true, version: "1.0.0" },
   { name: "object_occlusion", threat_model: "gray_box", attack_type: "physical", scenario_kind: "physical", available: true, version: "1.0.0" },
@@ -55,9 +55,10 @@ function pathToArtifactUri(pathValue) {
   if (!pathValue) return null;
   if (/^https?:\/\//i.test(pathValue)) return pathValue;
   if (typeof pathValue === "string") {
-    const dataIdx = pathValue.indexOf("/data/");
+    const normalized = pathValue.replace(/\\/g, "/");
+    const dataIdx = normalized.indexOf("/data/");
     if (dataIdx !== -1) {
-      return artifactUrl(pathValue.slice(dataIdx));
+      return artifactUrl(normalized.slice(dataIdx));
     }
   }
   return artifactUrl(pathValue);

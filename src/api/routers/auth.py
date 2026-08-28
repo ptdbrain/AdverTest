@@ -66,6 +66,7 @@ async def login_google_sso(
 
 
 @router.get("/google/config")
+@router.get("/google-config")
 async def get_google_auth_config() -> dict[str, Any]:
     """Retrieve public Google OAuth2 Client ID and SSO status."""
     client_id = os.getenv("GOOGLE_CLIENT_ID", "")

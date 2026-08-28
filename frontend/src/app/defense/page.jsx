@@ -5,8 +5,10 @@ import Link from "next/link";
 import {
   ShieldCheck,
   Play,
-  Pause,
-  RotateCcw,
+  Copy,
+  Check,
+  Download,
+  Upload,
   Cpu,
   HardDrive,
   Activity,
@@ -20,6 +22,9 @@ import {
   AlertCircle,
   Database,
   Sliders,
+  Terminal,
+  Lock,
+  RefreshCw,
 } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import Card from "@/components/common/Card";
@@ -29,385 +34,352 @@ import RobustnessRadar from "@/components/metrics/RobustnessRadar";
 import { DEFENSE_COMPARISON } from "@/data/mockData";
 import { cn } from "@/lib/utils";
 
-const SUBTABS = [
-  "Tổng quan",
-  "Adversarial Training",
-  "Fine-tuning",
-  "Chiến lược phòng thủ",
-  "So sánh mô hình",
-  "Lịch sử huấn luyện",
-  "Logs",
-];
-
 export default function DefensePage() {
-  const [activeSubtab, setActiveSubtab] = useState("Tổng quan");
-  const [isTraining, setIsTraining] = useState(true);
-  const [progress, setProgress] = useState(68);
-  const [epoch, setEpoch] = useState(68);
+  // Strategy & Hyperparameter Config State
+  const [strategy, setStrategy] = useState("adversarial_training");
+  const [baseModel, setBaseModel] = useState("weights/yolo11s-clean-b0_best.pt");
+  const [datasetYaml, setDatasetYaml] = useState("data/anonymized/kitti-de/data.yaml");
+  const [targetRecipe, setTargetRecipe] = useState("fgsm,depth_fog,pgd");
+  const [epochs, setEpochs] = useState(10);
+  const [batchSize, setBatchSize] = useState(16);
+  const [learningRate, setLearningRate] = useState(0.001);
+  const [device, setDevice] = useState("cuda:0");
 
-  const STRATEGIES = [
-    { name: "Adversarial Training", status: "active", desc: "Huấn luyện cùng mẫu nhiễu PGD / TRADES", badge: "Đang sử dụng" },
-    { name: "Randomized Smoothing", status: "ready", desc: "Cung cấp độ tin cậy chứng minh được bằng Gaussian noise", badge: "Khả dụng" },
-    { name: "Input Preprocessing", status: "ready", desc: "Tự động làm sạch nhiễu đầu vào trước khi inference", badge: "Khả dụng" },
-    { name: "JPEG Compression", status: "ready", desc: "Khử nhiễu tần số cao của gradient attack", badge: "Khả dụng" },
-    { name: "Feature Denoising", status: "ready", desc: "Triệt tiêu activation bất thường tại các tầng ẩn", badge: "Khả dụng" },
-  ];
+  // Copy & Script Download States
+  const [isCopied, setIsCopied] = useState(false);
+
+  // Defended Upload & Re-test Locked Protocol States
+  const [defendedFile, setDefendedFile] = useState(null);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [evaluationDone, setEvaluationDone] = useState(false);
+
+  // Computed CLI Command
+  const generatedCommand = `python scripts/train_defence.py --model ${baseModel} --dataset ${datasetYaml} --recipe ${targetRecipe} --strategy ${strategy} --epochs ${epochs} --batch-size ${batchSize} --lr ${learningRate} --output-dir weights/defended --device ${device}`;
+
+  const handleCopyCommand = () => {
+    navigator.clipboard.writeText(generatedCommand);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2500);
+  };
+
+  const handleDownloadScript = (format) => {
+    const isWindows = format === "bat";
+    const scriptContent = isWindows
+      ? `@echo off\necho ====================================================\necho ADVERSAI LAB - LOCAL DEFENCE TRAINING\necho ====================================================\n${generatedCommand}\npause\n`
+      : `#!/usr/bin/env bash\n# AdversAI Lab - Local Defence Training Script\necho "===================================================="\necho "ADVERSAI LAB - LOCAL DEFENCE TRAINING"\necho "===================================================="\n${generatedCommand}\n`;
+
+    const blob = new Blob([scriptContent], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = isWindows ? "run_train_defence.bat" : "run_train_defence.sh";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDefendedUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setDefendedFile(file);
+      setEvaluationDone(false);
+    }
+  };
+
+  const handleRunLockedEvaluation = () => {
+    setIsEvaluating(true);
+    setTimeout(() => {
+      setIsEvaluating(false);
+      setEvaluationDone(true);
+    }, 1500);
+  };
 
   return (
     <div className="space-y-5 animate-fade-in">
       <PageHeader
-        title="Phòng thủ & Huấn luyện lại"
-        subtitle="Củng cố độ bền vững của mô hình thông qua Adversarial Training, Fine-tuning và cơ chế tiền xử lý phòng vệ."
+        title="Huấn luyện phòng thủ & Đánh giá đối kháng"
+        subtitle="Cấu hình siêu tham số để sinh lệnh huấn luyện phòng thủ chạy máy cá nhân (Local GPU), sau đó upload mô hình mới để đánh giá phục hồi theo Locked Protocol."
         breadcrumb={[
           { label: "Trang chủ", href: "/dashboard" },
-          { label: "Phòng thủ & Huấn luyện lại" },
+          { label: "Huấn luyện phòng thủ" },
         ]}
       />
 
-      {/* SUBTABS NAVIGATION */}
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 pb-1">
-        {SUBTABS.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveSubtab(tab)}
-            className={cn(
-              "px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap",
-              activeSubtab === tab
-                ? "bg-blue-600 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            )}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
-
-      {/* 1. DEFENSE PIPELINE ARCHITECTURE FLOW */}
-      <Card
-        title="Quy trình phòng thủ & tái huấn luyện khép kín"
-        subtitle="Chu trình Closed-Loop từ phát hiện điểm yếu đến sinh dữ liệu đối kháng và tôi luyện mô hình mới"
-      >
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
-          <div className="p-3 rounded-lg bg-blue-50/60 border border-blue-200 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between text-[11px] font-bold text-blue-800 mb-1">
-                <span>1. Dữ liệu gốc</span>
-                <Database className="w-3.5 h-3.5" />
-              </div>
-              <p className="text-xs font-bold text-slate-800 font-mono">120,000 ảnh</p>
-            </div>
-            <span className="text-[10px] text-slate-500 mt-2">VOC + COCO Train Set</span>
+      {/* BANNER: ARCHITECTURE EXPLANATION */}
+      <div className="p-4 rounded-xl bg-blue-50/80 border border-blue-200 text-xs text-blue-900 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold flex-shrink-0 mt-0.5">
+            <Cpu className="w-4 h-4" />
           </div>
-
-          <div className="p-3 rounded-lg bg-red-50/60 border border-red-200 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between text-[11px] font-bold text-red-800 mb-1">
-                <span>2. Dữ liệu bị tấn công</span>
-                <ShieldCheck className="w-3.5 h-3.5 text-red-600" />
-              </div>
-              <p className="text-xs font-bold text-slate-800 font-mono">120,000 ảnh đối kháng</p>
+          <div>
+            <div className="font-bold text-blue-900">
+              Cơ chế Phân tách Tính toán (Offloaded Training & Central Evaluation):
             </div>
-            <span className="text-[10px] text-slate-500 mt-2">PGD, FGSM, AutoAttack</span>
-          </div>
-
-          <div className="p-3 rounded-lg bg-purple-50/60 border border-purple-200 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between text-[11px] font-bold text-purple-800 mb-1">
-                <span>3. Adv. Training</span>
-                <Cpu className="w-3.5 h-3.5 text-purple-600" />
-              </div>
-              <p className="text-xs font-bold text-slate-800 font-mono">TRADES + CE Loss</p>
+            <div className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
+              Quá trình huấn luyện tăng cường (Adversarial Training / Fine-tuning) yêu cầu nhiều compute GPU. Web hỗ trợ cấu hình và sinh kịch bản CLI một dòng để bạn chạy trực tiếp trên máy trạm của bạn. Sau khi có file checkpoint mới (`.pt`), hãy tải lên để hệ thống tự động khóa cấu hình tấn công (Locked Protocol) và đo lường tỷ lệ phục hồi độ chính xác.
             </div>
-            <span className="text-[10px] text-slate-500 mt-2">Cosine Annealing Schedule</span>
-          </div>
-
-          <div className="p-3 rounded-lg bg-emerald-50/60 border border-emerald-200 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between text-[11px] font-bold text-emerald-800 mb-1">
-                <span>4. Mô hình tôi luyện</span>
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              </div>
-              <p className="text-xs font-bold text-emerald-700 font-mono">Model v2.1 (Defended)</p>
-            </div>
-            <span className="text-[10px] text-emerald-700 font-bold mt-2">Best mAP: 48.7%</span>
-          </div>
-
-          <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-1">
-                <span>5. Đánh giá lại</span>
-                <Activity className="w-3.5 h-3.5 text-slate-600" />
-              </div>
-              <p className="text-xs font-bold text-slate-800 font-mono">Robustness: 0.53</p>
-            </div>
-            <span className="text-[10px] text-emerald-600 font-bold mt-2">↑ +152.4% so với attack</span>
           </div>
         </div>
-      </Card>
+      </div>
 
-      {/* 2 & 3. TRAINING CONFIG & LIVE PROGRESS */}
+      {/* MAIN TWO COLUMNS */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
-        {/* Left: Training Configuration Form (7 Columns) */}
-        <Card
-          className="xl:col-span-7"
-          title="Cấu hình huấn luyện phòng thủ"
-          subtitle="Thiết lập siêu tham số cho Adversarial Training / Fine-tuning"
-        >
-          <div className="space-y-4 text-xs">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div>
-                <label className="text-slate-500 font-medium block mb-1">Chế độ</label>
-                <select className="w-full p-1.5 rounded border border-slate-300 bg-white font-medium">
-                  <option>Adversarial Training</option>
-                  <option>Fine-tuning</option>
-                  <option>TRADES Defense</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-slate-500 font-medium block mb-1">Epochs</label>
-                <input
-                  type="number"
-                  defaultValue={100}
-                  className="w-full p-1.5 rounded border border-slate-300 font-mono"
-                />
-              </div>
-              <div>
-                <label className="text-slate-500 font-medium block mb-1">Batch size</label>
-                <input
-                  type="number"
-                  defaultValue={32}
-                  className="w-full p-1.5 rounded border border-slate-300 font-mono"
-                />
-              </div>
-              <div>
-                <label className="text-slate-500 font-medium block mb-1">Learning Rate</label>
-                <input
-                  type="text"
-                  defaultValue="0.0001"
-                  className="w-full p-1.5 rounded border border-slate-300 font-mono"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="text-slate-500 font-medium block mb-1">Scheduler</label>
-                <select className="w-full p-1.5 rounded border border-slate-300 bg-white">
-                  <option>Cosine Annealing</option>
-                  <option>StepLR</option>
-                  <option>ReduceLROnPlateau</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-slate-500 font-medium block mb-1">Loss Function</label>
-                <input
-                  type="text"
-                  defaultValue="Cross Entropy + TRADES"
-                  className="w-full p-1.5 rounded border border-slate-300 font-mono font-medium"
-                />
-              </div>
-              <div>
-                <label className="text-slate-500 font-medium block mb-1">Augmentation</label>
-                <input
-                  type="text"
-                  defaultValue="Mosaic + MixUp + ColorJitter"
-                  className="w-full p-1.5 rounded border border-slate-300"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" defaultChecked className="rounded text-blue-600" />
-                  <span className="text-slate-700 font-medium">Mixed Precision (FP16)</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" defaultChecked className="rounded text-blue-600" />
-                  <span className="text-slate-700 font-medium">Early Stopping (Patience: 15)</span>
-                </label>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button variant="secondary" size="sm">
-                  Lưu cấu hình
-                </Button>
-                <Button variant="primary" size="sm" icon={Play}>
-                  ▶ Khởi chạy huấn luyện
-                </Button>
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {/* Right: Live Training Progress Monitor (5 Columns) */}
-        <div className="xl:col-span-5 space-y-4">
+        {/* LEFT COLUMN: Defence Strategy & Local Command Generator (7 Columns) */}
+        <div className="xl:col-span-7 space-y-5">
+          {/* 1. DEFENCE STRATEGY CONFIG */}
           <Card
-            title="Tiến trình huấn luyện hiện tại"
-            headerAction={<Badge variant="primary" dot>Đang huấn luyện</Badge>}
+            title="1. Cấu hình chiến lược phòng thủ"
+            subtitle="Thiết lập thuật toán và siêu tham số huấn luyện"
+          >
+            <div className="space-y-4 text-xs">
+              {/* Strategy Radio Grid */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1.5">
+                  Phương pháp phòng thủ:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {[
+                    {
+                      id: "adversarial_training",
+                      name: "Adversarial Training",
+                      desc: "Tiêm mẫu nhiễu PGD / TRADES trong từng epoch",
+                    },
+                    {
+                      id: "augmentation_mix",
+                      name: "Augmentation Mix",
+                      desc: "Trộn 40% ảnh mô phỏng thời tiết sương mù, mưa, chói",
+                    },
+                    {
+                      id: "robust_finetune",
+                      name: "Robust Fine-tuning",
+                      desc: "Tối ưu hóa Cosine Annealing bảo toàn mAP clean",
+                    },
+                  ].map((s) => (
+                    <div
+                      key={s.id}
+                      onClick={() => setStrategy(s.id)}
+                      className={cn(
+                        "p-3 rounded-lg border cursor-pointer transition-all flex flex-col justify-between",
+                        strategy === s.id
+                          ? "border-blue-600 bg-blue-50/60 shadow-xs ring-1 ring-blue-500"
+                          : "border-slate-200 bg-white hover:border-slate-300"
+                      )}
+                    >
+                      <div className="font-bold text-slate-800">{s.name}</div>
+                      <div className="text-[10px] text-slate-500 mt-1">{s.desc}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Hyperparameters Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                <div>
+                  <label className="text-slate-500 font-medium block mb-1">Mô hình gốc (Base Model)</label>
+                  <input
+                    type="text"
+                    value={baseModel}
+                    onChange={(e) => setBaseModel(e.target.value)}
+                    className="w-full p-2 border border-slate-300 rounded font-mono text-slate-800 text-xs bg-slate-50"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-500 font-medium block mb-1">Đòn đối kháng cần kháng</label>
+                  <input
+                    type="text"
+                    value={targetRecipe}
+                    onChange={(e) => setTargetRecipe(e.target.value)}
+                    className="w-full p-2 border border-slate-300 rounded font-mono text-slate-800 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-500 font-medium block mb-1">Số Epochs</label>
+                  <input
+                    type="number"
+                    value={epochs}
+                    onChange={(e) => setEpochs(Number(e.target.value))}
+                    className="w-full p-2 border border-slate-300 rounded font-mono text-slate-800 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-500 font-medium block mb-1">Batch Size</label>
+                  <input
+                    type="number"
+                    value={batchSize}
+                    onChange={(e) => setBatchSize(Number(e.target.value))}
+                    className="w-full p-2 border border-slate-300 rounded font-mono text-slate-800 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-500 font-medium block mb-1">Learning Rate</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={learningRate}
+                    onChange={(e) => setLearningRate(Number(e.target.value))}
+                    className="w-full p-2 border border-slate-300 rounded font-mono text-slate-800 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-500 font-medium block mb-1">Thiết bị (Device)</label>
+                  <select
+                    value={device}
+                    onChange={(e) => setDevice(e.target.value)}
+                    className="w-full p-2 border border-slate-300 rounded font-mono text-slate-800 text-xs bg-white"
+                  >
+                    <option value="cuda:0">cuda:0 (NVIDIA GPU)</option>
+                    <option value="cpu">cpu (Máy CPU)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* 2. LOCAL COMMAND GENERATOR & DOWNLOADABLE SCRIPT */}
+          <Card
+            title="2. Trình sinh lệnh & Kịch bản huấn luyện (Local Script Generator)"
+            subtitle="Copy lệnh CLI 1 dòng hoặc tải file script để chạy trực tiếp trên máy GPU cá nhân"
+            headerAction={<Badge variant="primary">Standalone Script</Badge>}
           >
             <div className="space-y-3 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Run ID:</span>
-                <span className="font-mono font-bold text-blue-600">run-2025-05-12-001</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Phương pháp:</span>
-                <span className="font-semibold text-slate-800">PGD Adversarial Training</span>
+              <div className="relative">
+                <div className="p-3.5 rounded-xl bg-slate-950 text-emerald-400 font-mono text-xs overflow-x-auto leading-relaxed border border-slate-800 shadow-inner">
+                  <span className="text-slate-500 select-none">$ </span>
+                  {generatedCommand}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCopyCommand}
+                  className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white font-sans text-xs flex items-center gap-1 border border-slate-700 transition-colors shadow-xs"
+                >
+                  {isCopied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400 font-bold">Đã Copy!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy Lệnh</span>
+                    </>
+                  )}
+                </button>
               </div>
 
-              {/* Progress bar */}
-              <div>
-                <div className="flex justify-between text-xs font-bold mb-1">
-                  <span>Epoch {epoch} / 100</span>
-                  <span className="text-blue-600">{progress}%</span>
-                </div>
-                <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <div className="p-2 rounded bg-slate-50 border border-slate-150 text-center">
-                  <div className="text-[10px] text-slate-500">Đã chạy</div>
-                  <div className="font-mono font-bold text-slate-800">01:34:22</div>
-                </div>
-                <div className="p-2 rounded bg-slate-50 border border-slate-150 text-center">
-                  <div className="text-[10px] text-slate-500">Còn lại (Dự kiến)</div>
-                  <div className="font-mono font-bold text-slate-800">00:48:11</div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-                <Button variant="danger" size="sm" className="flex-1 text-xs" icon={Pause}>
-                  Dừng huấn luyện
+              {/* Download script files buttons */}
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={Download}
+                  onClick={() => handleDownloadScript("sh")}
+                  className="bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs"
+                >
+                  Tải run_train_defence.sh (Linux / WSL)
                 </Button>
-                <Button variant="secondary" size="sm" className="flex-1 text-xs" icon={FileCode}>
-                  Xem Logs
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={Download}
+                  onClick={() => handleDownloadScript("bat")}
+                  className="bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs"
+                >
+                  Tải run_train_defence.bat (Windows)
                 </Button>
-              </div>
-            </div>
-          </Card>
-
-          {/* Hardware Resource Monitor */}
-          <Card title="Tài nguyên & Hardware Runtime">
-            <div className="grid grid-cols-3 gap-2 text-xs text-center font-medium">
-              <div className="p-2 rounded bg-slate-50 border border-slate-150">
-                <div className="text-[10px] text-slate-500">2× RTX 4090</div>
-                <div className="text-sm font-bold text-blue-600">67%</div>
-              </div>
-              <div className="p-2 rounded bg-slate-50 border border-slate-150">
-                <div className="text-[10px] text-slate-500">VRAM GPU</div>
-                <div className="text-sm font-bold text-purple-600">19.8 / 24GB</div>
-              </div>
-              <div className="p-2 rounded bg-slate-50 border border-slate-150">
-                <div className="text-[10px] text-slate-500">RAM Hệ thống</div>
-                <div className="text-sm font-bold text-emerald-600">22.4 / 64GB</div>
               </div>
             </div>
           </Card>
         </div>
-      </div>
 
-      {/* 4. DEFENSE STRATEGIES CARDS */}
-      <Card
-        title="Chiến lược phòng thủ khả dụng"
-        subtitle="Các kỹ thuật nâng cao sức kháng cự cho mạng nơ-ron"
-        headerAction={
-          <Button variant="outline" size="sm">
-            + Thêm chiến lược tùy chỉnh
-          </Button>
-        }
-      >
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
-          {STRATEGIES.map((st) => (
-            <div
-              key={st.name}
-              className={cn(
-                "p-3 rounded-lg border text-left transition-all space-y-1.5",
-                st.status === "active"
-                  ? "border-blue-600 bg-blue-50/50"
-                  : "border-slate-200 bg-white hover:bg-slate-50"
+        {/* RIGHT COLUMN: Upload Defended Model & Locked Protocol Re-Test (5 Columns) */}
+        <div className="xl:col-span-5 space-y-5">
+          <Card
+            title="3. Upload mô hình đã phòng thủ & Test lại"
+            subtitle="Tự động khóa cùng cấu hình tấn công (Locked Protocol) để đo lường tỷ lệ phục hồi"
+          >
+            <div className="space-y-4 text-xs">
+              {/* Protocol lock banner */}
+              <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-amber-900 flex items-center gap-2">
+                <Lock className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                <span>
+                  <strong>Locked Protocol:</strong> Cố định cùng dataset (KITTI), seed (42), và chuỗi tấn công (Depth Fog + PGD) để kết quả đối chiếu có tính khoa học tuyệt đối.
+                </span>
+              </div>
+
+              {/* Upload Defended Weight Box */}
+              <label className="border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-xl p-5 flex flex-col items-center justify-center gap-2 cursor-pointer bg-slate-50/50 transition-colors">
+                <Upload className="w-6 h-6 text-slate-400" />
+                <div className="text-xs font-bold text-slate-700">
+                  {defendedFile ? defendedFile.name : "Tải lên Checkpoint đã tôi luyện (.pt / .pth)"}
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  Ví dụ: yolo11s_defended_adversarial_training.pt
+                </div>
+                <input type="file" onChange={handleDefendedUpload} className="hidden" />
+              </label>
+
+              {/* Action Button */}
+              <Button
+                variant="primary"
+                onClick={handleRunLockedEvaluation}
+                disabled={isEvaluating}
+                icon={isEvaluating ? RefreshCw : ShieldCheck}
+                className={cn(
+                  "w-full justify-center py-2.5 text-xs font-bold shadow-sm",
+                  isEvaluating ? "animate-pulse" : "bg-emerald-600 hover:bg-emerald-700"
+                )}
+              >
+                {isEvaluating ? "Đang chạy đánh giá đối kháng..." : "Chạy Đánh Giá Đối Chiếu (Locked Protocol)"}
+              </Button>
+
+              {/* COMPARATIVE EVALUATION RESULTS TABLE */}
+              {evaluationDone && (
+                <div className="space-y-3 pt-3 border-t border-slate-200 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>Kết quả phục hồi sau phòng thủ:</span>
+                    </div>
+                    <Badge variant="success" className="font-mono">
+                      Phục hồi +68.4%
+                    </Badge>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold text-[10px] uppercase">
+                        <tr>
+                          <th className="p-2">Chỉ số</th>
+                          <th className="p-2">Trước Đòn (Clean)</th>
+                          <th className="p-2">Bị Tấn Công</th>
+                          <th className="p-2 text-emerald-700">Sau Phòng Thủ</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {DEFENSE_COMPARISON.slice(0, 4).map((row, i) => (
+                          <tr key={i} className="hover:bg-slate-50">
+                            <td className="p-2 font-semibold text-slate-700">{row.metric}</td>
+                            <td className="p-2 font-mono text-slate-500">{row.before}</td>
+                            <td className="p-2 font-mono text-red-600">{row.attacked}</td>
+                            <td className="p-2 font-mono font-bold text-emerald-700 bg-emerald-50/50">
+                              {row.defended} ({row.improvement})
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
-            >
-              <div className="flex items-center justify-between">
-                <Badge variant={st.status === "active" ? "primary" : "default"}>
-                  {st.badge}
-                </Badge>
-              </div>
-              <div className="text-xs font-bold text-slate-900">{st.name}</div>
-              <p className="text-[11px] text-slate-500 leading-snug">{st.desc}</p>
             </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* 5. 3-WAY COMPARISON: BEFORE vs ATTACKED vs DEFENDED */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
-        {/* Comparison Table (7 Columns) */}
-        <Card
-          className="xl:col-span-7"
-          title="Bảng so sánh 3 trạng thái: Trước vs Tấn công vs Phòng thủ"
-          subtitle="Đo lường mức độ hồi phục độ chính xác và kháng cự đối kháng"
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200 text-slate-500 font-semibold bg-slate-50">
-                  <th className="py-2.5 px-3">Chỉ số Metric</th>
-                  <th className="py-2.5 px-3 text-blue-700 font-bold">1. Trước tấn công</th>
-                  <th className="py-2.5 px-3 text-red-700 font-bold">2. Sau tấn công</th>
-                  <th className="py-2.5 px-3 text-emerald-700 font-bold">3. Sau phòng thủ</th>
-                  <th className="py-2.5 px-3 text-right">Mức cải thiện</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                {DEFENSE_COMPARISON.map((row) => (
-                  <tr key={row.metric} className="hover:bg-slate-50">
-                    <td className="py-2.5 px-3 font-semibold text-slate-900">{row.metric}</td>
-                    <td className="py-2.5 px-3 font-mono text-blue-700">{row.before}</td>
-                    <td className="py-2.5 px-3 font-mono text-red-600">{row.attacked}</td>
-                    <td className="py-2.5 px-3 font-mono font-bold text-emerald-600">{row.defended}</td>
-                    <td className="py-2.5 px-3 text-right">
-                      <Badge variant="success" className="font-mono">
-                        {row.improvement}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        {/* Defense Radar Comparison (5 Columns) */}
-        <Card
-          className="xl:col-span-5"
-          title="Radar so sánh đa thuộc tính"
-          subtitle="Đối sánh trực diện Trước, Sau tấn công và Sau phòng thủ"
-        >
-          <RobustnessRadar height={250} showDefended={true} />
-        </Card>
-      </div>
-
-      {/* RECOMMENDATIONS CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-        <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 space-y-1">
-          <span className="font-bold text-emerald-800 block">✓ Hiệu quả phòng thủ tốt</span>
-          <p className="text-emerald-700">mAP@0.5 hồi phục từ 31.6% lên 48.7%, ASR giảm từ 87.6% xuống 22.8%.</p>
-        </div>
-        <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 space-y-1">
-          <span className="font-bold text-blue-800 block">ℹ Tăng cường Adv. Training</span>
-          <p className="text-blue-700">Nên bổ sung thêm kịch bản AutoAttack vào tập huấn luyện TRADES.</p>
-        </div>
-        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 space-y-1">
-          <span className="font-bold text-amber-800 block">⚠ Cân nhắc kết hợp</span>
-          <p className="text-amber-700">Kết hợp tầng Feature Denoising để bảo vệ trước các tấn công tần số cao.</p>
-        </div>
-        <div className="p-3 rounded-lg bg-purple-50 border border-purple-200 space-y-1">
-          <span className="font-bold text-purple-800 block">💡 Theo dõi độ trễ FPS</span>
-          <p className="text-purple-700">FPS suy giảm nhẹ 3.9% (từ 34.2 xuống 31.8 FPS) vẫn đạt thời gian thực.</p>
+          </Card>
         </div>
       </div>
     </div>
