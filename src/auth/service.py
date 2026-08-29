@@ -9,10 +9,14 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import func, select
+
 from src.api.jobs import SqliteRunStore
 from src.auth.contracts import AuditLogOut, GoogleAuthIn, UserCreateIn, UserOut, UserStatus
 from src.auth.security import create_access_token, hash_password, verify_password
 from src.config import get_settings
+from src.persistence.database import PlatformDatabase
+from src.persistence.models import ArtifactRecord, AuditLogRecord, PlatformJobRecord, UserRecord
 
 logger = logging.getLogger(__name__)
 
@@ -303,3 +307,153 @@ class AuthService:
             created_at=record.get("created_at", ""),
             last_login_at=record.get("last_login_at"),
         )
+
+
+class PostgresAuthService:
+    """Production auth/audit implementation backed by Render PostgreSQL.
+
+    Local development keeps the lightweight SQLite implementation above, while
+    Render persists identities, quotas, and audit records in the control-plane
+    database mandated by the deployment specification.
+    """
+
+    def __init__(self, database: PlatformDatabase) -> None:
+        self._database = database
+
+    def register(self, payload: UserCreateIn, *, role: str | None = None) -> tuple[UserOut, str]:
+        with self._database.session() as db:
+            if db.scalar(select(UserRecord).where(UserRecord.email == str(payload.email))) is not None:
+                raise ValueError("An account with this email already exists.")
+            user_role = role or payload.role or ("ADMIN" if not db.scalar(select(UserRecord.id).limit(1)) else "ENGINEER")
+            record = UserRecord(
+                id=f"usr-{uuid.uuid4().hex[:12]}", email=str(payload.email), password_hash=hash_password(payload.password),
+                display_name=payload.display_name, role=user_role, status="ACTIVE",
+            )
+            db.add(record)
+            db.flush()
+            output = self._to_user_out(record)
+        self.record_audit(actor_user_id=output.id, action="USER_REGISTER", resource_type="user", resource_id=output.id,
+                          detail={"email": output.email, "role": output.role})
+        return output, create_access_token({"sub": output.id, "email": output.email, "role": output.role})
+
+    def authenticate(self, email: str, plain_password: str) -> tuple[UserOut, str]:
+        with self._database.session() as db:
+            record = db.scalar(select(UserRecord).where(UserRecord.email == email))
+            if record is None or record.status != "ACTIVE" or not verify_password(plain_password, record.password_hash):
+                raise ValueError("Invalid email or password.")
+            record.last_login_at = datetime.now(UTC)
+            db.flush()
+            output = self._to_user_out(record)
+        return output, create_access_token({"sub": output.id, "email": output.email, "role": output.role})
+
+    def authenticate_google(self, payload: GoogleAuthIn) -> tuple[UserOut, str]:
+        """Verify the credential using the same secure path as local auth service."""
+        if payload.credential:
+            try:
+                req = urllib.request.Request(
+                    f"https://oauth2.googleapis.com/tokeninfo?id_token={payload.credential}",
+                    headers={"User-Agent": "AdverTest-Auth/1.0"},
+                )
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    claims = json.loads(response.read().decode())
+                email, display_name = claims.get("email") or payload.email, claims.get("name") or payload.display_name
+            except Exception as exc:
+                raise ValueError(f"Google Token verification failed: {exc}. Refusing to trust unverified payload.") from exc
+        else:
+            email, display_name = payload.email, payload.display_name
+        if not email:
+            raise ValueError("Google authentication failed: Email address is required.")
+        with self._database.session() as db:
+            record = db.scalar(select(UserRecord).where(UserRecord.email == str(email)))
+            if record is None:
+                role = payload.role or ("ADMIN" if not db.scalar(select(UserRecord.id).limit(1)) else "ENGINEER")
+                record = UserRecord(id=f"usr-g-{uuid.uuid4().hex[:10]}", email=str(email), password_hash="",
+                                    display_name=display_name or str(email).split("@", 1)[0], role=role, status="ACTIVE")
+                db.add(record)
+            elif record.status != "ACTIVE":
+                raise ValueError(f"Account is {record.status.lower()}. Contact administrator.")
+            record.last_login_at = datetime.now(UTC)
+            db.flush()
+            output = self._to_user_out(record)
+        self.record_audit(actor_user_id=output.id, action="USER_LOGIN_GOOGLE", resource_type="user", resource_id=output.id,
+                          detail={"email": output.email})
+        return output, create_access_token({"sub": output.id, "email": output.email, "role": output.role})
+
+    def get_user_by_id(self, user_id: str) -> UserOut | None:
+        with self._database.session() as db:
+            record = db.get(UserRecord, user_id)
+            return self._to_user_out(record) if record else None
+
+    def list_users(self) -> list[UserOut]:
+        with self._database.session() as db:
+            return [self._to_user_out(record) for record in db.scalars(select(UserRecord).order_by(UserRecord.created_at.desc())).all()]
+
+    def update_user_status(self, admin_user_id: str, target_user_id: str, *, status: UserStatus | None = None,
+                           role: str | None = None, storage_quota_bytes: int | None = None,
+                           compute_quota_hours: float | None = None) -> UserOut:
+        with self._database.session() as db:
+            record = db.get(UserRecord, target_user_id)
+            if record is None:
+                raise ValueError(f"User {target_user_id} not found.")
+            if status:
+                record.status = status
+            if role:
+                record.role = role
+            if storage_quota_bytes is not None:
+                record.storage_quota_bytes = storage_quota_bytes
+            if compute_quota_hours is not None:
+                record.compute_quota_hours = compute_quota_hours
+            db.flush()
+            output = self._to_user_out(record)
+        self.record_audit(actor_user_id=admin_user_id, action="ADMIN_UPDATE_USER", resource_type="user", resource_id=target_user_id,
+                          detail={"status": status, "role": role, "storage_quota_bytes": storage_quota_bytes})
+        return output
+
+    def ensure_default_accounts(self) -> None:
+        with self._database.session() as db:
+            existing = {record.email for record in db.scalars(select(UserRecord)).all()}
+        if "admin@advertest.ai" not in existing:
+            settings = get_settings()
+            if settings.admin_default_password == "AdminPassword123!":
+                logger.warning("CRITICAL SECURITY WARNING: ADMIN_DEFAULT_PASSWORD must be set in production.")
+            self.register(UserCreateIn(email="admin@advertest.ai", password=settings.admin_default_password,
+                                       display_name="System Administrator", role="ADMIN"), role="ADMIN")
+
+    def record_audit(self, *, actor_user_id: str, action: str, resource_type: str, resource_id: str,
+                     detail: dict[str, Any] | None = None) -> AuditLogOut:
+        record = AuditLogRecord(id=f"aud-{uuid.uuid4().hex[:16]}", actor_user_id=actor_user_id, action=action,
+                                resource_type=resource_type, resource_id=resource_id,
+                                detail_json=json.dumps(detail or {}, sort_keys=True))
+        with self._database.session() as db:
+            db.add(record)
+            db.flush()
+            return AuditLogOut(id=record.id, actor_user_id=record.actor_user_id, action=record.action,
+                               resource_type=record.resource_type, resource_id=record.resource_id,
+                               detail_json=record.detail_json, timestamp=record.timestamp.isoformat())
+
+    def list_audit_logs(self, limit: int = 100) -> list[AuditLogOut]:
+        with self._database.session() as db:
+            records = db.scalars(select(AuditLogRecord).order_by(AuditLogRecord.timestamp.desc()).limit(limit)).all()
+            return [AuditLogOut(id=record.id, actor_user_id=record.actor_user_id, action=record.action,
+                                resource_type=record.resource_type, resource_id=record.resource_id,
+                                detail_json=record.detail_json, timestamp=record.timestamp.isoformat()) for record in records]
+
+    def get_system_quotas_summary(self) -> dict[str, Any]:
+        with self._database.session() as db:
+            total_users = db.scalar(select(func.count()).select_from(UserRecord)) or 0
+            active_users = db.scalar(select(func.count()).select_from(UserRecord).where(UserRecord.status == "ACTIVE")) or 0
+            storage_used = db.scalar(select(func.coalesce(func.sum(ArtifactRecord.size_bytes), 0))) or 0
+            total_runs = db.scalar(select(func.count()).select_from(PlatformJobRecord)) or 0
+            completed_jobs = db.scalar(select(func.count()).select_from(PlatformJobRecord).where(PlatformJobRecord.completed_at.is_not(None))) or 0
+        return {"total_users": total_users, "active_users": active_users, "total_storage_used_bytes": int(storage_used),
+                "total_storage_used_mb": round(int(storage_used) / (1024 * 1024), 2),
+                "total_runs_executed": total_runs, "total_compute_hours": 0.0,
+                "completed_jobs": completed_jobs}
+
+    @staticmethod
+    def _to_user_out(record: UserRecord) -> UserOut:
+        return UserOut(id=record.id, email=record.email, display_name=record.display_name, role=record.role,
+                       status=record.status, storage_quota_bytes=record.storage_quota_bytes,
+                       compute_quota_hours=record.compute_quota_hours,
+                       created_at=record.created_at.isoformat() if record.created_at else "",
+                       last_login_at=record.last_login_at.isoformat() if record.last_login_at else None)
