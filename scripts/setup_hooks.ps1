@@ -16,7 +16,7 @@ exit 0
 '@
 
 [System.IO.File]::WriteAllText(
-    (Join-Path (Get-Location) $HookFile),
+    (Join-Path (Get-Location).ProviderPath $HookFile),
     $HookBody,
     [System.Text.UTF8Encoding]::new($false)
 )
