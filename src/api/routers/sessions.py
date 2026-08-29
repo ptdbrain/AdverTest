@@ -94,9 +94,10 @@ def _ensure_workspace() -> None:
                 id=_SYSTEM_USER_ID, email="system@advertest.internal", password_hash="!disabled!",
                 display_name="AdverTest system workspace", role="ADMIN", status="ACTIVE",
             ))
-            # ``ProjectRecord`` does not declare an ORM relationship, so flush
-            # the identity before inserting its foreign-key owner explicitly.
-            db.flush()
+    # Commit the identity in its own transaction. This also makes the helper
+    # recover cleanly if an earlier project insert was rolled back by a FK
+    # violation during an interrupted deployment.
+    with database.session() as db:
         if db.get(ProjectRecord, _SYSTEM_PROJECT_ID) is None:
             db.add(ProjectRecord(
                 id=_SYSTEM_PROJECT_ID, name="AdverTest default project", owner_user_id=_SYSTEM_USER_ID,
