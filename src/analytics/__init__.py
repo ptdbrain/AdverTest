@@ -9,6 +9,7 @@ from src.analytics.comparison_analytics import (
 from src.analytics.run_analytics import (
     compute_run_attacks_breakdown,
     compute_run_classes_breakdown,
+    compute_run_distance_breakdown,
     compute_run_samples_breakdown,
     compute_run_severity_breakdown,
     compute_run_summary,
@@ -20,6 +21,7 @@ __all__ = [
     "compute_run_severity_breakdown",
     "compute_run_classes_breakdown",
     "compute_run_samples_breakdown",
+    "compute_run_distance_breakdown",
     "compute_comparison_summary",
     "compute_comparison_recovery",
     "compute_comparison_classes",

@@ -752,7 +752,7 @@ async def cancel_benchmark_run(run_id: str) -> RunJobOut:
         _store.request_cancel(run_id)
         if record["status"] == "QUEUED":
             _store.fail(run_id, "Cancelled by user", cancelled=True)
-    return _job_out(_store.get(run_id))
+    return _job_out(_store.get(run_id) or record)
 
 
 @router.websocket("/benchmark-runs/{run_id}/events/ws")
@@ -812,7 +812,7 @@ async def list_base_checkpoints(
         for version in _registered_model_versions()
         if version.task == task_id
         and version.model_family_id == model_family_id
-        and (version.runnable or version.checkpoint_role == "base")
+        and version.checkpoint_role == "base"
     ]
 
 
@@ -1677,6 +1677,8 @@ def _dataset_root() -> Path:
 
 def _resolve_run_config(config: RunConfig, *, allow_defence: bool = False) -> RunConfig:
     """Resolve a product ModelVersion server-side; browsers never receive weight paths."""
+    from src.attacks import ATTACK_CATALOG, load_attacks
+    from src.attacks.recipes import AttackRecipe
     checkpoint_id = config.checkpoint_id or config.model_version_id
     if not checkpoint_id:
         return config
@@ -1728,14 +1730,18 @@ def _resolve_run_config(config: RunConfig, *, allow_defence: bool = False) -> Ru
                 "dataset_task_id": dataset_cls.task_id,
             },
         )
-    for attack_name in config.attacks:
+    attack_names = list(config.attacks)
+    if config.recipe:
+        attack_names.extend(step.attack_name for step in config.recipe.steps)
+    for attack_name in attack_names:
         attack = load_attacks().get(attack_name)
-        allowed = attack.required_tasks or frozenset({"detection2d", "segmentation"})
-        if version.task not in allowed:
-            raise HTTPException(
-                status_code=422,
-                detail={"code": "ATTACK_NOT_COMPATIBLE", "attack": attack_name, "task_id": version.task},
-            )
+        if attack is not None:
+            allowed = attack.required_tasks or frozenset({"detection2d", "segmentation"})
+            if version.task not in allowed:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "ATTACK_NOT_COMPATIBLE", "attack": attack_name, "task_id": version.task},
+                )
     if not version.runnable or not version.checkpoint_path:
         raise HTTPException(
             status_code=409,
@@ -1759,6 +1765,31 @@ def _resolve_run_config(config: RunConfig, *, allow_defence: bool = False) -> Ru
         raise HTTPException(
             status_code=409, detail={"code": str(exc), "model_version_id": config.model_version_id}
         ) from exc
+
+    resolved_recipe = config.recipe
+    if resolved_recipe:
+        load_attacks()
+        resolved_steps = []
+        needs_update = False
+        for step in resolved_recipe.steps:
+            try:
+                item = ATTACK_CATALOG.get(step.attack_name)
+                expected_ver = item.implementation_version
+            except Exception:
+                expected_ver = step.implementation_version
+            if step.implementation_version != expected_ver:
+                step = step.model_copy(update={"implementation_version": expected_ver})
+                needs_update = True
+            resolved_steps.append(step)
+        if needs_update:
+            resolved_recipe = AttackRecipe(
+                name=resolved_recipe.name,
+                catalog_version=resolved_recipe.catalog_version,
+                steps=tuple(resolved_steps),
+                constraints=resolved_recipe.constraints,
+                metadata=resolved_recipe.metadata,
+            )
+
     return config.model_copy(
         update={
             "model": adapter_name,
@@ -1766,6 +1797,7 @@ def _resolve_run_config(config: RunConfig, *, allow_defence: bool = False) -> Ru
             "task_id": version.task,
             "model_family_id": version.model_family_id,
             "checkpoint_id": version.id,
+            "recipe": resolved_recipe,
         }
     )
 

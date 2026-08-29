@@ -16,9 +16,9 @@ from src.core.types import AttackGroup, CostClass, Sample
 
 class CwL2Params(AttackParams):
     radius_per_severity: tuple[float, ...] = (0.25, 0.5, 1.0, 2.0, 4.0)
-    iterations: int = Field(default=100, ge=1)
-    binary_search_steps: int = Field(default=5, ge=1)
-    learning_rate: float = Field(default=0.01, gt=0.0)
+    iterations: int = Field(default=10, ge=1)
+    binary_search_steps: int = Field(default=2, ge=1)
+    learning_rate: float = Field(default=0.03, gt=0.0)
     initial_const: float = Field(default=0.1, gt=0.0)
     confidence: float = Field(default=0.0, ge=0.0)
     adam_beta1: float = Field(default=0.9, ge=0.0, lt=1.0)

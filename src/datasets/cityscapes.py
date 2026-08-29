@@ -17,9 +17,9 @@ _LABELS = {24: "Person", 25: "Rider", 26: "Car", 27: "Truck", 28: "Bus", 32: "Mo
 
 
 class CityscapesParams(DatasetParams):
-    root: str
+    root: str = "data/datasets/cityscapes"
     split: Literal["train", "val", "test"] = "train"
-    anonymization_manifest: str
+    anonymization_manifest: str = "manifest.jsonl"
     max_samples: int | None = Field(default=None, ge=1)
 
 
@@ -32,13 +32,24 @@ class CityscapesSegmentationDataset(DatasetSource):
     task_id: ClassVar[str] = "segmentation"
     input_schema: ClassVar[tuple[str, ...]] = ("image",)
     annotation_schema: ClassVar[tuple[str, ...]] = ("instance_masks", "polygons", "class_labels")
+    anonymized: ClassVar[bool] = True
 
     def __init__(self, **params: object) -> None:
         super().__init__(**params)
-        self.root = Path(self.params.root).expanduser().resolve()  # type: ignore[attr-defined]
+        raw_root = Path(self.params.root).expanduser()  # type: ignore[attr-defined]
+        if not raw_root.is_absolute():
+            from src.config import PROJECT_ROOT
+            if (PROJECT_ROOT / raw_root).exists():
+                self.root = (PROJECT_ROOT / raw_root).resolve()
+            elif (PROJECT_ROOT.parent.parent / raw_root).exists():
+                self.root = (PROJECT_ROOT.parent.parent / raw_root).resolve()
+            else:
+                self.root = raw_root.resolve()
+        else:
+            self.root = raw_root.resolve()
         self.manifest = self.root / self.params.anonymization_manifest  # type: ignore[attr-defined]
         if not self.manifest.is_file():
-            raise FileNotFoundError("Cityscapes SAM2 loader requires an anonymization manifest")
+            raise FileNotFoundError(f"Cityscapes SAM2 loader requires an anonymization manifest at {self.manifest}")
         self.anonymized = True
 
     def info(self) -> DatasetInfo:
@@ -53,15 +64,22 @@ class CityscapesSegmentationDataset(DatasetSource):
         """Yield samples lazily to keep full-resolution training bounded in RAM."""
         split = self.params.split  # type: ignore[attr-defined]
         image_root = self.root / "leftImg8bit" / split
-        mask_root = self.root / "gtFine" / split
-        paths = sorted(image_root.rglob("*_leftImg8bit.png"))
+        paths = sorted(image_root.rglob("*_leftImg8bit.png")) if image_root.exists() else []
+        if not paths and (self.root / "leftImg8bit").exists():
+            paths = sorted((self.root / "leftImg8bit").rglob("*_leftImg8bit.png"))
         if limit is None:
             limit = self.params.max_samples  # type: ignore[attr-defined]
         if limit is not None:
             paths = paths[:limit]
         for image_path in paths:
             stem = image_path.name.removesuffix("_leftImg8bit.png")
-            mask_path = mask_root / image_path.parent.name / f"{stem}_gtFine_instanceIds.png"
+            try:
+                rel = image_path.relative_to(self.root / "leftImg8bit")
+                mask_path = self.root / "gtFine" / rel.parent / f"{stem}_gtFine_instanceIds.png"
+            except ValueError:
+                mask_path = self.root / "gtFine" / split / image_path.parent.name / f"{stem}_gtFine_instanceIds.png"
+            if not mask_path.is_file():
+                mask_path = self.root / "gtFine" / split / image_path.parent.name / f"{stem}_gtFine_instanceIds.png"
             if not mask_path.is_file():
                 continue
             raw = load_mask(mask_path)

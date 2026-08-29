@@ -25,6 +25,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
   const [logicalSourceId, setLogicalSourceId] = useState("folder-import");
   const [inputFormat, setInputFormat] = useState("advertest");
   const [maxSamples, setMaxSamples] = useState(50);
+  const [selectedPretrainedModel, setSelectedPretrainedModel] = useState("yolo11n");
 
   useEffect(() => () => previewUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
 
@@ -245,6 +246,7 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
             { id: "attacked", label: "🛡️ Attacked Dataset" },
             { id: "folder", label: "📂 Folder Path Import" },
             { id: "catalog", label: "📊 Preset Catalog" },
+            { id: "ultralytics", label: "⚡ Import Pretrained (YOLO)" },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -502,6 +504,74 @@ export default function UploadModal({ isOpen, onClose, onDatasetCreated, dataset
                 </button>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* TAB 4: Ultralytics Pretrained */}
+        {activeTab === "ultralytics" && (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "14px" }}>
+            <div className="text-xs text-secondary">
+              Directly download, SHA-256 hash, and sandbox-validate an official pretrained YOLO checkpoint from Ultralytics:
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+              {[
+                { id: "yolo11n", name: "YOLO11 Nano", size: "2.6M params", speed: "Ultra Fast" },
+                { id: "yolo11s", name: "YOLO11 Small", size: "9.4M params", speed: "Balanced" },
+                { id: "yolo11m", name: "YOLO11 Medium", size: "20.1M params", speed: "Accurate" },
+                { id: "yolo11l", name: "YOLO11 Large", size: "25.3M params", speed: "High Capacity" },
+                { id: "yolo11x", name: "YOLO11 XLarge", size: "56.9M params", speed: "Max Precision" },
+              ].map((m) => (
+                <div
+                  key={m.id}
+                  onClick={() => setSelectedPretrainedModel(m.id)}
+                  style={{
+                    padding: "12px",
+                    borderRadius: "var(--radius-md)",
+                    border: `1px solid ${selectedPretrainedModel === m.id ? "var(--primary)" : "var(--border-subtle)"}`,
+                    background: selectedPretrainedModel === m.id ? "rgba(99, 102, 241, 0.15)" : "rgba(15, 23, 42, 0.4)",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <div className="font-bold text-sm text-primary">{m.name}</div>
+                  <div className="text-xs text-tertiary mt-0.5">{m.size} • {m.speed}</div>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              className="run-button"
+              disabled={isUploading}
+              onClick={async () => {
+                setIsUploading(true);
+                setErrorMessage("");
+                setStatusMessage(`Importing and validating ${selectedPretrainedModel}...`);
+                try {
+                  const res = await fetch("/api/v1/checkpoints/import/ultralytics", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model_id: selectedPretrainedModel }),
+                  });
+                  if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Failed to import checkpoint");
+                  }
+                  const data = await res.json();
+                  setStatusMessage(`Checkpoint ${data.checkpoint_id || selectedPretrainedModel} registered and READY!`);
+                  if (onDatasetCreated) onDatasetCreated();
+                  setTimeout(() => onClose(), 1200);
+                } catch (err) {
+                  setErrorMessage(err.message);
+                } finally {
+                  setIsUploading(false);
+                }
+              }}
+              style={{ marginTop: "auto" }}
+            >
+              {isUploading ? "Importing Checkpoint..." : `Import ${selectedPretrainedModel} & Validate`}
+            </button>
           </div>
         )}
 

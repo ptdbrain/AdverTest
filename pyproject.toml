@@ -22,6 +22,8 @@ dependencies = [
     "tqdm>=4.66.5",
     "ultralytics",
     "uvicorn[standard]>=0.34.0",
+    "cryptography>=50.0.0",
+    "playwright>=1.62.0",
 ]
 
 [project.optional-dependencies]
@@ -82,3 +84,6 @@ explicit = true
 
 [tool.ruff]
 target-version = "py311"
+
+[tool.pyright]
+extraPaths = ["."]

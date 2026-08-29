@@ -9,18 +9,16 @@ from src.core.types import Box3D
 def _box3d_corners(box: Box3D) -> np.ndarray:
     """Compute 8 corners of a 3D box."""
     width, length, height = box.width, box.length, box.height
-    x_corners = [length / 2, length / 2, -length / 2, -length / 2] * 2
-    y_corners = [width / 2, -width / 2, -width / 2, width / 2] * 2
+    x_corners = [length / 2, length / 2, -length / 2, -length / 2, length / 2, length / 2, -length / 2, -length / 2]
+    y_corners = [width / 2, -width / 2, -width / 2, width / 2, width / 2, -width / 2, -width / 2, width / 2]
     z_corners = [0, 0, 0, 0, height, height, height, height]
     corners = np.vstack([x_corners, y_corners, z_corners])
 
-    rot_mat = np.array(
-        [
-            [np.cos(box.yaw), -np.sin(box.yaw), 0],
-            [np.sin(box.yaw), np.cos(box.yaw), 0],
-            [0, 0, 1],
-        ]
-    )
+    rot_mat = np.array([
+        [np.cos(box.yaw), -np.sin(box.yaw), 0],
+        [np.sin(box.yaw),  np.cos(box.yaw), 0],
+        [0, 0, 1],
+    ])
 
     corners = rot_mat @ corners
     corners[0, :] += box.x
@@ -44,38 +42,34 @@ def render_bev(
     Returns RGB uint8 image of shape (canvas_size[1], canvas_size[0], 3).
     Does NOT mutate input arrays.
     """
-    w, h = canvas_size
-    img = np.zeros((h, w, 3), dtype=np.uint8)
+    canvas_w, canvas_h = canvas_size
+    img = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
 
     if points.size > 0:
         valid_idx = (
             (points[:, 0] >= x_range[0]) & (points[:, 0] <= x_range[1]) &
             (points[:, 1] >= y_range[0]) & (points[:, 1] <= y_range[1])
         )
-        pts_valid = points[valid_idx]
+        valid_pts = points[valid_idx]
 
-        u = ((pts_valid[:, 1] - y_range[0]) / (y_range[1] - y_range[0]) * w).astype(np.int32)
-        v = (h - (pts_valid[:, 0] - x_range[0]) / (x_range[1] - x_range[0]) * h).astype(np.int32)
+        if len(valid_pts) > 0:
+            px = ((valid_pts[:, 0] - x_range[0]) / (x_range[1] - x_range[0]) * (canvas_w - 1)).astype(np.int32)
+            py = ((valid_pts[:, 1] - y_range[0]) / (y_range[1] - y_range[0]) * (canvas_h - 1)).astype(np.int32)
+            py = (canvas_h - 1) - py
+            img[py, px] = [200, 200, 200]
 
-        in_screen = (u >= 0) & (u < w) & (v >= 0) & (v < h)
-        u = u[in_screen]
-        v = v[in_screen]
+    def _draw_box(b: Box3D, color: tuple[int, int, int]):
+        corners = _box3d_corners(b)[:4, :2]
+        px = ((corners[:, 0] - x_range[0]) / (x_range[1] - x_range[0]) * (canvas_w - 1)).astype(np.int32)
+        py = ((corners[:, 1] - y_range[0]) / (y_range[1] - y_range[0]) * (canvas_h - 1)).astype(np.int32)
+        py = (canvas_h - 1) - py
+        poly = np.stack([px, py], axis=-1)
+        cv2.polylines(img, [poly], isClosed=True, color=color, thickness=2)
 
-        img[v, u] = (200, 200, 200)
+    for gt in ground_truth:
+        _draw_box(gt, (0, 255, 0))
 
-    def draw_boxes(boxes: Sequence[Box3D], color: tuple[int, int, int]):
-        for box in boxes:
-            corners = _box3d_corners(box)
-            bev_corners = corners[:4]
-            u = ((bev_corners[:, 1] - y_range[0]) / (y_range[1] - y_range[0]) * w).astype(np.int32)
-            v = (h - (bev_corners[:, 0] - x_range[0]) / (x_range[1] - x_range[0]) * h).astype(np.int32)
-            pts = np.vstack([u, v]).T.reshape((-1, 1, 2))
-            cv2.polylines(img, [pts], isClosed=True, color=color, thickness=2)
-
-    if ground_truth:
-        draw_boxes(ground_truth, (0, 255, 0))
-
-    if predictions:
-        draw_boxes(predictions, (0, 0, 255))
+    for pred in predictions:
+        _draw_box(pred, (0, 0, 255))
 
     return img

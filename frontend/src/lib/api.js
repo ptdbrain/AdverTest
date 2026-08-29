@@ -12,11 +12,30 @@ export function getApiBase() {
   return BUILD_TIME_API_BASE.replace(/\/$/, "");
 }
 
+export function artifactUrl(pathValue) {
+  if (!pathValue) return "";
+  if (/^https?:\/\//i.test(pathValue)) return pathValue;
+  const base = getApiBase();
+  const normalized = pathValue.startsWith("/") ? pathValue : `/${pathValue}`;
+  return `${base}${normalized}`;
+}
+
 export async function apiFetch(path, options = {}) {
   const url = `${getApiBase()}${path}`;
+  let authHeaders = {};
+  if (typeof window !== "undefined") {
+    try {
+      const token = localStorage.getItem("advertest_auth_token");
+      if (token) {
+        authHeaders["Authorization"] = `Bearer ${token}`;
+      }
+    } catch {}
+  }
+  const headers = { "Content-Type": "application/json", ...authHeaders, ...options.headers };
+
   const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options.headers },
     ...options,
+    headers,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -29,6 +48,32 @@ export async function apiFetch(path, options = {}) {
     throw new Error(detail);
   }
   return res.json();
+}
+
+export function loginUser(credentialsOrEmail, passwordArg) {
+  const payload =
+    typeof credentialsOrEmail === "object"
+      ? credentialsOrEmail
+      : { email: credentialsOrEmail, password: passwordArg };
+  return apiFetch("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function registerUser(payloadOrEmail, passwordArg, displayNameArg) {
+  const payload =
+    typeof payloadOrEmail === "object"
+      ? payloadOrEmail
+      : { email: payloadOrEmail, password: passwordArg, display_name: displayNameArg };
+  return apiFetch("/api/v1/auth/register", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getCurrentUser() {
+  return apiFetch("/api/v1/auth/me");
 }
 
 export function getCatalogAttacks(params = {}) {
@@ -154,6 +199,50 @@ export function approveRetrainingBacklog(backlogId) {
   return apiFetch(`/api/v1/retraining-backlogs/${backlogId}/approve`, {
     method: "POST",
   });
+}
+
+// ── Session Management ──────────────────────────────────
+export function listSessions() {
+  return apiFetch("/api/v1/sessions");
+}
+
+export function getSession(sessionId) {
+  return apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export function createOrUpdateSession(sessionData) {
+  return apiFetch("/api/v1/sessions", {
+    method: "POST",
+    body: JSON.stringify(sessionData),
+  });
+}
+
+export function addRunToSession(sessionId, runRecord) {
+  return apiFetch(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/runs`,
+    { method: "POST", body: JSON.stringify(runRecord) }
+  );
+}
+
+export function deleteRunFromSession(sessionId, runId) {
+  return apiFetch(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export function updateRunNote(sessionId, runId, note) {
+  return apiFetch(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/note`,
+    { method: "PATCH", body: JSON.stringify({ note }) }
+  );
+}
+
+export function endSession(sessionId) {
+  return apiFetch(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/end`,
+    { method: "POST" }
+  );
 }
 
 /* ---- Recipe API ---- */
@@ -372,3 +461,45 @@ export function startFolderDatasetImport({ root, name, logicalSourceId, inputFor
 }
 
 export function getFolderDatasetImportJob(jobId) { return apiFetch(`/api/v1/datasets/import-jobs/${encodeURIComponent(jobId)}`); }
+ 
+/* ---- Authentication & Google SSO ---- */
+export function loginGoogleSSO(payload) {
+  return apiFetch("/api/v1/auth/google", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getGoogleAuthConfig() {
+  return apiFetch("/api/v1/auth/google/config");
+}
+
+export function getAuthMe() {
+  return apiFetch("/api/v1/auth/me");
+}
+
+/* ---- Settings & W&B Integration ---- */
+export function getWandbSettings() {
+  return apiFetch("/api/v1/settings/wandb");
+}
+
+export function saveWandbSettings(payload) {
+  return apiFetch("/api/v1/settings/wandb", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function testWandbConnection(payload) {
+  return apiFetch("/api/v1/settings/wandb/test", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateUserProfile(payload) {
+  return apiFetch("/api/v1/settings/profile", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}

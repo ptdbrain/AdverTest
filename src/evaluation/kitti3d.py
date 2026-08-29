@@ -1,12 +1,13 @@
 """KITTI 3D object detection evaluator.
 
 Computes macro-averaged BEV AP50 over classes present in the ground truth,
-per-sample diagnostics, and failure case detection. Implements the
-``TaskEvaluator`` protocol consumed by the generic benchmark runner.
+distance-bucketed AP50 (near, medium, far), per-sample diagnostics, and failure case detection.
+Implements the ``TaskEvaluator`` protocol consumed by the generic benchmark runner.
 """
 
 from __future__ import annotations
 
+import math
 import uuid
 from collections import defaultdict
 from collections.abc import Sequence
@@ -16,6 +17,20 @@ from src.evaluation.base import EvaluationResult
 from src.evaluation.contracts import FailureCase, MetricEnvelope
 from src.evaluation.geometry3d import bev_iou, match_boxes3d
 from src.pipeline.protocol import BenchmarkProtocol
+
+
+def _box_distance(box: Box3D) -> float:
+    """Compute horizontal BEV Euclidean distance to box center from sensor origin."""
+    return float(math.sqrt(box.x**2 + box.y**2))
+
+
+def _distance_bucket(dist: float) -> str:
+    """Classify horizontal distance into near (<20m), medium (20-40m), or far (>=40m)."""
+    if dist < 20.0:
+        return "near"
+    if dist < 40.0:
+        return "medium"
+    return "far"
 
 
 class Kitti3DEvaluator:
@@ -41,8 +56,8 @@ class Kitti3DEvaluator:
             protocol: Locked benchmark protocol for identity tracking.
 
         Returns:
-            EvaluationResult with headline AP, supplemental metrics,
-            per-sample diagnostics, and failure cases.
+            EvaluationResult with headline AP, distance-bucketed AP,
+            supplemental metrics, per-sample diagnostics, and failure cases.
 
         Raises:
             ValueError: If predictions/samples lengths or IDs mismatch,
@@ -56,10 +71,27 @@ class Kitti3DEvaluator:
         per_sample_metrics: dict[str, tuple[MetricEnvelope, ...]] = {}
         failures: list[FailureCase] = []
 
-        # Per-class accumulators for AP calculation
+        # Per-class accumulators for global AP calculation
         class_tp_scores: dict[str, list[float]] = defaultdict(list)
         class_fp_scores: dict[str, list[float]] = defaultdict(list)
         class_gt_counts: dict[str, int] = defaultdict(int)
+
+        # Distance-bucketed accumulators
+        bucket_tp_scores: dict[str, dict[str, list[float]]] = {
+            "near": defaultdict(list),
+            "medium": defaultdict(list),
+            "far": defaultdict(list),
+        }
+        bucket_fp_scores: dict[str, dict[str, list[float]]] = {
+            "near": defaultdict(list),
+            "medium": defaultdict(list),
+            "far": defaultdict(list),
+        }
+        bucket_gt_counts: dict[str, dict[str, int]] = {
+            "near": defaultdict(int),
+            "medium": defaultdict(int),
+            "far": defaultdict(int),
+        }
 
         total_iou_sum = 0.0
         total_matched_count = 0
@@ -67,7 +99,7 @@ class Kitti3DEvaluator:
         total_fp_count = 0
         total_gt_count = 0
 
-        for prediction, sample in zip(predictions, samples):
+        for prediction, sample in zip(predictions, samples, strict=False):
             if prediction.sample_id != sample.sample_id:
                 raise ValueError(
                     f"sample ID mismatch: prediction={prediction.sample_id!r}, "
@@ -81,9 +113,11 @@ class Kitti3DEvaluator:
             ground_truths = sample.boxes3d or ()
             predicted_boxes = prediction.boxes3d or ()
 
-            # Accumulate per-class GT counts
+            # Accumulate per-class and distance-bucketed GT counts
             for gt_box in ground_truths:
                 class_gt_counts[gt_box.label] += 1
+                gt_bucket = _distance_bucket(_box_distance(gt_box))
+                bucket_gt_counts[gt_bucket][gt_box.label] += 1
 
             # Greedy BEV matching
             matches = match_boxes3d(
@@ -96,16 +130,23 @@ class Kitti3DEvaluator:
             sample_iou_sum = 0.0
             for match in matches:
                 matched_pred = predicted_boxes[match.prediction_index]
+                pred_dist = _box_distance(matched_pred)
+                pred_bucket = _distance_bucket(pred_dist)
+
                 class_tp_scores[matched_pred.label].append(matched_pred.score)
+                bucket_tp_scores[pred_bucket][matched_pred.label].append(matched_pred.score)
                 sample_iou_sum += match.iou
                 total_iou_sum += match.iou
                 total_matched_count += 1
 
-            # Unmatched predictions → false positives
+            # Unmatched predictions -> false positives
             for pred_idx, pred_box in enumerate(predicted_boxes):
                 if pred_idx in matched_pred_indices:
                     continue
+                pred_dist = _box_distance(pred_box)
+                pred_bucket = _distance_bucket(pred_dist)
                 class_fp_scores[pred_box.label].append(pred_box.score)
+                bucket_fp_scores[pred_bucket][pred_box.label].append(pred_box.score)
 
             mean_sample_iou = (
                 sample_iou_sum / len(matches) if matches else 0.0
@@ -141,6 +182,16 @@ class Kitti3DEvaluator:
         kitti_3d_ap = _macro_average_precision(
             class_tp_scores, class_fp_scores, class_gt_counts
         )
+        ap_near = _macro_average_precision(
+            bucket_tp_scores["near"], bucket_fp_scores["near"], bucket_gt_counts["near"]
+        )
+        ap_medium = _macro_average_precision(
+            bucket_tp_scores["medium"], bucket_fp_scores["medium"], bucket_gt_counts["medium"]
+        )
+        ap_far = _macro_average_precision(
+            bucket_tp_scores["far"], bucket_fp_scores["far"], bucket_gt_counts["far"]
+        )
+
         global_mean_bev_iou = (
             total_iou_sum / total_matched_count if total_matched_count > 0 else 0.0
         )
@@ -163,6 +214,30 @@ class Kitti3DEvaluator:
         )
 
         supplemental = (
+            MetricEnvelope(
+                name="kitti_3d_ap_near",
+                value=ap_near,
+                unit="ratio",
+                percent_value=round(ap_near * 100.0, 10),
+                version=self.metric_versions["kitti_3d_ap"],
+                higher_is_better=True,
+            ),
+            MetricEnvelope(
+                name="kitti_3d_ap_medium",
+                value=ap_medium,
+                unit="ratio",
+                percent_value=round(ap_medium * 100.0, 10),
+                version=self.metric_versions["kitti_3d_ap"],
+                higher_is_better=True,
+            ),
+            MetricEnvelope(
+                name="kitti_3d_ap_far",
+                value=ap_far,
+                unit="ratio",
+                percent_value=round(ap_far * 100.0, 10),
+                version=self.metric_versions["kitti_3d_ap"],
+                higher_is_better=True,
+            ),
             MetricEnvelope(
                 name="mean_bev_iou",
                 value=global_mean_bev_iou,
@@ -277,11 +352,12 @@ def _detect_failures(
     task: str,
     failures: list[FailureCase],
 ) -> None:
-    """Detect and append failure cases for one sample."""
+    """Detect and append failure cases for one sample with distance metadata."""
     # Missed ground truths
     for gt_idx, gt_box in enumerate(ground_truths):
         if gt_idx in matched_gt_indices:
             continue
+        dist = _box_distance(gt_box)
         failures.append(
             FailureCase(
                 case_id=f"fail-{uuid.uuid4().hex[:16]}",
@@ -295,6 +371,8 @@ def _detect_failures(
                     "task": task,
                     "failure_type": "MISSED_GT",
                     "label": gt_box.label,
+                    "distance": round(dist, 2),
+                    "distance_bucket": _distance_bucket(dist),
                 },
             )
         )
@@ -319,6 +397,7 @@ def _detect_failures(
         else:
             reason = "FALSE_POSITIVE"
 
+        dist = _box_distance(pred_box)
         failures.append(
             FailureCase(
                 case_id=f"fail-{uuid.uuid4().hex[:16]}",
@@ -332,6 +411,8 @@ def _detect_failures(
                     "task": task,
                     "failure_type": reason,
                     "label": pred_box.label,
+                    "distance": round(dist, 2),
+                    "distance_bucket": _distance_bucket(dist),
                 },
             )
         )
@@ -379,7 +460,7 @@ def _macro_average_precision(
         for recall_threshold_idx in range(11):
             recall_threshold = recall_threshold_idx / 10.0
             interpolated_precision = 0.0
-            for recall_val, precision_val in zip(recall_values, precision_values):
+            for recall_val, precision_val in zip(recall_values, precision_values, strict=False):
                 if recall_val >= recall_threshold:
                     interpolated_precision = max(interpolated_precision, precision_val)
             class_ap += interpolated_precision / 11.0

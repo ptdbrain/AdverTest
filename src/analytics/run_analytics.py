@@ -432,3 +432,94 @@ def _extract_classes_from_predictions(
         stats["lost_objects_count"] += max(0, clean_hits - attack_hits)
         stats["hallucinated_objects_count"] += max(0, attack_hits - clean_hits)
         stats["unaffected_objects_count"] += min(clean_hits, attack_hits)
+
+
+def compute_run_distance_breakdown(report: Mapping[str, Any]) -> dict[str, Any]:
+    """Compute 3D perception performance breakdown by distance buckets (near, medium, far)."""
+    clean_metrics = dict((report.get("metrics") or {}).get("clean") or {})
+    cells = list(report.get("cells", []))
+
+    clean_near = float(clean_metrics.get("kitti_3d_ap_near", clean_metrics.get("ap50", 0.0)))
+    clean_medium = float(clean_metrics.get("kitti_3d_ap_medium", clean_metrics.get("ap50", 0.0)))
+    clean_far = float(clean_metrics.get("kitti_3d_ap_far", clean_metrics.get("ap50", 0.0)))
+
+    # Bucket failures from worst_cases
+    worst_cases = list(report.get("worst_cases", []))
+    near_failures = sum(
+        1 for f in worst_cases if (f.get("metadata") or {}).get("distance_bucket") == "near"
+    )
+    medium_failures = sum(
+        1 for f in worst_cases if (f.get("metadata") or {}).get("distance_bucket") == "medium"
+    )
+    far_failures = sum(
+        1 for f in worst_cases if (f.get("metadata") or {}).get("distance_bucket") == "far"
+    )
+
+    # Aggregate attack performance across cells
+    attack_near_scores = []
+    attack_medium_scores = []
+    attack_far_scores = []
+
+    for cell in cells:
+        cell_metrics = cell.get("metrics") or {}
+        if "kitti_3d_ap_near" in cell_metrics:
+            attack_near_scores.append(float(cell_metrics["kitti_3d_ap_near"]))
+        if "kitti_3d_ap_medium" in cell_metrics:
+            attack_medium_scores.append(float(cell_metrics["kitti_3d_ap_medium"]))
+        if "kitti_3d_ap_far" in cell_metrics:
+            attack_far_scores.append(float(cell_metrics["kitti_3d_ap_far"]))
+
+    mean_near_ap = (
+        sum(attack_near_scores) / len(attack_near_scores)
+        if attack_near_scores
+        else clean_near
+    )
+    mean_medium_ap = (
+        sum(attack_medium_scores) / len(attack_medium_scores)
+        if attack_medium_scores
+        else clean_medium
+    )
+    mean_far_ap = (
+        sum(attack_far_scores) / len(attack_far_scores)
+        if attack_far_scores
+        else clean_far
+    )
+
+    deg_near = max(0.0, (clean_near - mean_near_ap) / clean_near) if clean_near > 0.0 else 0.0
+    deg_medium = max(0.0, (clean_medium - mean_medium_ap) / clean_medium) if clean_medium > 0.0 else 0.0
+    deg_far = max(0.0, (clean_far - mean_far_ap) / clean_far) if clean_far > 0.0 else 0.0
+
+    return {
+        "run_id": report.get("run_id", ""),
+        "task": report.get("task", "detection3d"),
+        "buckets": {
+            "near": {
+                "range_meters": "0-20m",
+                "clean_ap": round(clean_near, 4),
+                "attacked_ap": round(mean_near_ap, 4),
+                "degradation_percent": round(deg_near * 100.0, 2),
+                "failure_count": near_failures,
+            },
+            "medium": {
+                "range_meters": "20-40m",
+                "clean_ap": round(clean_medium, 4),
+                "attacked_ap": round(mean_medium_ap, 4),
+                "degradation_percent": round(deg_medium * 100.0, 2),
+                "failure_count": medium_failures,
+            },
+            "far": {
+                "range_meters": "40m+",
+                "clean_ap": round(clean_far, 4),
+                "attacked_ap": round(mean_far_ap, 4),
+                "degradation_percent": round(deg_far * 100.0, 2),
+                "failure_count": far_failures,
+            },
+        },
+        "most_vulnerable_distance": (
+            "far"
+            if deg_far >= max(deg_near, deg_medium)
+            else "medium"
+            if deg_medium >= deg_near
+            else "near"
+        ),
+    }
