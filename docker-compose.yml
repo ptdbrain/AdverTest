@@ -41,6 +41,11 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   backend:
     build:
@@ -52,16 +57,54 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     environment:
       APP_ENV: development
+      PLATFORM_DATABASE_URL: postgresql://advertest:advertest_password@postgres:5432/advertest_db
       DATABASE_URL: postgresql://advertest:advertest_password@postgres:5432/advertest_db
+      QUEUE_BACKEND: redis
       REDIS_URL: redis://redis:6379/0
-      S3_ENDPOINT_URL: http://minio:9000
-      S3_ACCESS_KEY: minioadmin
-      S3_SECRET_KEY: minioadminpassword
-      S3_BUCKET_NAME: advertest-artifacts
+      OBJECT_STORAGE_BACKEND: s3
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: advertest-artifacts
+      OBJECT_STORAGE_ACCESS_KEY: minioadmin
+      OBJECT_STORAGE_SECRET_KEY: minioadminpassword
+      OBJECT_STORAGE_REGION: auto
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: advertest-platform-worker
+    command: python -m src.platform_worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      APP_ENV: development
+      PLATFORM_DATABASE_URL: postgresql://advertest:advertest_password@postgres:5432/advertest_db
+      QUEUE_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+      OBJECT_STORAGE_BACKEND: s3
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: advertest-artifacts
+      OBJECT_STORAGE_ACCESS_KEY: minioadmin
+      OBJECT_STORAGE_SECRET_KEY: minioadminpassword
+      OBJECT_STORAGE_REGION: auto
 
   frontend:
     build:
@@ -69,7 +112,8 @@ services:
       dockerfile: Dockerfile
     container_name: advertest-frontend
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
     ports:

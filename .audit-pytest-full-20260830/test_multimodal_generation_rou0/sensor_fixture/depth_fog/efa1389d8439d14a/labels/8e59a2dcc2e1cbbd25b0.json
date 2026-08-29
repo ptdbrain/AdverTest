@@ -1,0 +1,28 @@
+{
+  "boxes": [
+    {
+      "label": "Car",
+      "score": 1.0,
+      "x1": 1.0,
+      "x2": 8.0,
+      "y1": 1.0,
+      "y2": 9.0
+    }
+  ],
+  "boxes3d": [
+    {
+      "height": 1.5,
+      "label": "Car",
+      "length": 4.0,
+      "native_label": null,
+      "score": 1.0,
+      "vx": 0.0,
+      "vy": 0.0,
+      "width": 2.0,
+      "x": 1.0,
+      "y": 2.0,
+      "yaw": 0.1,
+      "z": 3.0
+    }
+  ]
+}

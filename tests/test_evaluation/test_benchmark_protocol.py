@@ -161,10 +161,14 @@ class TestBenchmarkRunManifest:
             sample_hashes=("h1",),
         )
         m_b0 = BenchmarkRunManifest(
-            run_id="run-b0", protocol_id=proto.protocol_id, checkpoint_hash="hash_b0",
+            run_id="run-b0",
+            protocol_id=proto.protocol_id,
+            checkpoint_hash="hash_b0",
         )
         m_r1 = BenchmarkRunManifest(
-            run_id="run-r1", protocol_id=proto.protocol_id, checkpoint_hash="hash_r1",
+            run_id="run-r1",
+            protocol_id=proto.protocol_id,
+            checkpoint_hash="hash_r1",
         )
         # Same protocol, different checkpoints
         assert m_b0.protocol_id == m_r1.protocol_id

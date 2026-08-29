@@ -52,9 +52,7 @@ def test_failure_grouping_is_deterministic_and_semantically_keyed() -> None:
 
 
 def test_failure_grouping_preserves_training_permission() -> None:
-    clusters = FailureGrouper().group(
-        (_case("failure-a", severity=2, allowed=False),)
-    )
+    clusters = FailureGrouper().group((_case("failure-a", severity=2, allowed=False),))
 
     assert clusters[0].selection_allowed is False
     assert clusters[0].allowed_uses == ("benchmark",)

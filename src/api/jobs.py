@@ -70,6 +70,10 @@ class SqliteRunStore:
                     decision_note TEXT,
                     flagged_by TEXT NOT NULL DEFAULT 'system_auto',
                     resolved_by TEXT,
+                    risk_level TEXT DEFAULT NULL,
+                    risk_category TEXT DEFAULT NULL,
+                    affected_class TEXT DEFAULT NULL,
+                    distance_meters REAL DEFAULT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -83,6 +87,17 @@ class SqliteRunStore:
                 ON reviews(run_id, attack, severity, flagged_by);
                 """
             )
+            # Backward-compatible migration for existing databases
+            for column_def in (
+                "risk_level TEXT DEFAULT NULL",
+                "risk_category TEXT DEFAULT NULL",
+                "affected_class TEXT DEFAULT NULL",
+                "distance_meters REAL DEFAULT NULL",
+            ):
+                try:
+                    connection.execute(f"ALTER TABLE reviews ADD COLUMN {column_def}")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
 
     def put_record(self, record_type: str, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Persist immutable product configuration records alongside run jobs."""
@@ -278,57 +293,127 @@ class SqliteRunStore:
     # ---- Review CRUD ----
 
     def auto_flag_reviews(self, run_id: str, *, threshold: float = 30.0) -> list[str]:
-        """Create review items for cells exceeding the degradation threshold."""
+        """Create review items with risk classification for cells exceeding the threshold.
+
+        Uses the 5-tier risk classification system (CRITICAL → AUTO_PASS).
+        Cells classified as AUTO_PASS are silently recorded in audit log only.
+        """
         item = self.get(run_id)
         if item is None or item["report"] is None:
             return []
         report = item["report"]
         config = json.loads(
-            self._connection().execute(
-                "SELECT config_json FROM test_runs WHERE run_id=?", (run_id,)
-            ).fetchone()["config_json"]
+            self._connection()
+            .execute("SELECT config_json FROM test_runs WHERE run_id=?", (run_id,))
+            .fetchone()["config_json"]
         )
         created_ids: list[str] = []
         now = _now()
+
+        from src.evaluation.risk_rubric import classify_risk_level
+
         with self._lock, self._connection() as connection:
             for cell in report.get("cells", []):
                 degradation_percent = cell.get(
                     "degradation_percent",
                     float(cell.get("degradation_ratio", cell.get("degradation", 0.0))) * 100.0,
                 )
-                if degradation_percent >= threshold:
-                    existing = connection.execute(
-                        "SELECT review_id FROM reviews WHERE run_id=? AND attack=? AND severity=? AND flagged_by='system_auto'",
-                        (run_id, cell["attack"], cell["severity"]),
-                    ).fetchone()
-                    if existing is not None:
-                        continue
-                    review_id = f"REV-{uuid.uuid4().hex[:8]}"
-                    connection.execute(
-                        """INSERT OR IGNORE INTO reviews
-                           (review_id, run_id, attack, severity, dataset, model, degradation, status, flagged_by, created_at, updated_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', 'system_auto', ?, ?)""",
-                        (
-                            review_id, run_id, cell["attack"], cell["severity"],
-                            report.get("dataset", config.get("dataset", "")),
-                            report.get("model", config.get("model", "")),
-                            cell.get("degradation", 0), now, now,
-                        ),
-                    )
-                    created_ids.append(review_id)
+                # Extract contextual info from cell metrics for risk classification
+                cell_metrics = cell.get("metrics", {})
+                affected_class = cell_metrics.get("worst_class", "Car")
+                distance_val = cell_metrics.get("worst_distance_meters")
+                has_fn = cell_metrics.get("has_false_negative", False)
+                attack_group = cell.get("group", cell.get("category", "corruption"))
+
+                risk_level = classify_risk_level(
+                    degradation_percent=degradation_percent,
+                    affected_class=affected_class,
+                    distance_meters=distance_val,
+                    has_false_negative=has_fn,
+                    attack_group=attack_group,
+                    severity=cell.get("severity", 3),
+                )
+
+                # AUTO_PASS: skip creating review item — log as audit only
+                if risk_level == "AUTO_PASS" and degradation_percent < threshold:
+                    continue
+
+                existing = connection.execute(
+                    "SELECT review_id FROM reviews WHERE run_id=? AND attack=? AND severity=? AND flagged_by='system_auto'",
+                    (run_id, cell["attack"], cell["severity"]),
+                ).fetchone()
+                if existing is not None:
+                    continue
+
+                risk_category = f"{attack_group}_{affected_class.lower()}"
+                review_id = f"REV-{uuid.uuid4().hex[:8]}"
+                connection.execute(
+                    """INSERT OR IGNORE INTO reviews
+                       (review_id, run_id, attack, severity, dataset, model, degradation,
+                        status, flagged_by, risk_level, risk_category, affected_class, distance_meters,
+                        created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', 'system_auto', ?, ?, ?, ?, ?, ?)""",
+                    (
+                        review_id,
+                        run_id,
+                        cell["attack"],
+                        cell["severity"],
+                        report.get("dataset", config.get("dataset", "")),
+                        report.get("model", config.get("model", "")),
+                        cell.get("degradation", 0),
+                        risk_level,
+                        risk_category,
+                        affected_class,
+                        distance_val,
+                        now,
+                        now,
+                    ),
+                )
+                created_ids.append(review_id)
         return created_ids
 
-    def create_review(self, run_id: str, attack: str, severity: int, degradation: float,
-                      dataset: str, model: str, flagged_by: str, notes: str = "") -> str:
+    def create_review(
+        self,
+        run_id: str,
+        attack: str,
+        severity: int,
+        degradation: float,
+        dataset: str,
+        model: str,
+        flagged_by: str,
+        notes: str = "",
+    ) -> str:
         """Manually create a review item."""
         review_id = f"REV-{uuid.uuid4().hex[:8]}"
         now = _now()
+
+        from src.evaluation.risk_rubric import classify_risk_level
+
+        risk_level = classify_risk_level(
+            degradation_percent=degradation * 100.0 if degradation <= 1.0 else degradation,
+            affected_class="Car",
+            severity=severity,
+        )
+
         with self._lock, self._connection() as connection:
             connection.execute(
-                """INSERT INTO reviews
-                   (review_id, run_id, attack, severity, dataset, model, degradation, status, flagged_by, decision_note, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)""",
-                (review_id, run_id, attack, severity, dataset, model, degradation, flagged_by, notes, now, now),
+                """INSERT OR REPLACE INTO reviews
+                   (review_id, run_id, attack, severity, dataset, model, degradation, status, flagged_by, risk_level, decision_note, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?)""",
+                (
+                    review_id,
+                    run_id,
+                    attack,
+                    severity,
+                    dataset,
+                    model,
+                    degradation,
+                    flagged_by,
+                    risk_level,
+                    notes,
+                    now,
+                    now,
+                ),
             )
         return review_id
 
@@ -441,5 +526,10 @@ def _row_payload(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def _product_row(row: sqlite3.Row) -> dict[str, Any]:
-    return {"id": row["record_id"], "record_type": row["record_type"],
-            **json.loads(row["payload_json"]), "created_at": row["created_at"], "updated_at": row["updated_at"]}
+    return {
+        "id": row["record_id"],
+        "record_type": row["record_type"],
+        **json.loads(row["payload_json"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }

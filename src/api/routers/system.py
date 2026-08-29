@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from fastapi import APIRouter
 import torch
+from fastapi import APIRouter
 
 router = APIRouter(prefix="/system", tags=["System & Runtime"])
 
@@ -19,18 +19,18 @@ async def get_runtime_specs() -> dict[str, Any]:
     total_vram_gb = 0.0
     free_vram_gb = 0.0
     cuda_version = torch.version.cuda if has_cuda else None
-    
+
     if has_cuda:
         try:
             device_name = torch.cuda.get_device_name(0)
             free_bytes, total_bytes = torch.cuda.mem_get_info(0)
-            total_vram_gb = round(total_bytes / (1024 ** 3), 2)
-            free_vram_gb = round(free_bytes / (1024 ** 3), 2)
+            total_vram_gb = round(total_bytes / (1024**3), 2)
+            free_vram_gb = round(free_bytes / (1024**3), 2)
         except Exception:
             device_name = "NVIDIA CUDA Device"
 
     cpu_count = os.cpu_count() or 4
-    
+
     # Calculate recommended batch size based on available compute
     if has_cuda and total_vram_gb >= 16:
         recommended_batch_size = 32

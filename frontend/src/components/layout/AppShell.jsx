@@ -17,8 +17,8 @@ export default function AppShell({ children }) {
       {/* Main App Container that smoothly adapts padding */}
       <div
         className={cn(
-          "flex-1 flex flex-col transition-all duration-300 min-w-0",
-          isCollapsed ? "pl-[68px]" : "pl-[220px]"
+          "flex-1 flex flex-col transition-all duration-300 min-w-0 overflow-x-hidden",
+          isCollapsed ? "pl-0 md:pl-[68px]" : "pl-0 md:pl-[220px]"
         )}
       >
         {/* Top Navbar */}

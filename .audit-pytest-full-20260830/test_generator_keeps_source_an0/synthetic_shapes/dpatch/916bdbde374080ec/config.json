@@ -1,0 +1,23 @@
+{
+  "anonymization_manifest": null,
+  "attack_name": "dpatch",
+  "attack_params": {
+    "allow_builtin_patch": true,
+    "eot": false
+  },
+  "dataset_name": "synthetic_shapes",
+  "dataset_params": {
+    "n_samples": 1,
+    "seed": 999
+  },
+  "input_dir": null,
+  "input_format": "advertest",
+  "limit": null,
+  "output_dir": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_generator_keeps_source_an0",
+  "preview": false,
+  "seed": 20260730,
+  "severities": [
+    1
+  ],
+  "surrogate": null
+}

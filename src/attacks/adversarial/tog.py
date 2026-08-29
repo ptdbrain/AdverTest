@@ -33,9 +33,7 @@ class Tog(BaseAttack):
     needs_model: ClassVar[bool] = True
     needs_gradients: ClassVar[bool] = True
     required_annotations = frozenset({"boxes"})
-    required_capabilities = frozenset(
-        {"input_gradient", "objectness", "class_logits"}
-    )
+    required_capabilities = frozenset({"input_gradient", "objectness", "class_logits"})
     owner: ClassVar[str] = "group-d-e"
     reference: ClassVar[str] = "Chow et al., arXiv:2004.04320"
     params_model: ClassVar[type[AttackParams]] = TogParams

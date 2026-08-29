@@ -1,0 +1,1 @@
+{"checkpoint": {"path": "train\\yolo_r1\\run-1\\yolo11s-robust-r1_best.pt", "parent_model_version": "yolo11s-robust-r1"}, "registration": {"version_id": "yolo11s-robust-r1", "model_id": "yolo11s"}}

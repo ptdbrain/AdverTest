@@ -38,20 +38,31 @@ class TestEventEnvelope:
     def test_progress_bounds(self):
         with pytest.raises(ValueError):
             EventEnvelope(
-                sequence=0, job_id="j", job_type="benchmark",
-                state="X", progress=-0.1, created_at="2026-08-11T12:00:00Z",
+                sequence=0,
+                job_id="j",
+                job_type="benchmark",
+                state="X",
+                progress=-0.1,
+                created_at="2026-08-11T12:00:00Z",
             )
         with pytest.raises(ValueError):
             EventEnvelope(
-                sequence=0, job_id="j", job_type="benchmark",
-                state="X", progress=1.1, created_at="2026-08-11T12:00:00Z",
+                sequence=0,
+                job_id="j",
+                job_type="benchmark",
+                state="X",
+                progress=1.1,
+                created_at="2026-08-11T12:00:00Z",
             )
 
     def test_extra_fields_forbidden(self):
         with pytest.raises(ValueError):
             EventEnvelope(
-                sequence=0, job_id="j", job_type="benchmark",
-                state="X", created_at="2026-08-11T12:00:00Z",
+                sequence=0,
+                job_id="j",
+                job_type="benchmark",
+                state="X",
+                created_at="2026-08-11T12:00:00Z",
                 unknown_field="bad",
             )
 

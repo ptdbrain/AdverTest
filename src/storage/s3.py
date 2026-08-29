@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hashlib
 
-from botocore.exceptions import ClientError
+try:
+    from botocore.exceptions import ClientError
+except ImportError:  # pragma: no cover
+    ClientError = Exception  # type: ignore
 
 from src.storage.base import StoredObject
 

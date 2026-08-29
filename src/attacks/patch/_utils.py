@@ -60,73 +60,39 @@ def load_patch(
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         declared_hash = manifest.get("artifact_hash")
         if declared_hash != artifact_hash:
-            raise ValueError(
-                f"patch artifact hash mismatch: {declared_hash!r} != {artifact_hash!r}"
-            )
-        if (
-            required_algorithm is not None
-            and manifest.get("algorithm") != required_algorithm
-        ):
-            raise ValueError(
-                f"patch algorithm mismatch: {manifest.get('algorithm')!r} "
-                f"!= {required_algorithm!r}"
-            )
+            raise ValueError(f"patch artifact hash mismatch: {declared_hash!r} != {artifact_hash!r}")
+        if required_algorithm is not None and manifest.get("algorithm") != required_algorithm:
+            raise ValueError(f"patch algorithm mismatch: {manifest.get('algorithm')!r} != {required_algorithm!r}")
         config = manifest.get("config", {})
         declared_objective = manifest.get(
             "objective_kind",
             config.get("surrogate", {}).get("objective"),
         )
-        if (
-            required_objective is not None
-            and declared_objective != required_objective
-        ):
-            raise ValueError(
-                f"patch objective mismatch: {declared_objective!r} "
-                f"!= {required_objective!r}"
-            )
+        if required_objective is not None and declared_objective != required_objective:
+            raise ValueError(f"patch objective mismatch: {declared_objective!r} != {required_objective!r}")
         declared_source_label = manifest.get(
             "placement_label",
             config.get("source_label"),
         )
-        if (
-            required_source_label is not _UNSET
-            and declared_source_label != required_source_label
-        ):
-            raise ValueError(
-                f"patch source label mismatch: {declared_source_label!r} "
-                f"!= {required_source_label!r}"
-            )
+        if required_source_label is not _UNSET and declared_source_label != required_source_label:
+            raise ValueError(f"patch source label mismatch: {declared_source_label!r} != {required_source_label!r}")
         declared_target_label = manifest.get(
             "objective_target_label",
-            config.get("target_label")
-            or config.get("surrogate", {}).get("target_label"),
+            config.get("target_label") or config.get("surrogate", {}).get("target_label"),
         )
-        if (
-            required_target_label is not _UNSET
-            and declared_target_label != required_target_label
-        ):
-            raise ValueError(
-                f"patch target label mismatch: {declared_target_label!r} "
-                f"!= {required_target_label!r}"
-            )
+        if required_target_label is not _UNSET and declared_target_label != required_target_label:
+            raise ValueError(f"patch target label mismatch: {declared_target_label!r} != {required_target_label!r}")
     elif required_algorithm is not None:
         raise ValueError(f"patch artifact manifest does not exist: {manifest_path}")
     if expected_hash is not None and expected_hash != artifact_hash:
-        raise ValueError(
-            f"patch artifact does not match expected hash: "
-            f"{expected_hash!r} != {artifact_hash!r}"
-        )
+        raise ValueError(f"patch artifact does not match expected hash: {expected_hash!r} != {artifact_hash!r}")
     return patch, artifact_hash
 
 
 def select_box(sample: Sample, target_label: str | None = None) -> Box:
-    candidates = [
-        box for box in sample.boxes if target_label is None or box.label == target_label
-    ]
+    candidates = [box for box in sample.boxes if target_label is None or box.label == target_label]
     if not candidates:
-        raise ValueError(
-            f"sample {sample.sample_id!r} has no box for target label {target_label!r}"
-        )
+        raise ValueError(f"sample {sample.sample_id!r} has no box for target label {target_label!r}")
     return max(candidates, key=lambda box: box.area)
 
 
@@ -160,14 +126,8 @@ def sample_eot_transform(
     return EotTransform(
         scale=float(rng.uniform(*scale_range)),
         rotation_degrees=float(rng.uniform(-rotation_degrees, rotation_degrees)),
-        brightness=float(
-            rng.uniform(1.0 - brightness_delta, 1.0 + brightness_delta)
-        ),
-        blur_radius=(
-            blur_radius
-            if blur_radius > 0 and bool(rng.integers(0, 2))
-            else 0
-        ),
+        brightness=float(rng.uniform(1.0 - brightness_delta, 1.0 + brightness_delta)),
+        blur_radius=(blur_radius if blur_radius > 0 and bool(rng.integers(0, 2)) else 0),
     )
 
 
@@ -241,9 +201,7 @@ def place_patch(
         image[region] = resized
     else:
         resized_mask = nearest_resize(mask[..., None], side, side)
-        image[region] = (
-            resized * resized_mask + image[region] * (1.0 - resized_mask)
-        )
+        image[region] = resized * resized_mask + image[region] * (1.0 - resized_mask)
     return sample.with_image(clip01(image)), region
 
 
@@ -275,12 +233,7 @@ def _rotate_nearest(image: np.ndarray, degrees: float) -> np.ndarray:
     source_y = -sine * shifted_x + cosine * shifted_y + center_y
     rounded_x = np.rint(source_x).astype(int)
     rounded_y = np.rint(source_y).astype(int)
-    valid = (
-        (rounded_x >= 0)
-        & (rounded_x < width)
-        & (rounded_y >= 0)
-        & (rounded_y < height)
-    )
+    valid = (rounded_x >= 0) & (rounded_x < width) & (rounded_y >= 0) & (rounded_y < height)
     result = np.zeros_like(image, dtype=np.float32)
     result[valid] = image[rounded_y[valid], rounded_x[valid]]
     return result

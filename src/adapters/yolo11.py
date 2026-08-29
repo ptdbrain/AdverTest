@@ -214,9 +214,17 @@ class Yolo11Adapter(ModelAdapter):
             for m in backend.model.modules():
                 if hasattr(m, "shape"):
                     m.shape = None
-                if hasattr(m, "anchors") and isinstance(m.anchors, torch.Tensor) and getattr(m.anchors, "is_inference", lambda: False)():
+                if (
+                    hasattr(m, "anchors")
+                    and isinstance(m.anchors, torch.Tensor)
+                    and getattr(m.anchors, "is_inference", lambda: False)()
+                ):
                     m.anchors = m.anchors.clone()
-                if hasattr(m, "strides") and isinstance(m.strides, torch.Tensor) and getattr(m.strides, "is_inference", lambda: False)():
+                if (
+                    hasattr(m, "strides")
+                    and isinstance(m.strides, torch.Tensor)
+                    and getattr(m.strides, "is_inference", lambda: False)()
+                ):
                     m.strides = m.strides.clone()
         tensor = torch.from_numpy(sample.image).permute(2, 0, 1).unsqueeze(0).to(self.device)
         tensor.requires_grad_(requires_grad)

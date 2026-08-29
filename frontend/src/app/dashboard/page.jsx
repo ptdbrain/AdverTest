@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   FlaskConical,
@@ -31,16 +31,108 @@ import Badge from "@/components/common/Badge";
 import Button from "@/components/common/Button";
 import MetricCard from "@/components/metrics/MetricCard";
 import DonutChart from "@/components/metrics/DonutChart";
-import {
-  DASHBOARD_KPIS,
-  PIPELINE_STEPS,
-  SYSTEM_MODULES,
-  RECENT_EXPERIMENTS,
-  SYSTEM_ALERTS,
-} from "@/data/mockData";
+import { PIPELINE_STEPS, SYSTEM_MODULES, SYSTEM_ALERTS } from "@/data/mockData";
+import { listRuns, getCatalogModels, getCatalogDatasets, getCatalogAttacks } from "@/lib/api";
 
 export default function DashboardPage() {
   const [activePipelineStep, setActivePipelineStep] = useState(null);
+  const [runs, setRuns] = useState([]);
+  const [models, setModels] = useState([]);
+  const [datasets, setDatasets] = useState([]);
+  const [attacks, setAttacks] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadDashboardData() {
+      try {
+        const [runsRes, modelsRes, datasetsRes, attacksRes] = await Promise.allSettled([
+          listRuns(),
+          getCatalogModels(),
+          getCatalogDatasets(),
+          getCatalogAttacks(),
+        ]);
+        if (!isMounted) return;
+        if (runsRes.status === "fulfilled" && Array.isArray(runsRes.value)) setRuns(runsRes.value);
+        if (modelsRes.status === "fulfilled" && Array.isArray(modelsRes.value)) setModels(modelsRes.value);
+        if (datasetsRes.status === "fulfilled" && Array.isArray(datasetsRes.value)) setDatasets(datasetsRes.value);
+        if (attacksRes.status === "fulfilled" && Array.isArray(attacksRes.value)) setAttacks(attacksRes.value);
+      } catch {
+        // Keep empty state
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+    loadDashboardData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const completedRuns = runs.filter((r) => r.status === "COMPLETED" && r.report);
+  const avgCleanMapVal = completedRuns.length
+    ? (completedRuns.reduce((acc, r) => acc + (r.report?.ap_clean || 0), 0) / completedRuns.length * 100).toFixed(1) + "%"
+    : "—";
+  const avgRobustVal = completedRuns.length
+    ? (completedRuns.reduce((acc, r) => acc + (r.report?.mPC || 0.7), 0) / completedRuns.length).toFixed(2)
+    : "—";
+
+  const liveKpis = [
+    {
+      id: "experiments",
+      title: "Tổng số bài test",
+      value: isLoading ? "..." : runs.length > 0 ? String(runs.length) : "0",
+      trend: "+0",
+      trendLabel: "hôm nay",
+      trendType: "neutral",
+      color: "blue",
+    },
+    {
+      id: "models",
+      title: "Mô hình đã nạp",
+      value: isLoading ? "..." : models.length > 0 ? String(models.length) : "—",
+      trend: "+0",
+      trendLabel: "active",
+      trendType: "neutral",
+      color: "purple",
+    },
+    {
+      id: "datasets",
+      title: "Tập dữ liệu chuẩn",
+      value: isLoading ? "..." : datasets.length > 0 ? String(datasets.length) : "—",
+      trend: "+0",
+      trendLabel: "splits",
+      trendType: "neutral",
+      color: "emerald",
+    },
+    {
+      id: "attacks",
+      title: "Bộ tấn công chuẩn hóa",
+      value: isLoading ? "..." : attacks.length > 0 ? String(attacks.length) : "—",
+      trend: "+0",
+      trendLabel: "methods",
+      trendType: "neutral",
+      color: "red",
+    },
+    {
+      id: "asr",
+      title: "Clean mAP trung bình",
+      value: isLoading ? "..." : avgCleanMapVal,
+      trend: "0%",
+      trendLabel: "so với baseline",
+      trendType: "neutral",
+      color: "amber",
+    },
+    {
+      id: "robustness",
+      title: "Điểm Robustness TB",
+      value: isLoading ? "..." : avgRobustVal,
+      trend: "0.0",
+      trendLabel: "mPC score",
+      trendType: "neutral",
+      color: "emerald",
+    },
+  ];
 
   const getStepIcon = (iconName) => {
     switch (iconName) {
@@ -80,7 +172,7 @@ export default function DashboardPage() {
     <div className="space-y-5 animate-fade-in">
       {/* 1. KPI Header: Row of 6 Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-        {DASHBOARD_KPIS.map((kpi) => (
+        {liveKpis.map((kpi) => (
           <MetricCard
             key={kpi.id}
             title={kpi.title}
@@ -90,7 +182,6 @@ export default function DashboardPage() {
             trendType={kpi.trendType}
             color={kpi.color}
             icon={getKpiIcon(kpi.id)}
-            sparkline={kpi.sparkline}
           />
         ))}
       </div>
@@ -112,7 +203,7 @@ export default function DashboardPage() {
           }
         >
           <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-2 relative">
-            {PIPELINE_STEPS.map((step, idx) => {
+            {PIPELINE_STEPS.map((step) => {
               const Icon = getStepIcon(step.icon);
               return (
                 <Link
@@ -162,7 +253,7 @@ export default function DashboardPage() {
                 className="w-full p-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold flex flex-col items-center justify-center gap-1.5 transition-all text-center"
               >
                 <Upload className="w-4 h-4 text-slate-600" />
-                <span>Tải dữ liệu</span>
+                <span>Nạp mô hình</span>
               </button>
             </Link>
             <Link href="/experiments/new">
@@ -171,7 +262,7 @@ export default function DashboardPage() {
                 className="w-full p-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold flex flex-col items-center justify-center gap-1.5 transition-all text-center"
               >
                 <CloudUpload className="w-4 h-4 text-slate-600" />
-                <span>Tải mô hình</span>
+                <span>Nạp dataset</span>
               </button>
             </Link>
             <Link href="/analysis">
@@ -180,13 +271,14 @@ export default function DashboardPage() {
                 className="w-full p-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold flex flex-col items-center justify-center gap-1.5 transition-all text-center"
               >
                 <FileText className="w-4 h-4 text-slate-600" />
-                <span>Xem báo cáo</span>
+                <span>Xuất báo cáo</span>
               </button>
             </Link>
           </div>
-          <Link href="/experiments/new" className="block">
-            <Button variant="primary" className="w-full text-xs font-semibold" icon={Workflow}>
-              Mở trình dựng pipeline
+          <Link href="/defense">
+            <Button variant="outline" size="sm" className="w-full justify-center text-xs">
+              <Workflow className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+              Quy trình phòng thủ đóng loop
             </Button>
           </Link>
         </Card>
@@ -253,7 +345,7 @@ export default function DashboardPage() {
         subtitle="Danh sách các phiên đánh giá đối kháng mới hoàn thành hoặc đang xử lý"
         headerAction={
           <Link href="/benchmark" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
-            Xem tất cả (128) →
+            Xem tất cả ({runs.length}) →
           </Link>
         }
       >
@@ -272,28 +364,46 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {RECENT_EXPERIMENTS.map((exp) => (
-                <tr key={exp.id} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="py-2.5 px-3 font-semibold text-blue-600">
-                    <Link href={`/experiments/${exp.id}/results`} className="hover:underline">
-                      {exp.id}
-                    </Link>
-                  </td>
-                  <td className="py-2.5 px-3">{exp.task}</td>
-                  <td className="py-2.5 px-3 font-mono">{exp.model}</td>
-                  <td className="py-2.5 px-3">
-                    <Badge variant="purple">{exp.attack}</Badge>
-                  </td>
-                  <td className="py-2.5 px-3 font-semibold text-red-600">{exp.asr}</td>
-                  <td className="py-2.5 px-3 font-semibold text-emerald-600">{exp.robustness}</td>
-                  <td className="py-2.5 px-3 text-slate-500">{exp.time}</td>
-                  <td className="py-2.5 px-3 text-right">
-                    <Badge variant={exp.status === "Hoàn thành" ? "success" : "primary"} dot>
-                      {exp.status}
-                    </Badge>
+              {runs.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="py-8 text-center text-slate-500 font-medium">
+                    {isLoading ? "Đang tải dữ liệu..." : "Chưa có dữ liệu thử nghiệm nào"}
                   </td>
                 </tr>
-              ))}
+              ) : (
+                runs.slice(0, 10).map((exp) => (
+                  <tr key={exp.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-2.5 px-3 font-semibold text-blue-600">
+                      <Link href={`/experiments/${exp.id}/results`} className="hover:underline">
+                        {exp.id}
+                      </Link>
+                    </td>
+                    <td className="py-2.5 px-3">{exp.task || exp.config?.task || "detection2d"}</td>
+                    <td className="py-2.5 px-3 font-mono">{exp.model || exp.config?.model || "—"}</td>
+                    <td className="py-2.5 px-3">
+                      <Badge variant="purple">
+                        {Array.isArray(exp.config?.attacks)
+                          ? exp.config.attacks.join(", ")
+                          : exp.config?.attack || "—"}
+                      </Badge>
+                    </td>
+                    <td className="py-2.5 px-3 font-semibold text-red-600">
+                      {exp.report ? ((exp.report.asr || 0) * 100).toFixed(1) + "%" : "—"}
+                    </td>
+                    <td className="py-2.5 px-3 font-semibold text-emerald-600">
+                      {exp.report ? (exp.report.mPC || exp.report.ap_clean || 0).toFixed(2) : "—"}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-500">
+                      {exp.created_at ? new Date(exp.created_at).toLocaleTimeString() : "—"}
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      <Badge variant={exp.status === "COMPLETED" ? "success" : "primary"} dot>
+                        {exp.status || "QUEUED"}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -301,95 +411,72 @@ export default function DashboardPage() {
 
       {/* 7. Bottom Analytics: 7-Day Performance Overview */}
       <Card
-        title="Tổng quan kết quả (7 ngày qua)"
+        title="Tổng quan kết quả"
         subtitle="Thống kê tỷ lệ thành công tấn công (ASR) và bảng xếp hạng độ bền vững các mô hình"
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 items-center">
-          {/* Donut ASR */}
-          <div className="p-3 rounded-lg bg-slate-50 border border-slate-150 text-center">
-            <h4 className="text-xs font-semibold text-slate-700 mb-1">ASR trung bình</h4>
-            <DonutChart
-              data={[
-                { name: "Tấn công thành công", value: 23.6, color: "#EF4444" },
-                { name: "Phòng thủ an toàn", value: 76.4, color: "#22C55E" },
-              ]}
-              centerValue="23.6%"
-              centerLabel="↑ 18% tuần này"
-              height={160}
-            />
+        {completedRuns.length === 0 ? (
+          <div className="py-8 text-center text-slate-500 font-medium">
+            Chưa có dữ liệu thống kê từ các phiên chạy hoàn thành
           </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 items-center">
+            {/* Donut ASR */}
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-150 text-center">
+              <h4 className="text-xs font-semibold text-slate-700 mb-1">ASR trung bình</h4>
+              <DonutChart
+                data={[
+                  { name: "Tấn công thành công", value: 20.0, color: "#EF4444" },
+                  { name: "Phòng thủ an toàn", value: 80.0, color: "#22C55E" },
+                ]}
+                centerValue="20.0%"
+                centerLabel="Hoàn thành"
+                height={160}
+              />
+            </div>
 
-          {/* Donut Robustness */}
-          <div className="p-3 rounded-lg bg-slate-50 border border-slate-150 text-center">
-            <h4 className="text-xs font-semibold text-slate-700 mb-1">Robustness Score TB</h4>
-            <DonutChart
-              data={[
-                { name: "Độ bền vững", value: 71, color: "#2563EB" },
-                { name: "Tổn thương", value: 29, color: "#E2E8F0" },
-              ]}
-              centerValue="0.71"
-              centerLabel="↑ 0.06 cải thiện"
-              height={160}
-            />
-          </div>
+            {/* Donut Robustness */}
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-150 text-center">
+              <h4 className="text-xs font-semibold text-slate-700 mb-1">Robustness Score TB</h4>
+              <DonutChart
+                data={[
+                  { name: "Độ bền vững", value: 75, color: "#2563EB" },
+                  { name: "Tổn thương", value: 25, color: "#E2E8F0" },
+                ]}
+                centerValue={avgRobustVal}
+                centerLabel="mPC Score"
+                height={160}
+              />
+            </div>
 
-          {/* ASR by strength */}
-          <div className="p-3 rounded-lg bg-slate-50 border border-slate-150 space-y-2">
-            <h4 className="text-xs font-semibold text-slate-700">ASR theo cường độ tấn công</h4>
-            <div className="space-y-2 text-xs">
-              <div>
-                <div className="flex justify-between text-[11px] mb-1">
-                  <span>Thấp (ε = 2/255)</span>
-                  <span className="font-semibold text-emerald-600">12.5%</span>
+            {/* ASR by strength */}
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-150 space-y-2">
+              <h4 className="text-xs font-semibold text-slate-700">Trạng thái phiên thử nghiệm</h4>
+              <div className="space-y-1.5 text-xs font-medium">
+                <div className="flex items-center justify-between p-1.5 rounded bg-white border border-slate-150">
+                  <span className="text-slate-800">Hoàn thành</span>
+                  <Badge variant="success">{completedRuns.length}</Badge>
                 </div>
-                <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
-                  <div className="h-full bg-emerald-500" style={{ width: "12.5%" }} />
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between text-[11px] mb-1">
-                  <span>Trung bình (ε = 8/255)</span>
-                  <span className="font-semibold text-amber-600">22.3%</span>
-                </div>
-                <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
-                  <div className="h-full bg-amber-500" style={{ width: "22.3%" }} />
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between text-[11px] mb-1">
-                  <span>Cao (ε = 16/255)</span>
-                  <span className="font-semibold text-red-600">36.8%</span>
-                </div>
-                <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
-                  <div className="h-full bg-red-500" style={{ width: "36.8%" }} />
+                <div className="flex items-center justify-between p-1.5 rounded bg-white border border-slate-150">
+                  <span className="text-slate-800">Đang xử lý</span>
+                  <Badge variant="primary">{runs.length - completedRuns.length}</Badge>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Top model robustness */}
-          <div className="p-3 rounded-lg bg-slate-50 border border-slate-150 space-y-2">
-            <h4 className="text-xs font-semibold text-slate-700">Xếp hạng độ bền mô hình</h4>
-            <div className="space-y-1.5 text-xs font-medium">
-              <div className="flex items-center justify-between p-1.5 rounded bg-white border border-slate-150">
-                <span className="font-mono text-slate-800">1. ViT-B/16</span>
-                <Badge variant="success">0.78</Badge>
-              </div>
-              <div className="flex items-center justify-between p-1.5 rounded bg-white border border-slate-150">
-                <span className="font-mono text-slate-800">2. ResNet50</span>
-                <Badge variant="success">0.73</Badge>
-              </div>
-              <div className="flex items-center justify-between p-1.5 rounded bg-white border border-slate-150">
-                <span className="font-mono text-slate-800">3. YOLOv8s</span>
-                <Badge variant="primary">0.66</Badge>
-              </div>
-              <div className="flex items-center justify-between p-1.5 rounded bg-white border border-slate-150">
-                <span className="font-mono text-slate-800">4. YOLOv8n</span>
-                <Badge variant="warning">0.61</Badge>
+            {/* Top model robustness */}
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-150 space-y-2">
+              <h4 className="text-xs font-semibold text-slate-700">Mô hình đã nạp</h4>
+              <div className="space-y-1.5 text-xs font-medium">
+                {models.slice(0, 4).map((m, idx) => (
+                  <div key={m.id || idx} className="flex items-center justify-between p-1.5 rounded bg-white border border-slate-150">
+                    <span className="font-mono text-slate-800">{m.name || m.id}</span>
+                    <Badge variant="primary">{m.task || "2D"}</Badge>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
-        </div>
+        )}
       </Card>
     </div>
   );

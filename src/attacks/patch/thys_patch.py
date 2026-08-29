@@ -47,17 +47,9 @@ class ThysPatch(BaseAttack):
             self.params.patch_path,
             expected_hash=self.params.artifact_hash,
             required_algorithm=None if self.params.allow_builtin_patch else self.name,
-            required_objective=(
-                None if self.params.allow_builtin_patch else "vanishing"
-            ),
-            required_source_label=(
-                None if self.params.allow_builtin_patch else "Pedestrian"
-            ),
-            required_target_label=(
-                None
-                if self.params.allow_builtin_patch
-                else self.params.target_label
-            ),
+            required_objective=(None if self.params.allow_builtin_patch else "vanishing"),
+            required_source_label=(None if self.params.allow_builtin_patch else "Pedestrian"),
+            required_target_label=(None if self.params.allow_builtin_patch else self.params.target_label),
             allow_builtin=self.params.allow_builtin_patch,
         )
 

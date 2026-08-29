@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -209,7 +209,7 @@ async def add_run_to_session(session_id: str, run: RunRecord) -> SessionRecord:
             updated_at=time.strftime("%d/%m/%Y %H:%M:%S"),
             runs=[],
         )
-    
+
     sess = sessions[session_id]
     # Check if run with same ID exists, update or append
     existing_idx = next((i for i, r in enumerate(sess.runs) if r.id == run.id), None)
@@ -239,7 +239,7 @@ async def delete_run(session_id: str, run_id: str) -> SessionRecord:
     sessions = _load_sessions()
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
-    
+
     sess = sessions[session_id]
     sess.runs = [r for r in sess.runs if r.id != run_id]
     sess.updated_at = time.strftime("%d/%m/%Y %H:%M:%S")
@@ -257,21 +257,15 @@ class UpdateRunNoteIn(BaseModel):
 
 
 @router.patch("/{session_id}/runs/{run_id}/note", response_model=SessionRecord)
-async def update_run_note(
-    session_id: str, run_id: str, body: UpdateRunNoteIn
-) -> SessionRecord:
+async def update_run_note(session_id: str, run_id: str, body: UpdateRunNoteIn) -> SessionRecord:
     """Update or set researcher note for a specific run."""
     sessions = _load_sessions()
     if session_id not in sessions:
-        raise HTTPException(
-            status_code=404, detail=f"Session '{session_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
     sess = sessions[session_id]
     run_found = next((r for r in sess.runs if r.id == run_id), None)
     if not run_found:
-        raise HTTPException(
-            status_code=404, detail=f"Run '{run_id}' not found in session."
-        )
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found in session.")
     run_found.note = body.note
     sess.updated_at = time.strftime("%d/%m/%Y %H:%M:%S")
     _save_sessions(sessions)
@@ -286,14 +280,10 @@ async def end_session(session_id: str) -> SessionRecord:
     """Mark session as completed and lock it from further modifications."""
     sessions = _load_sessions()
     if session_id not in sessions:
-        raise HTTPException(
-            status_code=404, detail=f"Session '{session_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
     sess = sessions[session_id]
     if sess.status == "completed":
-        raise HTTPException(
-            status_code=409, detail="Session has already been completed."
-        )
+        raise HTTPException(status_code=409, detail="Session has already been completed.")
     sess.status = "completed"
     sess.ended_at = time.strftime("%d/%m/%Y %H:%M:%S")
     sess.updated_at = time.strftime("%d/%m/%Y %H:%M:%S")

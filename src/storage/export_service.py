@@ -36,7 +36,7 @@ class AttackedDatasetExportService:
             "created_at": datetime.now(UTC).isoformat(),
         }
         archive, hashes = self._build_archive(
-            project_id, media_artifact_ids, label_artifact_ids, manifest, recipe, provenance
+            project_id, actor_id, media_artifact_ids, label_artifact_ids, manifest, recipe, provenance
         )
         artifact = self._artifacts.create_internal(
             project_id=project_id,
@@ -53,6 +53,7 @@ class AttackedDatasetExportService:
     def _build_archive(
         self,
         project_id: str,
+        actor_id: str,
         media_artifact_ids: tuple[str, ...],
         label_artifact_ids: tuple[str, ...],
         manifest: dict[str, Any],
@@ -63,12 +64,12 @@ class AttackedDatasetExportService:
         output = io.BytesIO()
         with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
             for index, artifact_id in enumerate(media_artifact_ids):
-                content = self._artifacts.read_bytes(project_id, artifact_id)
+                content = self._artifacts.read_bytes(project_id, artifact_id, actor_id=actor_id)
                 filename = f"media/{index:06d}_{artifact_id}"
                 archive.writestr(filename, content)
                 hashes[filename] = hashlib.sha256(content).hexdigest()
             for index, artifact_id in enumerate(label_artifact_ids):
-                content = self._artifacts.read_bytes(project_id, artifact_id)
+                content = self._artifacts.read_bytes(project_id, artifact_id, actor_id=actor_id)
                 filename = f"labels/{index:06d}_{artifact_id}"
                 archive.writestr(filename, content)
                 hashes[filename] = hashlib.sha256(content).hexdigest()

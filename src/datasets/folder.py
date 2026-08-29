@@ -68,9 +68,7 @@ class FolderDataset(DatasetSource):
 
     def require_anonymized(self) -> None:
         if not self._anonymized:
-            raise AnonymizationRequiredError(
-                f"folder dataset {str(self.root)!r} is missing an anonymization manifest"
-            )
+            raise AnonymizationRequiredError(f"folder dataset {str(self.root)!r} is missing an anonymization manifest")
 
     def info(self) -> DatasetInfo:
         return DatasetInfo(
@@ -91,9 +89,7 @@ class FolderDataset(DatasetSource):
         images_root = self.root / "images"
         pattern = "**/*" if typed.recursive else "*"
         paths = sorted(
-            path
-            for path in images_root.glob(pattern)
-            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+            path for path in images_root.glob(pattern) if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
         )
         if limit is not None:
             paths = paths[:limit]
@@ -114,9 +110,7 @@ class FolderDataset(DatasetSource):
                     anonymized=self._anonymized,
                     meta={
                         "source_path": str(path),
-                        "source_uri": (
-                            f"folder://advertest/{path.relative_to(images_root).as_posix()}"
-                        ),
+                        "source_uri": (f"folder://advertest/{path.relative_to(images_root).as_posix()}"),
                         "source_format": "advertest",
                         "native_labels": tuple(box.label for box in boxes),
                         "loader_version": self.loader_version,
@@ -130,9 +124,7 @@ class FolderDataset(DatasetSource):
     def _load_kitti(self, limit: int | None) -> list[Sample]:
         images_root = self.root / "image_2"
         paths = sorted(
-            path
-            for path in images_root.iterdir()
-            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+            path for path in images_root.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
         )
         if limit is not None:
             paths = paths[:limit]
@@ -169,9 +161,7 @@ class FolderDataset(DatasetSource):
     def _anonymization_manifest_hash(self) -> str | None:
         typed: FolderDatasetParams = self.params  # type: ignore[assignment]
         manifest = (
-            self.root / typed.anonymization_manifest
-            if typed.anonymization_manifest
-            else self.root / "dataset.json"
+            self.root / typed.anonymization_manifest if typed.anonymization_manifest else self.root / "dataset.json"
         )
         return file_digest(manifest, length=64) if manifest.is_file() else None
 
@@ -182,9 +172,7 @@ def _load_depth(path: Path, image_shape: tuple[int, int]) -> np.ndarray | None:
         return None
     depth = np.load(path, allow_pickle=False).astype(np.float32, copy=False)
     if depth.shape != image_shape:
-        raise ValueError(
-            f"depth map {path} shape {depth.shape!r} does not match image {image_shape!r}"
-        )
+        raise ValueError(f"depth map {path} shape {depth.shape!r} does not match image {image_shape!r}")
     if not np.isfinite(depth).all() or np.any(depth <= 0):
         raise ValueError(f"depth map {path} must contain finite positive values")
     return np.ascontiguousarray(depth)
@@ -214,8 +202,4 @@ def _load_kitti_boxes(path: Path) -> tuple[Box, ...]:
 def _native_kitti_labels(path: Path) -> tuple[str, ...]:
     if not path.is_file():
         return ()
-    return tuple(
-        fields[0]
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if (fields := line.split())
-    )
+    return tuple(fields[0] for line in path.read_text(encoding="utf-8").splitlines() if (fields := line.split()))

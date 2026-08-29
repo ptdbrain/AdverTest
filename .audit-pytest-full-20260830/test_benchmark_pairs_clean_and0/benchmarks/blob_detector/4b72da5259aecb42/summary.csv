@@ -1,0 +1,3 @@
+generation_id,source,attack,attack_variant,severity,n_samples,ap_clean,ap_attacked,degradation,relative_ap_change,attack_success_rate,clean_precision,clean_recall,attacked_precision,attacked_recall,false_positive_delta,mean_clean_latency_ms,mean_attacked_latency_ms,white_box_same_checkpoint
+238e7e610457a701,synthetic_shapes,gaussian_noise,,1,2,1.0,1.0,0.0,0.0,0.0,1.0,1.0,1.0,1.0,0,1.801,1.97,False
+238e7e610457a701,synthetic_shapes,gaussian_noise,,3,2,1.0,1.0,0.0,0.0,0.0,1.0,1.0,1.0,1.0,0,1.801,1.831,False

@@ -69,10 +69,7 @@ def test_frame_without_ground_truth_is_rejected() -> None:
 
 def test_perturbation_grows_at_every_step() -> None:
     sample = _sample(BOX)
-    distances = [
-        float(np.linalg.norm(_run(severity, sample).image - sample.image))
-        for severity in SEVERITIES
-    ]
+    distances = [float(np.linalg.norm(_run(severity, sample).image - sample.image)) for severity in SEVERITIES]
     assert distances == sorted(distances)
 
 

@@ -54,12 +54,8 @@ def test_composed_recipe_generation_round_trips_complete_provenance(
 
     report = AttackDatasetGenerator().generate(config)
     loaded = get_dataset("generated_dataset", root=str(report.root)).load()
-    descriptor = json.loads(
-        (report.root / "dataset.json").read_text(encoding="utf-8")
-    )
-    record = json.loads(
-        (report.root / "manifest.jsonl").read_text(encoding="utf-8").strip()
-    )
+    descriptor = json.loads((report.root / "dataset.json").read_text(encoding="utf-8"))
+    record = json.loads((report.root / "manifest.jsonl").read_text(encoding="utf-8").strip())
 
     assert report.n_variants == 1
     assert len(loaded) == 1
@@ -97,9 +93,7 @@ def test_recipe_generation_resumes_only_hash_valid_intermediates(tmp_path: Path)
     second = AttackDatasetGenerator().generate(config)
     assert second.resumed_variants == 1
 
-    record = json.loads(
-        (first.root / "manifest.jsonl").read_text(encoding="utf-8").strip()
-    )
+    record = json.loads((first.root / "manifest.jsonl").read_text(encoding="utf-8").strip())
     intermediate = first.root / record["intermediate_paths"][0]
     np.save(intermediate, np.zeros((2, 2, 3), dtype=np.float32), allow_pickle=False)
 

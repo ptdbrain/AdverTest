@@ -28,9 +28,13 @@ def test_upload_session_quarantines_and_hashes_artifact(tmp_path: Path) -> None:
     digest = hashlib.sha256(content).hexdigest()
 
     session = artifacts.begin_upload(
-        project_id=project_id, actor_id=actor_id, kind=ArtifactKind.CHECKPOINT,
-        original_filename="model.pt", mime_type="application/octet-stream",
-        expected_size_bytes=len(content), expected_sha256=digest,
+        project_id=project_id,
+        actor_id=actor_id,
+        kind=ArtifactKind.CHECKPOINT,
+        original_filename="model.pt",
+        mime_type="application/octet-stream",
+        expected_size_bytes=len(content),
+        expected_sha256=digest,
     )
     artifacts.upload_local_content(project_id, session["upload_session_id"], content)
     artifact = artifacts.complete_upload(project_id, session["upload_session_id"], digest, len(content))
@@ -58,20 +62,35 @@ def test_attacked_export_contains_required_portable_files(tmp_path: Path) -> Non
     artifacts, _ = _services(tmp_path)
     project_id, actor_id = str(uuid4()), str(uuid4())
     media = artifacts.create_internal(
-        project_id=project_id, actor_id=actor_id, kind=ArtifactKind.EVIDENCE,
-        original_filename="sample.png", mime_type="image/png", content=b"image", state=ArtifactState.READY,
+        project_id=project_id,
+        actor_id=actor_id,
+        kind=ArtifactKind.EVIDENCE,
+        original_filename="sample.png",
+        mime_type="image/png",
+        content=b"image",
+        state=ArtifactState.READY,
     )
     label = artifacts.create_internal(
-        project_id=project_id, actor_id=actor_id, kind=ArtifactKind.EVIDENCE,
-        original_filename="sample.txt", mime_type="text/plain", content=b"label", state=ArtifactState.READY,
+        project_id=project_id,
+        actor_id=actor_id,
+        kind=ArtifactKind.EVIDENCE,
+        original_filename="sample.txt",
+        mime_type="text/plain",
+        content=b"label",
+        state=ArtifactState.READY,
     )
     export = AttackedDatasetExportService(artifacts).run(
         project_id=project_id,
         actor_id=actor_id,
         request={
-            "source_dataset_version_id": str(uuid4()), "task": "detection2d", "attack_method": "fog",
-            "severity": 3, "seed": 195, "implementation_version": "1.0.0",
-            "media_artifact_ids": [media["id"]], "label_artifact_ids": [label["id"]],
+            "source_dataset_version_id": str(uuid4()),
+            "task": "detection2d",
+            "attack_method": "fog",
+            "severity": 3,
+            "seed": 195,
+            "implementation_version": "1.0.0",
+            "media_artifact_ids": [media["id"]],
+            "label_artifact_ids": [label["id"]],
             "manifest": {"pairs": [{"source": "sample-1", "output": "sample-1"}]},
             "recipe": {"id": "fog-v1"},
         },

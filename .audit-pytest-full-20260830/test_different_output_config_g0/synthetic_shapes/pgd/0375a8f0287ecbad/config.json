@@ -1,0 +1,32 @@
+{
+  "anonymization_manifest": null,
+  "attack_name": "pgd",
+  "attack_params": {
+    "restarts": 1,
+    "steps": 2
+  },
+  "dataset_name": "synthetic_shapes",
+  "dataset_params": {
+    "n_samples": 2,
+    "seed": 123
+  },
+  "input_dir": null,
+  "input_format": "advertest",
+  "limit": null,
+  "output_dir": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_different_output_config_g0",
+  "preview": true,
+  "seed": 77,
+  "severities": [
+    1,
+    3
+  ],
+  "surrogate": {
+    "checkpoint": null,
+    "device": "cpu",
+    "name": "blob_detector",
+    "objective": "untargeted",
+    "params": {},
+    "target_box_index": null,
+    "target_label": null
+  }
+}

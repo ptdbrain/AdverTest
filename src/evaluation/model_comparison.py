@@ -162,12 +162,9 @@ def checkpoint_gate(
     robust = deltas["robust_score"].value
     degradation = deltas["mean_degradation"].value
     baseline_degradation = deltas["mean_degradation"].metadata["baseline"]
-    relative_degradation_gain = (
-        -degradation / abs(baseline_degradation) if baseline_degradation else 0.0
-    )
+    relative_degradation_gain = -degradation / abs(baseline_degradation) if baseline_degradation else 0.0
     critical_ok = all(
-        item.value >= -policy.max_critical_regression_points
-        for item in comparison.critical_scenario_deltas.values()
+        item.value >= -policy.max_critical_regression_points for item in comparison.critical_scenario_deltas.values()
     )
     checks = {
         "paired": True,
@@ -177,14 +174,9 @@ def checkpoint_gate(
             or relative_degradation_gain >= policy.min_relative_degradation_improvement
         ),
         "critical": critical_ok,
-        "attack_success_rate": (
-            deltas["attack_success_rate"].value <= policy.max_asr_regression_points
-        ),
+        "attack_success_rate": (deltas["attack_success_rate"].value <= policy.max_asr_regression_points),
         "external": deltas["external"].value >= -policy.max_external_regression_points,
-        "paired_ci": (
-            not policy.require_paired_ci
-            or all(item.ci95 is not None for item in deltas.values())
-        ),
+        "paired_ci": (not policy.require_paired_ci or all(item.ci95 is not None for item in deltas.values())),
     }
     reasons = tuple(name for name, passed in checks.items() if not passed)
     return CheckpointGateResult(

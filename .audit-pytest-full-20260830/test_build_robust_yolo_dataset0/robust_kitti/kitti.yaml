@@ -1,0 +1,7 @@
+path: D:/Project/AIthucchien/P-195/.audit-pytest-full-20260830/test_build_robust_yolo_dataset0/robust_kitti
+train: images/train
+val: images/val
+names:
+  0: Pedestrian
+  1: Cyclist
+  2: Car

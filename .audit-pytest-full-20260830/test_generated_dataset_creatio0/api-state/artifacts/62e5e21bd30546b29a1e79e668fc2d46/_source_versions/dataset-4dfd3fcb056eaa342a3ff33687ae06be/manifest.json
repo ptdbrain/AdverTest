@@ -1,0 +1,33 @@
+{
+  "name": "folder-source",
+  "logical_source_id": "generated-source-1b8a2170ee42",
+  "version_id": "dataset-4dfd3fcb056eaa342a3ff33687ae06be",
+  "manifest_hash": "4dfd3fcb056eaa342a3ff33687ae06be858b17a749b076626352d99267d8e0e6",
+  "schema_version": "1.0.0",
+  "loader_version": "folder-v1",
+  "records": [
+    {
+      "sample_id": "frame",
+      "source_uri": "folder://advertest/frame.png",
+      "source_hash": "177fed5c7bb75e95d030ffba3cb42c1aba41437e93ddafd878c451ba55ed6d9e",
+      "ground_truth_hash": "0248ab570c6e3712956b6ebb88d88b02aa444cfc953dfe4fcb7ae4b7d0114dd5",
+      "annotation_type": "boxes",
+      "class_labels": [
+        "Car"
+      ],
+      "anonymized": true,
+      "official_split": "test",
+      "provenance": {
+        "source_format": "advertest",
+        "native_labels": [
+          "Car"
+        ],
+        "loader_version": "folder-v1",
+        "split": "test",
+        "anonymization_manifest_hash": "89d64bd750c1bc6299972056cb7f7bc8990107f3d31b0afdf8d74552f0382e4f",
+        "logical_source_id": "generated-source-1b8a2170ee42"
+      }
+    }
+  ],
+  "metadata": {}
+}

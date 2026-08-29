@@ -10,14 +10,18 @@ from src.pipeline.protocol import BenchmarkProtocol
 
 
 def _make_protocol() -> BenchmarkProtocol:
-    return BenchmarkProtocol(
-        name="test-3d-distance",
-        dataset_version_id="kitti3d-test",
-        sample_ids=("sample-near", "sample-far"),
-        sample_hashes={"sample-near": "hash-1", "sample-far": "hash-2"},
-        ground_truth_hashes={"sample-near": "gt-1", "sample-far": "gt-2"},
-        metric_versions={"kitti_3d_ap": "advertest-bev-v1", "bev_iou": "1.0.0"},
-    ).transition("VALIDATED").transition("LOCKED")
+    return (
+        BenchmarkProtocol(
+            name="test-3d-distance",
+            dataset_version_id="kitti3d-test",
+            sample_ids=("sample-near", "sample-far"),
+            sample_hashes={"sample-near": "hash-1", "sample-far": "hash-2"},
+            ground_truth_hashes={"sample-near": "gt-1", "sample-far": "gt-2"},
+            metric_versions={"kitti_3d_ap": "advertest-bev-v1", "bev_iou": "1.0.0"},
+        )
+        .transition("VALIDATED")
+        .transition("LOCKED")
+    )
 
 
 def test_distance_bucketed_metrics_computed_correctly() -> None:
@@ -60,7 +64,7 @@ def test_distance_bucketed_metrics_computed_correctly() -> None:
     assert "kitti_3d_ap_far" in metrics_dict
 
     assert metrics_dict["kitti_3d_ap_near"] > 0.9  # Near matched
-    assert metrics_dict["kitti_3d_ap_far"] == 0.0   # Far missed
+    assert metrics_dict["kitti_3d_ap_far"] == 0.0  # Far missed
 
     # Check failure metadata contains distance
     assert len(result.failures) == 1

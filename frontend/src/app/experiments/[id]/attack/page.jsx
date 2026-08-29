@@ -173,7 +173,7 @@ async function waitForRealRun(runId, onProgress) {
   }
 }
 
-export default function ConfigureAttackPage() {
+function ConfigureAttackPageContent() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -906,5 +906,19 @@ export default function ConfigureAttackPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ConfigureAttackPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-400">
+          Loading attack configuration...
+        </div>
+      }
+    >
+      <ConfigureAttackPageContent />
+    </React.Suspense>
   );
 }

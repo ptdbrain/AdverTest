@@ -91,15 +91,27 @@ def test_ready_checkpoint_requires_native_class_metadata() -> None:
 def test_job_progress_and_terminal_timestamp_are_enforced() -> None:
     with pytest.raises(ValidationError, match="completed_units"):
         JobV1(
-            id=uuid4(), project_id=uuid4(), owner_user_id=uuid4(),
-            type="checkpoint_validation", status=JobStatus.RUNNING,
-            stage="SMOKE_TESTING", completed_units=3, total_units=2, created_at=NOW,
+            id=uuid4(),
+            project_id=uuid4(),
+            owner_user_id=uuid4(),
+            type="checkpoint_validation",
+            status=JobStatus.RUNNING,
+            stage="SMOKE_TESTING",
+            completed_units=3,
+            total_units=2,
+            created_at=NOW,
         )
     with pytest.raises(ValidationError, match="terminal jobs require"):
         JobV1(
-            id=uuid4(), project_id=uuid4(), owner_user_id=uuid4(),
-            type="checkpoint_validation", status=JobStatus.COMPLETED,
-            stage="COMPLETE", completed_units=2, total_units=2, created_at=NOW,
+            id=uuid4(),
+            project_id=uuid4(),
+            owner_user_id=uuid4(),
+            type="checkpoint_validation",
+            status=JobStatus.COMPLETED,
+            stage="COMPLETE",
+            completed_units=2,
+            total_units=2,
+            created_at=NOW,
         )
 
 
@@ -127,16 +139,29 @@ def test_task_model_family_user_project_and_dataset_contracts() -> None:
     user = UserV1(id=uuid4(), email="user@example.test", role="USER", created_at=NOW)
     project = ProjectV1(id=uuid4(), owner_user_id=user.id, name="Safety", created_at=NOW)
     membership = ProjectMembershipV1(
-        project_id=project.id, user_id=user.id, role="OWNER", created_at=NOW,
+        project_id=project.id,
+        user_id=user.id,
+        role="OWNER",
+        created_at=NOW,
     )
     dataset = DatasetV1(
-        id=uuid4(), project_id=project.id, created_by_user_id=user.id,
-        name="nuScenes validation", task_id=task.id, created_at=NOW,
+        id=uuid4(),
+        project_id=project.id,
+        created_by_user_id=user.id,
+        name="nuScenes validation",
+        task_id=task.id,
+        created_at=NOW,
     )
     version = DatasetVersionV1(
-        id=uuid4(), dataset_id=dataset.id, project_id=project.id,
-        manifest_artifact_id=uuid4(), version=1, status=DatasetVersionStatus.READY,
-        schema_hash=HASH, sample_count=100, created_at=NOW,
+        id=uuid4(),
+        dataset_id=dataset.id,
+        project_id=project.id,
+        manifest_artifact_id=uuid4(),
+        version=1,
+        status=DatasetVersionStatus.READY,
+        schema_hash=HASH,
+        sample_count=100,
+        created_at=NOW,
     )
 
     assert family.supported_task_ids == (task.id,)
@@ -150,42 +175,76 @@ def test_attack_benchmark_training_defence_and_comparison_contracts() -> None:
     checkpoint_id = uuid4()
     dataset_version_id = uuid4()
     mapping = ClassMappingV1(
-        id=uuid4(), project_id=project_id, checkpoint_id=checkpoint_id,
-        dataset_version_id=dataset_version_id, native_class_id=0,
-        canonical_class_id="Car", status=ClassMappingStatus.MAPPED, created_at=NOW,
+        id=uuid4(),
+        project_id=project_id,
+        checkpoint_id=checkpoint_id,
+        dataset_version_id=dataset_version_id,
+        native_class_id=0,
+        canonical_class_id="Car",
+        status=ClassMappingStatus.MAPPED,
+        created_at=NOW,
     )
     recipe = AttackRecipeV1(
-        id=uuid4(), project_id=project_id, created_by_user_id=user_id,
-        task_id=TaskId.DETECTION2D, recipe_hash=HASH, catalog_version="1.0.0",
-        implementation_version="1.0.0", created_at=NOW,
+        id=uuid4(),
+        project_id=project_id,
+        created_by_user_id=user_id,
+        task_id=TaskId.DETECTION2D,
+        recipe_hash=HASH,
+        catalog_version="1.0.0",
+        implementation_version="1.0.0",
+        created_at=NOW,
     )
     benchmark = BenchmarkRunV1(
-        id=uuid4(), project_id=project_id, created_by_user_id=user_id,
-        checkpoint_id=checkpoint_id, dataset_version_id=dataset_version_id,
-        attack_recipe_id=recipe.id, class_mapping_id=mapping.id, job_id=uuid4(),
-        protocol_id="locked-protocol", status=BenchmarkRunStatus.COMPLETED,
-        completed_at=NOW, created_at=NOW,
+        id=uuid4(),
+        project_id=project_id,
+        created_by_user_id=user_id,
+        checkpoint_id=checkpoint_id,
+        dataset_version_id=dataset_version_id,
+        attack_recipe_id=recipe.id,
+        class_mapping_id=mapping.id,
+        job_id=uuid4(),
+        protocol_id="locked-protocol",
+        status=BenchmarkRunStatus.COMPLETED,
+        completed_at=NOW,
+        created_at=NOW,
     )
     training = TrainingRunV1(
-        id=uuid4(), project_id=project_id, created_by_user_id=user_id,
-        parent_checkpoint_id=checkpoint_id, dataset_version_id=dataset_version_id,
-        defence_profile_id="balanced-v1", status=TrainingRunStatus.COMPLETED,
-        seed=195, output_checkpoint_id=uuid4(), created_at=NOW, completed_at=NOW,
+        id=uuid4(),
+        project_id=project_id,
+        created_by_user_id=user_id,
+        parent_checkpoint_id=checkpoint_id,
+        dataset_version_id=dataset_version_id,
+        defence_profile_id="balanced-v1",
+        status=TrainingRunStatus.COMPLETED,
+        seed=195,
+        output_checkpoint_id=uuid4(),
+        created_at=NOW,
+        completed_at=NOW,
     )
     defence = DefenceRunV1(
-        id=uuid4(), project_id=project_id, created_by_user_id=user_id,
-        baseline_checkpoint_id=checkpoint_id, baseline_benchmark_run_id=benchmark.id,
-        defence_profile_id="balanced-v1", training_run_id=training.id,
+        id=uuid4(),
+        project_id=project_id,
+        created_by_user_id=user_id,
+        baseline_checkpoint_id=checkpoint_id,
+        baseline_benchmark_run_id=benchmark.id,
+        defence_profile_id="balanced-v1",
+        training_run_id=training.id,
         defended_checkpoint_id=training.output_checkpoint_id,
-        defended_benchmark_run_id=uuid4(), status=DefenceRunStatus.COMPLETED,
-        created_at=NOW, completed_at=NOW,
+        defended_benchmark_run_id=uuid4(),
+        status=DefenceRunStatus.COMPLETED,
+        created_at=NOW,
+        completed_at=NOW,
     )
     comparison = ModelComparisonV1(
-        id=uuid4(), project_id=project_id, created_by_user_id=user_id,
+        id=uuid4(),
+        project_id=project_id,
+        created_by_user_id=user_id,
         baseline_benchmark_run_id=benchmark.id,
         candidate_benchmark_run_id=defence.defended_benchmark_run_id,
-        status=ModelComparisonStatus.COMPLETED, paired=True,
-        created_at=NOW, completed_at=NOW,
+        status=ModelComparisonStatus.COMPLETED,
+        paired=True,
+        created_at=NOW,
+        completed_at=NOW,
     )
 
     assert recipe.project_id == project_id
@@ -196,8 +255,13 @@ def test_attack_benchmark_training_defence_and_comparison_contracts() -> None:
 def test_scientific_benchmark_requires_class_mapping() -> None:
     with pytest.raises(ValidationError, match="require class_mapping_id"):
         BenchmarkRunV1(
-            id=uuid4(), project_id=uuid4(), created_by_user_id=uuid4(),
-            checkpoint_id=uuid4(), dataset_version_id=uuid4(), job_id=uuid4(),
-            protocol_id="locked-protocol", status=BenchmarkRunStatus.QUEUED,
+            id=uuid4(),
+            project_id=uuid4(),
+            created_by_user_id=uuid4(),
+            checkpoint_id=uuid4(),
+            dataset_version_id=uuid4(),
+            job_id=uuid4(),
+            protocol_id="locked-protocol",
+            status=BenchmarkRunStatus.QUEUED,
             created_at=NOW,
         )

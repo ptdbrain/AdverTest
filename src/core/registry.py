@@ -39,11 +39,12 @@ class Registry(Generic[T]):
         """Class decorator: ``@ATTACKS.register``."""
         name = getattr(plugin, "name", "")
         if not isinstance(name, str) or not NAME_PATTERN.match(name):
-            raise ValueError(
-                f"{plugin.__name__}.name must be snake_case (3-48 chars, [a-z0-9_]), got {name!r}"
-            )
+            raise ValueError(f"{plugin.__name__}.name must be snake_case (3-48 chars, [a-z0-9_]), got {name!r}")
         existing = self._plugins.get(name)
         if existing is not None and existing is not plugin:
+            if existing.__module__ == plugin.__module__ and existing.__name__ == plugin.__name__:
+                self._plugins[name] = plugin
+                return plugin
             raise RegistryConflictError(
                 f"{self.kind} name {name!r} already registered by "
                 f"{existing.__module__}.{existing.__name__}; pick another name"

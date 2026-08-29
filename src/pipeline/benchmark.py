@@ -115,8 +115,7 @@ class AttackDatasetBenchmark:
         adapter, checkpoint_hash = self._adapter(config.model)
         model_info = adapter.metadata()
         generation_payloads = [
-            self._load_generation(Path(path).expanduser().resolve())
-            for path in config.generation_paths
+            self._load_generation(Path(path).expanduser().resolve()) for path in config.generation_paths
         ]
         benchmark_id = stable_digest(
             {
@@ -134,11 +133,7 @@ class AttackDatasetBenchmark:
             },
             length=16,
         )
-        root = (
-            Path(config.output_dir).expanduser().resolve()
-            / config.model.name
-            / benchmark_id
-        )
+        root = Path(config.output_dir).expanduser().resolve() / config.model.name / benchmark_id
         root.mkdir(parents=True, exist_ok=True)
         _write_json(root / "config.json", config.model_dump(mode="json"))
 
@@ -147,10 +142,7 @@ class AttackDatasetBenchmark:
         for generation_root, descriptor, generation_config, records in generation_payloads:
             clean_source = _source_from_generation(generation_config)
             clean_source.require_anonymized()
-            clean_by_id = {
-                sample.sample_id: sample
-                for sample in clean_source.load(generation_config.limit)
-            }
+            clean_by_id = {sample.sample_id: sample for sample in clean_source.load(generation_config.limit)}
             generated = get_dataset(
                 "generated_dataset",
                 root=str(generation_root),
@@ -187,8 +179,7 @@ class AttackDatasetBenchmark:
             "score_threshold": config.model.score_threshold,
             "metric": "macro AP at one IoU threshold (AdverTest AP50 when IoU=0.5)",
             "precision_recall_note": (
-                "precision/recall counts use model.score_threshold; AP uses the "
-                "retained score-ranked detections"
+                "precision/recall counts use model.score_threshold; AP uses the retained score-ranked detections"
             ),
             "n_cells": len(cells),
             "cells": cells,
@@ -216,17 +207,11 @@ class AttackDatasetBenchmark:
         if config.checkpoint is not None:
             checkpoint = Path(config.checkpoint).expanduser().resolve()
             if not checkpoint.is_file():
-                raise FileNotFoundError(
-                    f"benchmark checkpoint does not exist: {checkpoint}"
-                )
+                raise FileNotFoundError(f"benchmark checkpoint does not exist: {checkpoint}")
             checkpoint_hash = file_digest(checkpoint)
             params["weights"] = config.checkpoint
-        if config.name in {"yolo11", "faster_rcnn", "sam2_surrogate", "rtdetr"} and (
-            config.checkpoint is None
-        ):
-            raise ValueError(
-                f"benchmark model {config.name!r} requires an explicit checkpoint"
-            )
+        if config.name in {"yolo11", "faster_rcnn", "sam2_surrogate", "rtdetr"} and (config.checkpoint is None):
+            raise ValueError(f"benchmark model {config.name!r} requires an explicit checkpoint")
         params["device"] = config.device
         params["score_threshold"] = config.score_threshold
         params["max_detections"] = config.max_detections
@@ -251,9 +236,7 @@ class AttackDatasetBenchmark:
         )
         records = [
             json.loads(line)
-            for line in (root / "manifest.jsonl").read_text(
-                encoding="utf-8"
-            ).splitlines()
+            for line in (root / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
         return root, inspected, generation_config, records
@@ -275,8 +258,7 @@ class AttackDatasetBenchmark:
         source_ids = [str(record["source_sample_id"]) for record in records]
         if len(source_ids) != len(set(source_ids)):
             raise ValueError(
-                f"generation {descriptor['generation_id']} has duplicate source IDs "
-                f"at severity {severity}"
+                f"generation {descriptor['generation_id']} has duplicate source IDs at severity {severity}"
             )
         clean_samples: list[Sample] = []
         attacked_samples: list[Sample] = []
@@ -286,9 +268,7 @@ class AttackDatasetBenchmark:
             clean = clean_by_id.get(source_id)
             variant = generated_by_id.get(variant_id)
             if clean is None or variant is None:
-                raise ValueError(
-                    f"cannot pair source {source_id!r} and variant {variant_id!r}"
-                )
+                raise ValueError(f"cannot pair source {source_id!r} and variant {variant_id!r}")
             if array_digest(clean.image, length=32) != record["source_hash"]:
                 raise ValueError(f"clean source hash changed for {source_id!r}")
             label_hash = stable_digest(
@@ -316,14 +296,8 @@ class AttackDatasetBenchmark:
             clean_samples,
             iou_threshold,
         )
-        degradation = (
-            max(0.0, (clean_ap - attacked_ap) / clean_ap)
-            if clean_ap > 0.0
-            else 0.0
-        )
-        relative_ap_change = (
-            (attacked_ap - clean_ap) / clean_ap if clean_ap > 0.0 else 0.0
-        )
+        degradation = max(0.0, (clean_ap - attacked_ap) / clean_ap) if clean_ap > 0.0 else 0.0
+        relative_ap_change = (attacked_ap - clean_ap) / clean_ap if clean_ap > 0.0 else 0.0
         clean_summary = detection_summary(
             clean_predictions,
             clean_samples,
@@ -373,18 +347,13 @@ class AttackDatasetBenchmark:
             },
             "clean": clean_summary.as_dict(),
             "attacked": attacked_summary.as_dict(),
-            "false_positive_delta": (
-                attacked_summary.false_positives - clean_summary.false_positives
-            ),
+            "false_positive_delta": (attacked_summary.false_positives - clean_summary.false_positives),
             "attack_success": success.as_dict(),
             "mean_clean_latency_ms": _mean_latency(clean_predictions),
             "mean_attacked_latency_ms": _mean_latency(attacked_predictions),
             "attack_surrogate_checkpoint_hash": surrogate_hash,
             "benchmark_checkpoint_hash": benchmark_checkpoint_hash,
-            "white_box_same_checkpoint": (
-                surrogate_hash is not None
-                and surrogate_hash == benchmark_checkpoint_hash
-            ),
+            "white_box_same_checkpoint": (surrogate_hash is not None and surrogate_hash == benchmark_checkpoint_hash),
             "patch_artifact_hash": records[0].get("patch_artifact_hash"),
         }
 
@@ -521,11 +490,7 @@ def _generation_surrogate_hash(
     records: list[dict[str, Any]],
     config: AttackGenerationConfig,
 ) -> str | None:
-    hashes = {
-        str(record["checkpoint_hash"])
-        for record in records
-        if record.get("checkpoint_hash")
-    }
+    hashes = {str(record["checkpoint_hash"]) for record in records if record.get("checkpoint_hash")}
     if len(hashes) > 1:
         raise ValueError("generation contains multiple surrogate checkpoint hashes")
     if hashes:

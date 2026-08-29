@@ -43,9 +43,7 @@ DEFAULT_SESSIONS_DIR = Path.home() / ".codex" / "sessions"
 
 def git(*args: str) -> str:
     try:
-        return subprocess.check_output(
-            ["git", *args], text=True, stderr=subprocess.DEVNULL
-        ).strip()
+        return subprocess.check_output(["git", *args], text=True, stderr=subprocess.DEVNULL).strip()
     except (OSError, subprocess.CalledProcessError):
         return ""
 

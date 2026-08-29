@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from src.pipeline.protocol import BenchmarkProtocol
 
 
-
 class EvaluationResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
 

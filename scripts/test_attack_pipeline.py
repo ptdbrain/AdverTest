@@ -1,10 +1,10 @@
 """Verify multi-class detection and sequential attack composition pipeline."""
 
-import time
 from pathlib import Path
-from PIL import Image
-import numpy as np
+
 import imagecorruptions
+import numpy as np
+from PIL import Image
 from ultralytics import YOLO
 
 print("=" * 70)
@@ -16,7 +16,9 @@ model = YOLO(str(model_path))
 
 print(f"[*] Tong so nhan lop model ho tro: {len(model.names)} lop.")
 print(f"[*] Cac nhan lop tieu bieu       : {list(model.names.values())[:15]}")
-print("==> KET LUAN 1: Model KHONG BI GIOI HAN 1 nhan ma detect TOAN BO 80 nhan lop (person, car, truck, bus, bicycle, motorcycle, v.v.).")
+print(
+    "==> KET LUAN 1: Model KHONG BI GIOI HAN 1 nhan ma detect TOAN BO 80 nhan lop (person, car, truck, bus, bicycle, motorcycle, v.v.)."
+)
 
 print("\n" + "=" * 70)
 print("2. KIEM TRA TUNG DANG TAN CONG & VIEC KET HOP (COMPOSITION):")
@@ -28,7 +30,9 @@ arr_clean = np.array(img_pil)
 
 # A. Chay tren anh Goc (Clean)
 r_clean = model(clean_img_path, verbose=False)[0]
-clean_dets = [(model.names[int(b.cls[0])], round(float(b.conf[0]), 3)) for b in r_clean.boxes if float(b.conf[0]) > 0.25]
+clean_dets = [
+    (model.names[int(b.cls[0])], round(float(b.conf[0]), 3)) for b in r_clean.boxes if float(b.conf[0]) > 0.25
+]
 print(f"[*] (A) Anh Goc (Clean) -> Phat hien {len(clean_dets)} doi tuong:")
 for d in clean_dets:
     print(f"    - {d[0]}: conf = {d[1]}")
@@ -52,7 +56,9 @@ noisy_path = Path("frontend/public/samples/kitti/temp_noisy.png")
 noisy_pil.save(noisy_path)
 
 r_noisy = model(noisy_path, verbose=False)[0]
-noisy_dets = [(model.names[int(b.cls[0])], round(float(b.conf[0]), 3)) for b in r_noisy.boxes if float(b.conf[0]) > 0.25]
+noisy_dets = [
+    (model.names[int(b.cls[0])], round(float(b.conf[0]), 3)) for b in r_noisy.boxes if float(b.conf[0]) > 0.25
+]
 print(f"\n[*] (C) Tan cong don le [PGD / Gaussian Noise (Cap 3)] -> Phat hien {len(noisy_dets)} doi tuong:")
 for d in noisy_dets:
     print(f"    - {d[0]}: conf = {d[1]}")
@@ -75,5 +81,7 @@ print("TONG KET PHAN TICH CHUYEN SAU:")
 print("=" * 70)
 print("1. Da kiem tra: Model YOLO11s nhan dien day du moi nhan lop (Person, Car, Bicycle, Truck, Bus, v.v.).")
 print("2. Khi bi tan cong nhe: Cac nhan lop xa bi mat truoc (Bicycle/Car), nhan lop gan (Person) bi giam confidence.")
-print("3. Khi KET HOP nhieu don: Hieu qua triet tieu cong don (Compound Degradation), so luong doi tuong bi mat tang gap doi so voi don le.")
+print(
+    "3. Khi KET HOP nhieu don: Hieu qua triet tieu cong don (Compound Degradation), so luong doi tuong bi mat tang gap doi so voi don le."
+)
 print("=" * 70)

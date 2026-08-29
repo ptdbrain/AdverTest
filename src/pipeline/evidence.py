@@ -68,7 +68,7 @@ def prediction_payload(prediction: ModelPrediction) -> dict[str, Any]:
         "metadata": prediction.metadata,
     }
     if isinstance(prediction, DetectionPrediction):
-        return {
+        payload = {
             "prediction_type": "detection",
             **common,
             "boxes": [
@@ -80,6 +80,22 @@ def prediction_payload(prediction: ModelPrediction) -> dict[str, Any]:
                 for box in prediction.boxes
             ],
         }
+        if getattr(prediction, "boxes3d", None):
+            payload["boxes3d"] = [
+                {
+                    "label": box.label,
+                    "score": round(box.score, 6),
+                    "x": round(box.x, 4),
+                    "y": round(box.y, 4),
+                    "z": round(box.z, 4),
+                    "length": round(box.length, 4),
+                    "width": round(box.width, 4),
+                    "height": round(box.height, 4),
+                    "yaw": round(box.yaw, 4),
+                }
+                for box in prediction.boxes3d
+            ]
+        return payload
     if isinstance(prediction, SegmentationPrediction):
         return {
             "prediction_type": "segmentation",

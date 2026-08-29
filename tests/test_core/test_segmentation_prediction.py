@@ -8,7 +8,8 @@ from src.core.types import MaskPrediction, SegmentationPrediction
 
 def test_segmentation_prediction_carries_fixed_prompt_id_and_instances() -> None:
     prediction = SegmentationPrediction(
-        sample_id="sample", prompt_id="gt-box:sample:1",
+        sample_id="sample",
+        prompt_id="gt-box:sample:1",
         instances=(MaskPrediction(instance_id="1", mask=np.ones((4, 4), dtype=np.bool_), score=0.9),),
     )
     assert prediction.prompt_id == "gt-box:sample:1"

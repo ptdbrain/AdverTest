@@ -1,0 +1,391 @@
+{
+  "name": "split-fixture",
+  "logical_source_id": "split-fixture",
+  "version_id": "dataset-03b3138a77973dded8ecedf89aab20e6",
+  "manifest_hash": "03b3138a77973dded8ecedf89aab20e6502f8a13a400ba4400e3e822c356d3a7",
+  "schema_version": "1.0.0",
+  "loader_version": "split-loader-1",
+  "records": [
+    {
+      "sample_id": "sample-000",
+      "source_uri": "split-fixture://sample-000",
+      "source_hash": "1d15302442d268e04fc1938fd221c72802641970badd396bdd959e54241d6e9a",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Car"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Car"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-001",
+      "source_uri": "split-fixture://sample-001",
+      "source_hash": "c395c0910b16d98bee490e2a882180bafd11e142e099ac04b7cee161802cf5c6",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Pedestrian"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Pedestrian"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-002",
+      "source_uri": "split-fixture://sample-002",
+      "source_hash": "964082d4f2c9afa9f64cceff4cd7ea40889862814be2b83a6317a1ddc9264408",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Cyclist"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Cyclist"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-003",
+      "source_uri": "split-fixture://sample-003",
+      "source_hash": "4e7479978a8cf82aa39af0902ccdac2e5457460f51c1734bbef6dd20e0528950",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Car"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Car"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-004",
+      "source_uri": "split-fixture://sample-004",
+      "source_hash": "0e692218038af2496d6425e9901247fc16ff1796d9b351aaa6a86a9616b37859",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Pedestrian"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Pedestrian"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-005",
+      "source_uri": "split-fixture://sample-005",
+      "source_hash": "508783d101e43a19aee2d3c458b05d4deb6ee042a57e3d8dcd8ff6a424aef7c5",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Cyclist"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Cyclist"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-006",
+      "source_uri": "split-fixture://sample-006",
+      "source_hash": "d44a1f1b6667c496aec8af200f0dd6ca6248d0d34eb4c6d0d557fbb390386e95",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Car"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Car"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-007",
+      "source_uri": "split-fixture://sample-007",
+      "source_hash": "dcf4edab49af65113771c3fe056d4feaf45d79a0c97c0733cd19104965dc600a",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Pedestrian"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Pedestrian"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-008",
+      "source_uri": "split-fixture://sample-008",
+      "source_hash": "77b1319d618cd3f6c5de927562ec784c45159926a8f6616acfde31dae74a44ea",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Cyclist"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Cyclist"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-009",
+      "source_uri": "split-fixture://sample-009",
+      "source_hash": "e46e00da31e70cad8024100326c4e42a2e322a4ae77fff7ade2d142895cd939a",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Car"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Car"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-010",
+      "source_uri": "split-fixture://sample-010",
+      "source_hash": "893efc077e6926c487fdaadb19a068156336c4af82f7f1f6b6468910fdb50b2e",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Pedestrian"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Pedestrian"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-011",
+      "source_uri": "split-fixture://sample-011",
+      "source_hash": "967c72b569fc2b1e27825d67867e8c0a9160b12d593a132998dfe618588ce36d",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Cyclist"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Cyclist"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-012",
+      "source_uri": "split-fixture://sample-012",
+      "source_hash": "4818bf510f20687b10a62d102115cf85b8642a83359639b34b8e34b72d478fb3",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Car"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Car"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-013",
+      "source_uri": "split-fixture://sample-013",
+      "source_hash": "f17f5c54ec6d5aaaf4afc724d2d23d3f0308baecfa0b902241df513641a32625",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Pedestrian"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Pedestrian"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-014",
+      "source_uri": "split-fixture://sample-014",
+      "source_hash": "f429244efa9dfda8b84f8383f577049868c3baada649cff5dd537518b415700b",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Cyclist"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Cyclist"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-015",
+      "source_uri": "split-fixture://sample-015",
+      "source_hash": "4703c17d8513be9d22987ac14103badba1febe203dc5aa15ec3a3c4fc3002033",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Car"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Car"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-016",
+      "source_uri": "split-fixture://sample-016",
+      "source_hash": "800ce3ef718056718f85c8f0eb8b1fa2244cecce27e65907a90a83d80782b262",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Pedestrian"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Pedestrian"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-017",
+      "source_uri": "split-fixture://sample-017",
+      "source_hash": "169eeed27b152da65f6ea0cbd19bcd95b179318101e4aabe65ef728cd85cbd8e",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Cyclist"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Cyclist"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-018",
+      "source_uri": "split-fixture://sample-018",
+      "source_hash": "4ad76d1f97bf6860b8b3c4b4b6ba5fd834071c5a18f4e29bb6abb0a32d18894c",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Car"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Car"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    },
+    {
+      "sample_id": "sample-019",
+      "source_uri": "split-fixture://sample-019",
+      "source_hash": "8a92cc1ed3d1f0ad1d1c59bd386af077a556e2ab94291a927937102d8d7200c4",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [
+        "Pedestrian"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "Pedestrian"
+        ],
+        "loader_version": "split-loader-1",
+        "logical_source_id": "split-fixture"
+      }
+    }
+  ],
+  "metadata": {}
+}

@@ -1,0 +1,60 @@
+{
+  "algorithm": "dpatch",
+  "artifact_hash": "5de3539627756b1e5060ca482d50e35c",
+  "artifact_id": "d281ecee76d1215d",
+  "checkpoint_hash": null,
+  "config": {
+    "algorithm": "dpatch",
+    "anonymization_manifest": null,
+    "area_fraction": 0.15,
+    "dataset_name": "synthetic_shapes",
+    "dataset_params": {
+      "n_samples": 2,
+      "seed": 7
+    },
+    "eot": true,
+    "input_dir": null,
+    "input_format": "advertest",
+    "iterations": 1,
+    "learning_rate": 0.03,
+    "nps_weight": 0.01,
+    "output_dir": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_targeted_dpatch_separates0",
+    "patch_size": 8,
+    "sample_ids": null,
+    "seed": 20260730,
+    "source_label": "Car",
+    "surrogate": {
+      "checkpoint": null,
+      "device": "cpu",
+      "name": "blob_detector",
+      "objective": "targeted",
+      "params": {},
+      "target_box_index": null,
+      "target_label": null
+    },
+    "target_label": "Cyclist",
+    "train_limit": 2,
+    "tv_weight": 2.5
+  },
+  "format": "advertest-patch-v1",
+  "loss_history": [
+    {
+      "attack_loss": 0.023375166580080986,
+      "iteration": 1,
+      "nps": 0.06893208622932434,
+      "tv": 0.691541314125061
+    }
+  ],
+  "objective_kind": "targeted",
+  "objective_target_label": "Cyclist",
+  "patch_path": "patch.npy",
+  "placement_label": "Car",
+  "preview_path": "patch.png",
+  "surrogate": "blob_detector",
+  "surrogate_version": "blob-1.0.0:thr0.45",
+  "train_sample_ids": [
+    "synthetic_shapes_0000"
+  ],
+  "trainer_version": "2.0.0",
+  "training_source_fingerprint": "9f6a8828275d7d7a205d9131f25d51e2"
+}

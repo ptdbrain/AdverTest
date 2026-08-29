@@ -93,7 +93,8 @@ export default function MetricsComparisonChart({ report }) {
   const cells = report?.cells ?? [];
   const cleanMetrics = report?.metrics?.clean ?? {};
 
-  const cleanAp50 = Number((cleanMetrics.ap50 ?? apClean).toFixed(3));
+  const is3D = cleanMetrics.kitti_3d_ap != null;
+  const cleanAp50 = Number((cleanMetrics.kitti_3d_ap ?? cleanMetrics.ap50 ?? apClean).toFixed(3));
   const cleanMap = Number((cleanMetrics.map50_95 ?? Math.max(0, apClean * 0.72)).toFixed(3));
 
   // Extract each unique attack cell with guaranteed unique keys and clean names
@@ -121,7 +122,7 @@ export default function MetricsComparisonChart({ report }) {
         label,
         attack: cell.attack,
         severity: cell.severity,
-        ap50: Number((cell.metrics?.ap50 ?? cell.ap ?? 0).toFixed(3)),
+        ap50: Number((cell.metrics?.kitti_3d_ap ?? cell.metrics?.ap50 ?? cell.ap ?? 0).toFixed(3)),
         map50_95: Number((cell.metrics?.map50_95 ?? (cell.ap ? cell.ap * 0.72 : 0)).toFixed(3)),
         color: ATTACK_PALETTE[idx % ATTACK_PALETTE.length],
       };
@@ -130,8 +131,8 @@ export default function MetricsComparisonChart({ report }) {
 
   // Build overview chart data: each metric category has Baseline + each attack series
   const { overviewData, seriesKeys } = useMemo(() => {
-    const ap50Row = { category: "AP@50 (IoU 0.50)", Baseline: cleanAp50 };
-    const mapRow = { category: "mAP@50-95 (IoU 0.50:0.95)", Baseline: cleanMap };
+    const ap50Row = { category: is3D ? "BEV AP (IoU 0.50)" : "AP@50 (IoU 0.50)", Baseline: cleanAp50 };
+    const mapRow = { category: is3D ? "BEV mAP (Estimated)" : "mAP@50-95 (IoU 0.50:0.95)", Baseline: cleanMap };
 
     attackSeries.forEach((series) => {
       ap50Row[series.key] = series.ap50;
@@ -147,7 +148,7 @@ export default function MetricsComparisonChart({ report }) {
       overviewData: [ap50Row, mapRow],
       seriesKeys: series,
     };
-  }, [cleanAp50, cleanMap, attackSeries]);
+  }, [cleanAp50, cleanMap, attackSeries, is3D, t]);
 
   const baselineLookup = useMemo(() => {
     return {

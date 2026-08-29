@@ -39,6 +39,7 @@ class CityscapesSegmentationDataset(DatasetSource):
         raw_root = Path(self.params.root).expanduser()  # type: ignore[attr-defined]
         if not raw_root.is_absolute():
             from src.config import PROJECT_ROOT
+
             if (PROJECT_ROOT / raw_root).exists():
                 self.root = (PROJECT_ROOT / raw_root).resolve()
             elif (PROJECT_ROOT.parent.parent / raw_root).exists():

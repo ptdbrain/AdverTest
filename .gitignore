@@ -39,6 +39,10 @@ Thumbs.db
 *.safetensors
 *.db
 *.sqlite3
+*.tgz
+*.tar.gz
+*.zip
+*.bin
 
 # Model weights + training runs (ultralytics downloads yolo11s.pt into the CWD)
 *.pt

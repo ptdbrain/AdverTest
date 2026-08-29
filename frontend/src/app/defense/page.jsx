@@ -1,382 +1,480 @@
 "use client";
 
-import React, { useState } from "react";
-import Link from "next/link";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ShieldCheck,
-  Play,
-  Copy,
-  Check,
-  Download,
-  Upload,
-  Cpu,
-  HardDrive,
-  Activity,
-  Layers,
-  Settings,
-  Sparkles,
-  ArrowRight,
-  TrendingUp,
-  FileCode,
-  CheckCircle2,
   AlertCircle,
-  Database,
-  Sliders,
-  Terminal,
+  Check,
+  CheckCircle2,
+  Copy,
+  Cpu,
+  Download,
   Lock,
   RefreshCw,
+  ShieldCheck,
+  Upload,
 } from "lucide-react";
-import PageHeader from "@/components/layout/PageHeader";
-import Card from "@/components/common/Card";
+
 import Badge from "@/components/common/Badge";
 import Button from "@/components/common/Button";
-import RobustnessRadar from "@/components/metrics/RobustnessRadar";
-import { DEFENSE_COMPARISON } from "@/data/mockData";
+import Card from "@/components/common/Card";
+import DefenseTargetSelector from "@/components/DefenseTargetSelector";
+import PageHeader from "@/components/layout/PageHeader";
+import {
+  createDefenceRun,
+  getCheckpoint,
+  getRun,
+  getRunDefenceCandidates,
+  listSessions,
+  uploadCheckpoint,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+const strategies = [
+  ["adversarial_training", "Adversarial Training", "Đưa mẫu tấn công đã đo vào từng epoch."],
+  ["augmentation_mix", "Augmentation Mix", "Trộn corruption phù hợp với run mục tiêu."],
+  ["robust_finetune", "Robust Fine-tuning", "Giữ hiệu năng clean trong quá trình fine-tune."],
+];
+
+function messageOf(error, fallback) {
+  return error?.message || fallback;
+}
+
 export default function DefensePage() {
-  // Strategy & Hyperparameter Config State
+  const [sessions, setSessions] = useState([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsError, setSessionsError] = useState("");
+  const [selectedSessionId, setSelectedSessionId] = useState("");
+  const [selectedRunId, setSelectedRunId] = useState("");
+  const [baselineRun, setBaselineRun] = useState(null);
+  const [baselineLoading, setBaselineLoading] = useState(false);
+  const [baselineError, setBaselineError] = useState("");
+  const [candidates, setCandidates] = useState([]);
+
   const [strategy, setStrategy] = useState("adversarial_training");
-  const [baseModel, setBaseModel] = useState("weights/yolo11s-clean-b0_best.pt");
-  const [datasetYaml, setDatasetYaml] = useState("data/anonymized/kitti-de/data.yaml");
-  const [targetRecipe, setTargetRecipe] = useState("fgsm,depth_fog,pgd");
   const [epochs, setEpochs] = useState(10);
   const [batchSize, setBatchSize] = useState(16);
   const [learningRate, setLearningRate] = useState(0.001);
   const [device, setDevice] = useState("cuda:0");
-
-  // Copy & Script Download States
   const [isCopied, setIsCopied] = useState(false);
 
-  // Defended Upload & Re-test Locked Protocol States
-  const [defendedFile, setDefendedFile] = useState(null);
+  const [candidateId, setCandidateId] = useState("");
+  const [candidateFileName, setCandidateFileName] = useState("");
+  const [uploadState, setUploadState] = useState("idle");
+  const [uploadMessage, setUploadMessage] = useState("");
   const [isEvaluating, setIsEvaluating] = useState(false);
-  const [evaluationDone, setEvaluationDone] = useState(false);
+  const [evaluationJob, setEvaluationJob] = useState(null);
+  const [evaluationError, setEvaluationError] = useState("");
 
-  // Computed CLI Command
-  const generatedCommand = `python scripts/train_defence.py --model ${baseModel} --dataset ${datasetYaml} --recipe ${targetRecipe} --strategy ${strategy} --epochs ${epochs} --batch-size ${batchSize} --lr ${learningRate} --output-dir weights/defended --device ${device}`;
+  const selectedSession = useMemo(
+    () => sessions.find((item) => item.id === selectedSessionId) ?? null,
+    [sessions, selectedSessionId]
+  );
+  const selectedRun = useMemo(
+    () => selectedSession?.runs?.find((item) => item.id === selectedRunId) ?? null,
+    [selectedRunId, selectedSession]
+  );
+  const baselineConfig = baselineRun?.config
+    ?? baselineRun?.report?.provenance?.run_config
+    ?? null;
+  const compatibleCandidates = useMemo(() => {
+    const familyId = baselineConfig?.model_family_id;
+    if (!familyId) return [];
+    return candidates.filter((candidate) => candidate.model_family_id === familyId);
+  }, [baselineConfig, candidates]);
 
-  const handleCopyCommand = () => {
-    navigator.clipboard.writeText(generatedCommand);
+  const backendBaselineId = selectedRun?.backend_run_id?.trim() ?? "";
+  const lockedModelName = selectedSession?.model_name ?? "";
+  const lockedModelId = baselineConfig?.checkpoint_id
+    ?? baselineConfig?.model_version_id
+    ?? selectedSession?.model_id
+    ?? "";
+  const lockedDatasetName = selectedSession?.dataset_name ?? "";
+  const lockedDatasetId = baselineConfig?.dataset ?? selectedSession?.dataset_id ?? "";
+  const lockedRecipe = selectedRun?.attack_components?.length
+    ? selectedRun.attack_components.join(",")
+    : selectedRun?.attack_type ?? "";
+  const hasTarget = Boolean(selectedSession && selectedRun);
+  const hasBackendBaseline = Boolean(backendBaselineId);
+  const canUpload = Boolean(
+    hasBackendBaseline
+      && baselineConfig?.task_id
+      && baselineConfig?.model_family_id
+      && lockedModelId
+  );
+  const canEvaluate = Boolean(
+    hasBackendBaseline
+      && baselineRun?.status === "COMPLETED"
+      && candidateId
+      && !isEvaluating
+      && uploadState !== "uploading"
+  );
+
+  const generatedCommand = hasTarget
+    ? `python scripts/train_defence.py --model ${lockedModelId} --dataset ${lockedDatasetId} --recipe ${lockedRecipe} --strategy ${strategy} --epochs ${epochs} --batch-size ${batchSize} --lr ${learningRate} --output-dir weights/defended --device ${device}`
+    : "Chọn phiên và attack run để sinh lệnh huấn luyện.";
+
+  const loadSessions = useCallback(async () => {
+    setSessionsLoading(true);
+    setSessionsError("");
+    try {
+      const items = await listSessions();
+      setSessions(Array.isArray(items) ? items : []);
+    } catch (error) {
+      setSessions([]);
+      setSessionsError(messageOf(error, "Không thể tải danh sách phiên thử nghiệm."));
+    } finally {
+      setSessionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setBaselineRun(null);
+    setCandidates([]);
+    setBaselineError("");
+
+    if (!backendBaselineId) {
+      setBaselineLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setBaselineLoading(true);
+    Promise.all([getRun(backendBaselineId), getRunDefenceCandidates(backendBaselineId)])
+      .then(([run, items]) => {
+        if (cancelled) return;
+        setBaselineRun(run);
+        setCandidates(Array.isArray(items) ? items : []);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setBaselineError(messageOf(error, "Không thể tải locked protocol của baseline run."));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBaselineLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [backendBaselineId]);
+
+  const clearDownstreamState = () => {
+    setCandidateId("");
+    setCandidateFileName("");
+    setUploadState("idle");
+    setUploadMessage("");
+    setEvaluationJob(null);
+    setEvaluationError("");
+  };
+
+  const handleSessionChange = (sessionId) => {
+    setSelectedSessionId(sessionId);
+    setSelectedRunId("");
+    setBaselineRun(null);
+    setCandidates([]);
+    clearDownstreamState();
+  };
+
+  const handleRunChange = (runId) => {
+    setSelectedRunId(runId);
+    setBaselineRun(null);
+    setCandidates([]);
+    clearDownstreamState();
+  };
+
+  const handleCopyCommand = async () => {
+    if (!hasTarget) return;
+    await navigator.clipboard.writeText(generatedCommand);
     setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2500);
+    window.setTimeout(() => setIsCopied(false), 2500);
   };
 
   const handleDownloadScript = (format) => {
-    const isWindows = format === "bat";
-    const scriptContent = isWindows
-      ? `@echo off\necho ====================================================\necho ADVERSAI LAB - LOCAL DEFENCE TRAINING\necho ====================================================\n${generatedCommand}\npause\n`
-      : `#!/usr/bin/env bash\n# AdversAI Lab - Local Defence Training Script\necho "===================================================="\necho "ADVERSAI LAB - LOCAL DEFENCE TRAINING"\necho "===================================================="\n${generatedCommand}\n`;
-
-    const blob = new Blob([scriptContent], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    if (!hasTarget) return;
+    const windows = format === "bat";
+    const content = windows
+      ? `@echo off\r\n${generatedCommand}\r\npause\r\n`
+      : `#!/usr/bin/env bash\nset -euo pipefail\n${generatedCommand}\n`;
+    const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = isWindows ? "run_train_defence.bat" : "run_train_defence.sh";
+    link.download = windows ? "run_train_defence.bat" : "run_train_defence.sh";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
-  const handleDefendedUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setDefendedFile(file);
-      setEvaluationDone(false);
+  const handleCandidateUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !canUpload) return;
+
+    setCandidateId("");
+    setCandidateFileName(file.name);
+    setUploadState("uploading");
+    setUploadMessage("Đang tải checkpoint: 0%");
+    setEvaluationJob(null);
+    setEvaluationError("");
+
+    try {
+      const created = await uploadCheckpoint(
+        file,
+        {
+          taskId: baselineConfig.task_id,
+          familyId: baselineConfig.model_family_id,
+          displayName: file.name,
+          role: "fine_tuned",
+          parentCheckpointId: lockedModelId,
+        },
+        (ratio) => setUploadMessage(`Đang tải checkpoint: ${Math.round(ratio * 100)}%`)
+      );
+
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        const checkpoint = await getCheckpoint(created.checkpoint_id);
+        if (checkpoint.status === "READY") {
+          setCandidateId(created.checkpoint_id);
+          setUploadState("ready");
+          setUploadMessage(`Checkpoint đã xác thực: ${created.checkpoint_id}`);
+          const refreshed = await getRunDefenceCandidates(backendBaselineId);
+          setCandidates(Array.isArray(refreshed) ? refreshed : []);
+          return;
+        }
+        if (["REJECTED", "FAILED_VALIDATION"].includes(checkpoint.status)) {
+          setUploadState("error");
+          setUploadMessage(`Checkpoint bị từ chối: ${checkpoint.validation_reason || checkpoint.status}`);
+          return;
+        }
+        setUploadMessage("Đang quét cách ly và kiểm tra checkpoint...");
+        await new Promise((resolve) => window.setTimeout(resolve, 600));
+      }
+      setUploadState("pending");
+      setUploadMessage("Checkpoint vẫn đang được xác thực trong hàng đợi.");
+    } catch (error) {
+      setUploadState("error");
+      setUploadMessage(messageOf(error, "Tải checkpoint thất bại."));
     }
   };
 
-  const handleRunLockedEvaluation = () => {
+  const handleRunLockedEvaluation = async () => {
+    if (!canEvaluate) return;
     setIsEvaluating(true);
-    setTimeout(() => {
+    setEvaluationJob(null);
+    setEvaluationError("");
+    try {
+      setEvaluationJob(await createDefenceRun(backendBaselineId, candidateId));
+    } catch (error) {
+      setEvaluationError(messageOf(error, "Không thể bắt đầu đánh giá phòng thủ."));
+    } finally {
       setIsEvaluating(false);
-      setEvaluationDone(true);
-    }, 1500);
+    }
   };
 
   return (
     <div className="space-y-5 animate-fade-in">
       <PageHeader
         title="Huấn luyện phòng thủ & Đánh giá đối kháng"
-        subtitle="Cấu hình siêu tham số để sinh lệnh huấn luyện phòng thủ chạy máy cá nhân (Local GPU), sau đó upload mô hình mới để đánh giá phục hồi theo Locked Protocol."
+        subtitle="Chọn đúng phiên và attack run trước khi cấu hình phòng thủ, sau đó đánh giá checkpoint mới trên cùng locked protocol."
         breadcrumb={[
           { label: "Trang chủ", href: "/dashboard" },
           { label: "Huấn luyện phòng thủ" },
         ]}
       />
 
-      {/* BANNER: ARCHITECTURE EXPLANATION */}
-      <div className="p-4 rounded-xl bg-blue-50/80 border border-blue-200 text-xs text-blue-900 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-xs">
-        <div className="flex items-start gap-3">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold flex-shrink-0 mt-0.5">
-            <Cpu className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="font-bold text-blue-900">
-              Cơ chế Phân tách Tính toán (Offloaded Training & Central Evaluation):
-            </div>
-            <div className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
-              Quá trình huấn luyện tăng cường (Adversarial Training / Fine-tuning) yêu cầu nhiều compute GPU. Web hỗ trợ cấu hình và sinh kịch bản CLI một dòng để bạn chạy trực tiếp trên máy trạm của bạn. Sau khi có file checkpoint mới (`.pt`), hãy tải lên để hệ thống tự động khóa cấu hình tấn công (Locked Protocol) và đo lường tỷ lệ phục hồi độ chính xác.
-            </div>
-          </div>
+      <DefenseTargetSelector
+        sessions={sessions}
+        selectedSessionId={selectedSessionId}
+        selectedRunId={selectedRunId}
+        loading={sessionsLoading}
+        error={sessionsError}
+        onSessionChange={handleSessionChange}
+        onRunChange={handleRunChange}
+        onRetry={loadSessions}
+      />
+
+      <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50/80 p-4 text-xs text-blue-900 md:flex-row md:items-center">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-700 text-blue-50">
+          <Cpu className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <div>
+          <p className="font-bold">Huấn luyện cục bộ, đánh giá tập trung</p>
+          <p className="mt-0.5 max-w-3xl text-[11px] leading-5 text-blue-800">
+            Lệnh training dùng đúng model, dataset và attack của run đã chọn. Checkpoint phải qua validation trước khi đánh giá.
+          </p>
         </div>
       </div>
 
-      {/* MAIN TWO COLUMNS */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
-        {/* LEFT COLUMN: Defence Strategy & Local Command Generator (7 Columns) */}
-        <div className="xl:col-span-7 space-y-5">
-          {/* 1. DEFENCE STRATEGY CONFIG */}
-          <Card
-            title="1. Cấu hình chiến lược phòng thủ"
-            subtitle="Thiết lập thuật toán và siêu tham số huấn luyện"
-          >
-            <div className="space-y-4 text-xs">
-              {/* Strategy Radio Grid */}
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-12">
+        <div className="space-y-5 xl:col-span-7">
+          <Card title="1. Cấu hình chiến lược phòng thủ" subtitle="Model, dataset và attack được khóa theo run đã chọn">
+            <fieldset disabled={!hasTarget} className="space-y-4 text-xs disabled:opacity-60">
+              <legend className="sr-only">Cấu hình chiến lược phòng thủ</legend>
               <div>
-                <label className="font-bold text-slate-700 block mb-1.5">
-                  Phương pháp phòng thủ:
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  {[
-                    {
-                      id: "adversarial_training",
-                      name: "Adversarial Training",
-                      desc: "Tiêm mẫu nhiễu PGD / TRADES trong từng epoch",
-                    },
-                    {
-                      id: "augmentation_mix",
-                      name: "Augmentation Mix",
-                      desc: "Trộn 40% ảnh mô phỏng thời tiết sương mù, mưa, chói",
-                    },
-                    {
-                      id: "robust_finetune",
-                      name: "Robust Fine-tuning",
-                      desc: "Tối ưu hóa Cosine Annealing bảo toàn mAP clean",
-                    },
-                  ].map((s) => (
-                    <div
-                      key={s.id}
-                      onClick={() => setStrategy(s.id)}
+                <p className="mb-1.5 font-bold text-slate-700">Phương pháp phòng thủ</p>
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                  {strategies.map(([id, name, description]) => (
+                    <label
+                      key={id}
                       className={cn(
-                        "p-3 rounded-lg border cursor-pointer transition-all flex flex-col justify-between",
-                        strategy === s.id
-                          ? "border-blue-600 bg-blue-50/60 shadow-xs ring-1 ring-blue-500"
+                        "cursor-pointer rounded-lg border p-3 transition-colors",
+                        strategy === id
+                          ? "border-blue-600 bg-blue-50 ring-1 ring-blue-500"
                           : "border-slate-200 bg-white hover:border-slate-300"
                       )}
                     >
-                      <div className="font-bold text-slate-800">{s.name}</div>
-                      <div className="text-[10px] text-slate-500 mt-1">{s.desc}</div>
-                    </div>
+                      <input
+                        type="radio"
+                        name="defense-strategy"
+                        className="sr-only"
+                        value={id}
+                        checked={strategy === id}
+                        onChange={(event) => setStrategy(event.target.value)}
+                      />
+                      <span className="block font-bold text-slate-800">{name}</span>
+                      <span className="mt-1 block text-[11px] leading-4 text-slate-500">{description}</span>
+                    </label>
                   ))}
                 </div>
               </div>
 
-              {/* Hyperparameters Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
-                <div>
-                  <label className="text-slate-500 font-medium block mb-1">Mô hình gốc (Base Model)</label>
-                  <input
-                    type="text"
-                    value={baseModel}
-                    onChange={(e) => setBaseModel(e.target.value)}
-                    className="w-full p-2 border border-slate-300 rounded font-mono text-slate-800 text-xs bg-slate-50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-500 font-medium block mb-1">Đòn đối kháng cần kháng</label>
-                  <input
-                    type="text"
-                    value={targetRecipe}
-                    onChange={(e) => setTargetRecipe(e.target.value)}
-                    className="w-full p-2 border border-slate-300 rounded font-mono text-slate-800 text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-500 font-medium block mb-1">Số Epochs</label>
-                  <input
-                    type="number"
-                    value={epochs}
-                    onChange={(e) => setEpochs(Number(e.target.value))}
-                    className="w-full p-2 border border-slate-300 rounded font-mono text-slate-800 text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-500 font-medium block mb-1">Batch Size</label>
-                  <input
-                    type="number"
-                    value={batchSize}
-                    onChange={(e) => setBatchSize(Number(e.target.value))}
-                    className="w-full p-2 border border-slate-300 rounded font-mono text-slate-800 text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-500 font-medium block mb-1">Learning Rate</label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={learningRate}
-                    onChange={(e) => setLearningRate(Number(e.target.value))}
-                    className="w-full p-2 border border-slate-300 rounded font-mono text-slate-800 text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-500 font-medium block mb-1">Thiết bị (Device)</label>
-                  <select
-                    value={device}
-                    onChange={(e) => setDevice(e.target.value)}
-                    className="w-full p-2 border border-slate-300 rounded font-mono text-slate-800 text-xs bg-white"
-                  >
+              <div className="grid grid-cols-1 gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2 lg:grid-cols-3">
+                <label className="font-medium text-slate-600">
+                  Mô hình gốc
+                  <input aria-label="Mô hình gốc" readOnly value={lockedModelName} className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-100 p-2 font-mono text-xs text-slate-800" />
+                </label>
+                <label className="font-medium text-slate-600">
+                  Dataset
+                  <input aria-label="Dataset phòng thủ" readOnly value={lockedDatasetName} className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-100 p-2 font-mono text-xs text-slate-800" />
+                </label>
+                <label className="font-medium text-slate-600">
+                  Attack cần phòng thủ
+                  <input aria-label="Attack cần phòng thủ" readOnly value={lockedRecipe} className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-100 p-2 font-mono text-xs text-slate-800" />
+                </label>
+                <label className="font-medium text-slate-600">
+                  Số epochs
+                  <input type="number" min="1" value={epochs} onChange={(event) => setEpochs(Number(event.target.value))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 font-mono text-xs text-slate-800" />
+                </label>
+                <label className="font-medium text-slate-600">
+                  Batch size
+                  <input type="number" min="1" value={batchSize} onChange={(event) => setBatchSize(Number(event.target.value))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 font-mono text-xs text-slate-800" />
+                </label>
+                <label className="font-medium text-slate-600">
+                  Learning rate
+                  <input type="number" min="0" step="0.0001" value={learningRate} onChange={(event) => setLearningRate(Number(event.target.value))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 font-mono text-xs text-slate-800" />
+                </label>
+                <label className="font-medium text-slate-600">
+                  Thiết bị
+                  <select value={device} onChange={(event) => setDevice(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 font-mono text-xs text-slate-800">
                     <option value="cuda:0">cuda:0 (NVIDIA GPU)</option>
-                    <option value="cpu">cpu (Máy CPU)</option>
+                    <option value="cpu">cpu</option>
                   </select>
-                </div>
+                </label>
               </div>
-            </div>
+            </fieldset>
           </Card>
 
-          {/* 2. LOCAL COMMAND GENERATOR & DOWNLOADABLE SCRIPT */}
-          <Card
-            title="2. Trình sinh lệnh & Kịch bản huấn luyện (Local Script Generator)"
-            subtitle="Copy lệnh CLI 1 dòng hoặc tải file script để chạy trực tiếp trên máy GPU cá nhân"
-            headerAction={<Badge variant="primary">Standalone Script</Badge>}
-          >
+          <Card title="2. Lệnh huấn luyện theo run mục tiêu" subtitle="Các tham số provenance không thể sửa độc lập" headerAction={<Badge variant="primary">Locked Target</Badge>}>
             <div className="space-y-3 text-xs">
-              <div className="relative">
-                <div className="p-3.5 rounded-xl bg-slate-950 text-emerald-400 font-mono text-xs overflow-x-auto leading-relaxed border border-slate-800 shadow-inner">
-                  <span className="text-slate-500 select-none">$ </span>
-                  {generatedCommand}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleCopyCommand}
-                  className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white font-sans text-xs flex items-center gap-1 border border-slate-700 transition-colors shadow-xs"
-                >
-                  {isCopied ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="text-emerald-400 font-bold">Đã Copy!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copy Lệnh</span>
-                    </>
-                  )}
+              <div className="relative rounded-xl border border-slate-800 bg-slate-950 p-3.5 pr-28 font-mono text-xs leading-relaxed text-emerald-400">
+                <span className="select-none text-slate-500">$ </span>
+                <span className="break-all">{generatedCommand}</span>
+                <button type="button" disabled={!hasTarget} onClick={handleCopyCommand} className="absolute right-2.5 top-2.5 flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-2.5 py-1 font-sans text-xs text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50">
+                  {isCopied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                  {isCopied ? "Đã copy" : "Copy lệnh"}
                 </button>
               </div>
-
-              {/* Download script files buttons */}
-              <div className="flex flex-wrap gap-2 pt-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon={Download}
-                  onClick={() => handleDownloadScript("sh")}
-                  className="bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs"
-                >
-                  Tải run_train_defence.sh (Linux / WSL)
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon={Download}
-                  onClick={() => handleDownloadScript("bat")}
-                  className="bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs"
-                >
-                  Tải run_train_defence.bat (Windows)
-                </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" size="sm" icon={Download} disabled={!hasTarget} onClick={() => handleDownloadScript("sh")}>Tải script Linux/WSL</Button>
+                <Button variant="secondary" size="sm" icon={Download} disabled={!hasTarget} onClick={() => handleDownloadScript("bat")}>Tải script Windows</Button>
               </div>
             </div>
           </Card>
         </div>
 
-        {/* RIGHT COLUMN: Upload Defended Model & Locked Protocol Re-Test (5 Columns) */}
-        <div className="xl:col-span-5 space-y-5">
-          <Card
-            title="3. Upload mô hình đã phòng thủ & Test lại"
-            subtitle="Tự động khóa cùng cấu hình tấn công (Locked Protocol) để đo lường tỷ lệ phục hồi"
-          >
+        <div className="space-y-5 xl:col-span-5">
+          <Card title="3. Checkpoint phòng thủ & đánh giá lại" subtitle="Chỉ chạy trên backend baseline đã hoàn tất">
             <div className="space-y-4 text-xs">
-              {/* Protocol lock banner */}
-              <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-amber-900 flex items-center gap-2">
-                <Lock className="w-4 h-4 text-amber-700 flex-shrink-0" />
-                <span>
-                  <strong>Locked Protocol:</strong> Cố định cùng dataset (KITTI), seed (42), và chuỗi tấn công (Depth Fog + PGD) để kết quả đối chiếu có tính khoa học tuyệt đối.
-                </span>
+              <div className={cn("flex items-start gap-2 rounded-lg border p-3", hasBackendBaseline ? "border-amber-200 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-700")}>
+                <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <div>
+                  <p className="font-bold">Locked protocol</p>
+                  {selectedRun ? (
+                    hasBackendBaseline ? (
+                      <p className="mt-1 leading-5">Baseline <code className="font-mono">{backendBaselineId}</code>, seed {selectedRun.seed ?? "không có dữ liệu"}, attack {lockedRecipe || "không có dữ liệu"}.</p>
+                    ) : (
+                      <p className="mt-1 font-semibold leading-5 text-red-700">Không có baseline backend có thể đối chiếu. Run hiển thị này chưa gắn evidence thực.</p>
+                    )
+                  ) : (
+                    <p className="mt-1 leading-5">Chọn attack run để khóa protocol.</p>
+                  )}
+                </div>
               </div>
 
-              {/* Upload Defended Weight Box */}
-              <label className="border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-xl p-5 flex flex-col items-center justify-center gap-2 cursor-pointer bg-slate-50/50 transition-colors">
-                <Upload className="w-6 h-6 text-slate-400" />
-                <div className="text-xs font-bold text-slate-700">
-                  {defendedFile ? defendedFile.name : "Tải lên Checkpoint đã tôi luyện (.pt / .pth)"}
-                </div>
-                <div className="text-[10px] text-slate-400">
-                  Ví dụ: yolo11s_defended_adversarial_training.pt
-                </div>
-                <input type="file" onChange={handleDefendedUpload} className="hidden" />
+              {baselineLoading && <p role="status" className="flex items-center gap-2 text-slate-600"><RefreshCw className="h-4 w-4 animate-spin" />Đang tải baseline backend...</p>}
+              {baselineError && <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-red-800"><AlertCircle className="h-4 w-4 shrink-0" />{baselineError}</p>}
+
+              {compatibleCandidates.length > 0 && (
+                <label className="block font-semibold text-slate-700">
+                  Checkpoint phòng thủ đã xác thực
+                  <select
+                    aria-label="Checkpoint phòng thủ đã xác thực"
+                    value={candidateId}
+                    onChange={(event) => {
+                      setCandidateId(event.target.value);
+                      setCandidateFileName("");
+                      setUploadState(event.target.value ? "ready" : "idle");
+                      setUploadMessage(event.target.value ? `Checkpoint đã xác thực: ${event.target.value}` : "");
+                      setEvaluationJob(null);
+                      setEvaluationError("");
+                    }}
+                    className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-xs text-slate-800"
+                  >
+                    <option value="">Chọn checkpoint có sẵn</option>
+                    {compatibleCandidates.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id} disabled={!candidate.runnable}>
+                        {candidate.model_name} ({candidate.id}){candidate.blocked_reason ? `, ${candidate.blocked_reason}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <label className={cn("flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-5 text-center", canUpload ? "cursor-pointer border-slate-300 bg-slate-50 hover:border-blue-500" : "cursor-not-allowed border-slate-200 bg-slate-100 opacity-60")}>
+                <Upload className="h-6 w-6 text-slate-500" aria-hidden="true" />
+                <span className="font-bold text-slate-700">{candidateFileName || "Tải lên checkpoint đã phòng thủ (.pt / .pth)"}</span>
+                <span className="text-[11px] text-slate-500">{canUpload ? "Checkpoint sẽ được gắn với model gốc của run." : "Cần baseline backend có task, model family và parent checkpoint."}</span>
+                <input aria-label="Tải lên checkpoint đã phòng thủ" type="file" accept=".pt,.pth" disabled={!canUpload || uploadState === "uploading"} className="sr-only" onChange={handleCandidateUpload} />
               </label>
 
-              {/* Action Button */}
-              <Button
-                variant="primary"
-                onClick={handleRunLockedEvaluation}
-                disabled={isEvaluating}
-                icon={isEvaluating ? RefreshCw : ShieldCheck}
-                className={cn(
-                  "w-full justify-center py-2.5 text-xs font-bold shadow-sm",
-                  isEvaluating ? "animate-pulse" : "bg-emerald-600 hover:bg-emerald-700"
-                )}
-              >
-                {isEvaluating ? "Đang chạy đánh giá đối kháng..." : "Chạy Đánh Giá Đối Chiếu (Locked Protocol)"}
+              {uploadMessage && (
+                <p role={uploadState === "error" ? "alert" : "status"} className={cn("rounded-lg border px-3 py-2.5 font-semibold", uploadState === "ready" && "border-emerald-200 bg-emerald-50 text-emerald-800", uploadState === "error" && "border-red-200 bg-red-50 text-red-800", !["ready", "error"].includes(uploadState) && "border-blue-200 bg-blue-50 text-blue-800")}>
+                  {uploadMessage}
+                </p>
+              )}
+
+              <Button variant="primary" onClick={handleRunLockedEvaluation} disabled={!canEvaluate} icon={isEvaluating ? RefreshCw : ShieldCheck} className={cn("w-full justify-center py-2.5 text-xs font-bold", canEvaluate && "bg-emerald-700 hover:bg-emerald-800")}>
+                {isEvaluating ? "Đang tạo đánh giá phòng thủ..." : "Chạy Đánh Giá Đối Chiếu (Locked Protocol)"}
               </Button>
+              {!candidateId && <p className="text-center text-[11px] leading-4 text-slate-500">Nút chạy chỉ mở khi checkpoint đã qua validation.</p>}
+              {evaluationError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-red-800">{evaluationError}</p>}
 
-              {/* COMPARATIVE EVALUATION RESULTS TABLE */}
-              {evaluationDone && (
-                <div className="space-y-3 pt-3 border-t border-slate-200 animate-fade-in">
-                  <div className="flex items-center justify-between">
-                    <div className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span>Kết quả phục hồi sau phòng thủ:</span>
-                    </div>
-                    <Badge variant="success" className="font-mono">
-                      Phục hồi +68.4%
-                    </Badge>
-                  </div>
-
-                  <div className="overflow-x-auto rounded-lg border border-slate-200">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold text-[10px] uppercase">
-                        <tr>
-                          <th className="p-2">Chỉ số</th>
-                          <th className="p-2">Trước Đòn (Clean)</th>
-                          <th className="p-2">Bị Tấn Công</th>
-                          <th className="p-2 text-emerald-700">Sau Phòng Thủ</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {DEFENSE_COMPARISON.slice(0, 4).map((row, i) => (
-                          <tr key={i} className="hover:bg-slate-50">
-                            <td className="p-2 font-semibold text-slate-700">{row.metric}</td>
-                            <td className="p-2 font-mono text-slate-500">{row.before}</td>
-                            <td className="p-2 font-mono text-red-600">{row.attacked}</td>
-                            <td className="p-2 font-mono font-bold text-emerald-700 bg-emerald-50/50">
-                              {row.defended} ({row.improvement})
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+              {evaluationJob ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">
+                  <p className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" />Đã tạo evaluation job thật</p>
+                  <dl className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div><dt className="text-[11px] text-emerald-700">Job ID</dt><dd className="mt-0.5 break-all font-mono font-semibold">{evaluationJob.run_id}</dd></div>
+                    <div><dt className="text-[11px] text-emerald-700">Trạng thái</dt><dd className="mt-0.5 font-mono font-semibold">{evaluationJob.status}</dd></div>
+                  </dl>
                 </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-center text-slate-600">Chưa có dữ liệu đánh giá phòng thủ.</div>
               )}
             </div>
           </Card>

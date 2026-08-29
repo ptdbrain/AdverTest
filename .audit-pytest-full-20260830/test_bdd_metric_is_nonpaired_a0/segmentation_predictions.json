@@ -1,0 +1,40 @@
+{
+  "clean": {
+    "prediction_type": "segmentation",
+    "sample_id": "s",
+    "latency_ms": 0.0,
+    "metadata": {},
+    "prompt_id": "p",
+    "instances": [
+      {
+        "instance_id": "1",
+        "label": null,
+        "score": 1.0,
+        "mask_shape": [
+          4,
+          4
+        ],
+        "mask_digest": "cfb45cf1b6d09f79"
+      }
+    ]
+  },
+  "attacked": {
+    "prediction_type": "segmentation",
+    "sample_id": "s",
+    "latency_ms": 0.0,
+    "metadata": {},
+    "prompt_id": "p",
+    "instances": [
+      {
+        "instance_id": "1",
+        "label": null,
+        "score": 1.0,
+        "mask_shape": [
+          4,
+          4
+        ],
+        "mask_digest": "cfb45cf1b6d09f79"
+      }
+    ]
+  }
+}

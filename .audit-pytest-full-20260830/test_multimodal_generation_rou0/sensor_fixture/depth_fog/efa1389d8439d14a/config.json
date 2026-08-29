@@ -1,0 +1,17 @@
+{
+  "anonymization_manifest": null,
+  "attack_name": "depth_fog",
+  "attack_params": {},
+  "dataset_name": "sensor_fixture",
+  "dataset_params": {},
+  "input_dir": null,
+  "input_format": "advertest",
+  "limit": null,
+  "output_dir": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_multimodal_generation_rou0",
+  "preview": false,
+  "seed": 20260730,
+  "severities": [
+    1
+  ],
+  "surrogate": null
+}

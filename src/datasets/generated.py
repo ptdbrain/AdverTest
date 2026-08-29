@@ -73,9 +73,7 @@ class GeneratedDatasetSource(DatasetSource):
         for record in records:
             image = load_image(self.root / record["image_path"])
             if array_digest(image, length=32) != record.get("output_hash"):
-                raise ValueError(
-                    f"generated image hash mismatch for {record['variant_id']!r}"
-                )
+                raise ValueError(f"generated image hash mismatch for {record['variant_id']!r}")
             boxes = load_boxes(self.root / record["label_path"])
             boxes3d = load_boxes3d(self.root / record["label_path"])
             label_payload = (
@@ -84,26 +82,13 @@ class GeneratedDatasetSource(DatasetSource):
                 else boxes_payload(boxes)
             )
             if stable_digest(label_payload, length=32) != record.get("label_hash"):
-                raise ValueError(
-                    f"generated label hash mismatch for {record['variant_id']!r}"
-                )
-            mask = load_mask(
-                self.root / record["mask_path"] if record.get("mask_path") else None
-            )
+                raise ValueError(f"generated label hash mismatch for {record['variant_id']!r}")
+            mask = load_mask(self.root / record["mask_path"] if record.get("mask_path") else None)
             expected_mask_hash = record.get("mask_hash")
-            actual_mask_hash = (
-                array_digest(mask, length=32)
-                if mask is not None
-                else None
-            )
+            actual_mask_hash = array_digest(mask, length=32) if mask is not None else None
             if actual_mask_hash != expected_mask_hash:
-                raise ValueError(
-                    f"generated mask hash mismatch for {record['variant_id']!r}"
-                )
-            cameras = tuple(
-                _load_camera(self.root, payload)
-                for payload in record.get("camera_payloads", [])
-            )
+                raise ValueError(f"generated mask hash mismatch for {record['variant_id']!r}")
+            cameras = tuple(_load_camera(self.root, payload) for payload in record.get("camera_payloads", []))
             if not cameras:
                 cameras = tuple(
                     CameraView(name, _load_hashed_array(self.root, path, None))

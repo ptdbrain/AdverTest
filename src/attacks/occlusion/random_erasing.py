@@ -52,9 +52,7 @@ class RandomErasing(BaseAttack):
     group: ClassVar[AttackGroup] = "C"
     cost_class: ClassVar[CostClass] = "cheap"
     owner: ClassVar[str] = "phong"
-    reference: ClassVar[str] = (
-        "Zhong et al., AAAI 2020 (arXiv:1708.04896); DeVries & Taylor (arXiv:1708.04552)"
-    )
+    reference: ClassVar[str] = "Zhong et al., AAAI 2020 (arXiv:1708.04896); DeVries & Taylor (arXiv:1708.04552)"
     params_model: ClassVar[type[AttackParams]] = RandomErasingParams
 
     def apply(self, sample: Sample, severity: int, ctx: AttackContext) -> Sample:

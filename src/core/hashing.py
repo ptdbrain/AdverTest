@@ -39,15 +39,16 @@ def sample_digest(sample: Sample, *, length: int = 32) -> str:
     """
     cameras = []
     for view in sample.camera_views:
-        cameras.append({
-            "name": view.name,
-            "image": array_digest(view.image, length=length),
-            "depth": array_digest(view.depth, length=length) if view.depth is not None else None,
-            "previous": (
-                array_digest(view.previous_image, length=length)
-                if view.previous_image is not None else None
-            ),
-        })
+        cameras.append(
+            {
+                "name": view.name,
+                "image": array_digest(view.image, length=length),
+                "depth": array_digest(view.depth, length=length) if view.depth is not None else None,
+                "previous": (
+                    array_digest(view.previous_image, length=length) if view.previous_image is not None else None
+                ),
+            }
+        )
     lidar = None
     if sample.lidar_frame is not None:
         lidar = {
@@ -58,13 +59,16 @@ def sample_digest(sample: Sample, *, length: int = 32) -> str:
     elif sample.lidar is not None:
         lidar = {"fields": ["x", "y", "z", "intensity"], "points": array_digest(sample.lidar, length=length)}
     boxes3d = [asdict(box) for box in sample.boxes3d]
-    return stable_digest({
-        "sample_id": sample.sample_id,
-        "image": array_digest(sample.image, length=length),
-        "cameras": cameras,
-        "lidar": lidar,
-        "boxes3d": boxes3d,
-    }, length=length)
+    return stable_digest(
+        {
+            "sample_id": sample.sample_id,
+            "image": array_digest(sample.image, length=length),
+            "cameras": cameras,
+            "lidar": lidar,
+            "boxes3d": boxes3d,
+        },
+        length=length,
+    )
 
 
 def file_digest(path: str | Path, *, length: int = 32) -> str:

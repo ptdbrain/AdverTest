@@ -36,9 +36,7 @@ class Recommendation(BaseModel):
     evidence: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
     suggested_parameters: dict[str, Any] = Field(default_factory=dict)
-    created_at: str = Field(
-        default_factory=lambda: datetime.now(UTC).isoformat()
-    )
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 class RecommendationListOut(BaseModel):
@@ -47,9 +45,7 @@ class RecommendationListOut(BaseModel):
     recommendations: list[Recommendation]
     total_count: int
     project_id: str | None = None
-    evaluated_at: str = Field(
-        default_factory=lambda: datetime.now(UTC).isoformat()
-    )
+    evaluated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 class DismissRecommendationIn(BaseModel):

@@ -75,17 +75,21 @@ def test_generic_runner_pairs_detection_and_segmentation_without_heavy_imports()
         mask=np.ones((4, 5), dtype=np.bool_),
         anonymized=True,
     )
-    protocol = BenchmarkProtocol(
-        name="fixture",
-        dataset_version_id="dataset-1",
-        sample_ids=("s1",),
-        sample_hashes={"s1": "source-1"},
-        ground_truth_hashes={"s1": "gt-1"},
-        recipe_hashes=("recipe-1",),
-        seeds=(195,),
-        metric_versions={"score": "1.0.0"},
-        created_at=datetime.now(UTC),
-    ).transition("VALIDATED").transition("LOCKED")
+    protocol = (
+        BenchmarkProtocol(
+            name="fixture",
+            dataset_version_id="dataset-1",
+            sample_ids=("s1",),
+            sample_hashes={"s1": "source-1"},
+            ground_truth_hashes={"s1": "gt-1"},
+            recipe_hashes=("recipe-1",),
+            seeds=(195,),
+            metric_versions={"score": "1.0.0"},
+            created_at=datetime.now(UTC),
+        )
+        .transition("VALIDATED")
+        .transition("LOCKED")
+    )
     models = [FakeAdapter("detector", "detection2d"), FakeAdapter("segmenter", "segmentation")]
     events = []
     runner = BenchmarkRunner(
@@ -123,15 +127,19 @@ def test_generic_runner_reports_incompatibility_and_valid_partial_cancellation()
         image=np.zeros((2, 2, 3), dtype=np.float32),
         anonymized=True,
     )
-    protocol = BenchmarkProtocol(
-        name="fixture",
-        dataset_version_id="dataset-1",
-        sample_ids=("s1",),
-        sample_hashes={"s1": "source-1"},
-        ground_truth_hashes={"s1": "gt-1"},
-        recipe_hashes=("recipe-1", "recipe-2"),
-        metric_versions={"score": "1.0.0"},
-    ).transition("VALIDATED").transition("LOCKED")
+    protocol = (
+        BenchmarkProtocol(
+            name="fixture",
+            dataset_version_id="dataset-1",
+            sample_ids=("s1",),
+            sample_hashes={"s1": "source-1"},
+            ground_truth_hashes={"s1": "gt-1"},
+            recipe_hashes=("recipe-1", "recipe-2"),
+            metric_versions={"score": "1.0.0"},
+        )
+        .transition("VALIDATED")
+        .transition("LOCKED")
+    )
     cancel_calls = 0
 
     def cancel_after_first_cell() -> bool:
@@ -162,14 +170,18 @@ def test_generic_runner_skips_metric_version_mismatch_explicitly() -> None:
         image=np.zeros((2, 2, 3), dtype=np.float32),
         anonymized=True,
     )
-    protocol = BenchmarkProtocol(
-        name="fixture",
-        dataset_version_id="dataset-1",
-        sample_ids=("s1",),
-        sample_hashes={"s1": "source-1"},
-        ground_truth_hashes={"s1": "gt-1"},
-        metric_versions={"score": "2.0.0"},
-    ).transition("VALIDATED").transition("LOCKED")
+    protocol = (
+        BenchmarkProtocol(
+            name="fixture",
+            dataset_version_id="dataset-1",
+            sample_ids=("s1",),
+            sample_hashes={"s1": "source-1"},
+            ground_truth_hashes={"s1": "gt-1"},
+            metric_versions={"score": "2.0.0"},
+        )
+        .transition("VALIDATED")
+        .transition("LOCKED")
+    )
     runner = BenchmarkRunner(
         sample_provider=lambda _: [sample],
         variant_provider=lambda _recipe_hash, samples: samples,

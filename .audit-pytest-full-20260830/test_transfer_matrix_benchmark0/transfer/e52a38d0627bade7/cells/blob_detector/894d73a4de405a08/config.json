@@ -1,0 +1,15 @@
+{
+  "generation_paths": [
+    "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_transfer_matrix_benchmark0\\attacked\\synthetic_shapes\\pgd\\2e2e92cfeeace5ae"
+  ],
+  "iou_threshold": 0.5,
+  "model": {
+    "checkpoint": null,
+    "device": "cpu",
+    "max_detections": 300,
+    "name": "blob_detector",
+    "params": {},
+    "score_threshold": 0.001
+  },
+  "output_dir": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_transfer_matrix_benchmark0\\transfer\\e52a38d0627bade7\\cells"
+}

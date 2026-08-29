@@ -1,0 +1,25 @@
+{
+  "benchmark_id": "e52a38d0627bade7",
+  "format": "advertest-transfer-matrix-v1",
+  "rows": [
+    {
+      "source": {
+        "attack": "pgd",
+        "checkpoint_hash": null,
+        "generation_id": "2e2e92cfeeace5ae",
+        "surrogate": "blob_detector",
+        "surrogate_version": "blob-1.0.0:thr0.45"
+      },
+      "targets": {
+        "blob_detector": {
+          "benchmark_root": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_transfer_matrix_benchmark0\\transfer\\e52a38d0627bade7\\cells\\blob_detector\\894d73a4de405a08",
+          "mean_attack_success_rate": 0.0,
+          "mean_degradation": 0.0,
+          "n_cells": 1
+        }
+      }
+    }
+  ],
+  "simulation_only": true,
+  "version": "1.0.0"
+}

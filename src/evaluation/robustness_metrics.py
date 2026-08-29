@@ -210,12 +210,8 @@ def summary(report: RunReport, *, normalize_score: bool = True) -> dict[str, obj
         "clean": _envelope("clean", report.ap_clean, "score"),
         "mpc": _envelope("mpc", mpc(report), "score"),
         "rpc": _envelope("rpc", rpc(report), "ratio"),
-        "robust_score_plan": _envelope(
-            "robust_score_plan", robust_score(report), "points"
-        ),
-        "robust_score_normalized": _envelope(
-            "robust_score_normalized", robust_score(report, normalize=True), "points"
-        ),
+        "robust_score_plan": _envelope("robust_score_plan", robust_score(report), "points"),
+        "robust_score_normalized": _envelope("robust_score_normalized", robust_score(report, normalize=True), "points"),
     }
     return {
         "ap_clean": round(report.ap_clean, 4),
@@ -229,10 +225,7 @@ def summary(report: RunReport, *, normalize_score: bool = True) -> dict[str, obj
         "covered_categories": covered_categories(report),
         "severity_monotonicity": severity_monotonicity(report),
         "normalize_score": normalize_score,
-        "headline_metrics": {
-            name: metric.model_dump(mode="json")
-            for name, metric in headline_metrics.items()
-        },
+        "headline_metrics": {name: metric.model_dump(mode="json") for name, metric in headline_metrics.items()},
     }
 
 

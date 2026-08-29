@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import time
 import urllib.request
 import uuid
 from datetime import UTC, datetime
@@ -24,14 +26,20 @@ class AuthService:
         self._store = store
 
     def register(self, payload: UserCreateIn, *, role: str | None = None) -> tuple[UserOut, str]:
-        """Register a new user account."""
+        """Register a new user account.
+
+        Security Hardening P0.1: Client-supplied payload.role is strictly ignored.
+        Public registration always defaults to RESEARCHER.
+        Only trusted internal callers (such as ensure_default_accounts) passing
+        the explicit `role` keyword argument may assign privileged roles.
+        """
         existing_users = self._store.list_records("user")
         for u in existing_users:
             if u.get("email") == payload.email:
                 raise ValueError("An account with this email already exists.")
 
         user_id = f"usr-{uuid.uuid4().hex[:12]}"
-        user_role = role or payload.role or ("ADMIN" if len(existing_users) == 0 else "ENGINEER")
+        user_role = role or "RESEARCHER"
         now_str = datetime.now(UTC).isoformat()
 
         user_record = {
@@ -85,33 +93,83 @@ class AuthService:
         return user_out, token
 
     def authenticate_google(self, payload: GoogleAuthIn) -> tuple[UserOut, str]:
-        """Authenticate via Google SSO (OAuth2 ID Token or verified Google profile)."""
-        email = payload.email
-        display_name = payload.display_name
-        avatar_url = payload.avatar_url
+        """Authenticate via Google SSO (OAuth2 ID Token).
 
-        # If a Google ID token credential was provided, verify and decode claims
-        if payload.credential:
+        Security Hardening P0.2: Strict token verification is required.
+        Verifies signature, iss, aud, exp, sub, email, and email_verified.
+        Unverified payload credentials or forged emails/roles are rejected.
+        """
+        if not payload.credential or not str(payload.credential).strip():
+            raise ValueError("Google authentication failed: Missing ID token credential.")
+
+        credential = str(payload.credential).strip()
+        settings = get_settings()
+        claims: dict[str, Any] = {}
+
+        # Safe test-only verifier enabled ONLY in test/dev environment, strictly disabled in production
+        is_test_mode = settings.app_env in ("test", "development") or bool(os.getenv("PYTEST_CURRENT_TEST"))
+        if is_test_mode and credential.startswith("test-google-token:"):
             try:
-                # 1. Try Google TokenInfo endpoint for authoritative token verification
+                raw_json = credential.removeprefix("test-google-token:")
+                claims = json.loads(raw_json)
+            except Exception as exc:
+                raise ValueError(f"Test Google Token decode failed: {exc}") from exc
+        elif settings.app_env == "production" and credential.startswith("test-google-token:"):
+            raise ValueError("Test tokens are strictly forbidden in production mode.")
+        else:
+            # Authoritative Google TokenInfo endpoint verification
+            try:
                 req = urllib.request.Request(
-                    f"https://oauth2.googleapis.com/tokeninfo?id_token={payload.credential}",
+                    f"https://oauth2.googleapis.com/tokeninfo?id_token={credential}",
                     headers={"User-Agent": "AdverTest-Auth/1.0"},
                 )
                 with urllib.request.urlopen(req, timeout=5) as response:
                     claims = json.loads(response.read().decode())
-                    email = claims.get("email") or email
-                    display_name = claims.get("name") or display_name
-                    avatar_url = claims.get("picture") or avatar_url
-            except Exception as e:
-                # Disabling unsafe fallback: decoding JWT without signature validation is a severe security risk.
-                raise ValueError(f"Google Token verification failed: {e}. Refusing to trust unverified payload.") from e
+            except Exception as exc:
+                raise ValueError(f"Google Token verification failed: {exc}. Refusing to trust unverified payload.") from exc
 
-        if not email:
-            raise ValueError("Google authentication failed: Email address is required.")
+        # Strict claim validations
+        # 1. Issuer
+        iss = claims.get("iss")
+        if iss not in ("accounts.google.com", "https://accounts.google.com"):
+            raise ValueError(f"Google Token verification failed: Invalid issuer '{iss}'.")
+
+        # 2. Audience
+        expected_aud = settings.google_client_id or os.getenv("GOOGLE_CLIENT_ID", "")
+        aud = claims.get("aud")
+        if expected_aud and aud != expected_aud:
+            raise ValueError("Google Token verification failed: Audience mismatch.")
+
+        # 3. Expiration
+        now_ts = int(time.time())
+        exp = claims.get("exp")
+        if exp is not None:
+            try:
+                if int(exp) < now_ts:
+                    raise ValueError("Google Token verification failed: Token has expired.")
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Google Token verification failed: Invalid exp claim.") from exc
+
+        # 4. Subject (sub)
+        sub = claims.get("sub")
+        if not sub:
+            raise ValueError("Google Token verification failed: Missing sub claim.")
+
+        # 5. Email & Email Verified
+        email = claims.get("email")
+        if not email or not str(email).strip():
+            raise ValueError("Google Token verification failed: Missing or invalid email in token claims.")
+
+        email_verified = claims.get("email_verified")
+        if email_verified not in (True, "true", "True", 1, "1"):
+            raise ValueError("Google Token verification failed: Email is not verified by Google.")
+
+        email = str(email).strip().lower()
+        display_name = claims.get("name") or payload.display_name
+        avatar_url = claims.get("picture") or payload.avatar_url
 
         users = self._store.list_records("user")
-        target_user = next((u for u in users if u.get("email") == email), None)
+        target_user = next((u for u in users if u.get("email", "").lower() == email), None)
         now_str = datetime.now(UTC).isoformat()
 
         if target_user:
@@ -124,15 +182,13 @@ class AuthService:
                 target_user["avatar_url"] = avatar_url
             if display_name and not target_user.get("display_name"):
                 target_user["display_name"] = display_name
-            if payload.role and payload.role != target_user.get("role"):
-                target_user["role"] = payload.role
-
+            # Security Hardening: Never allow client payload to escalate role on login
             self._store.update_record("user", target_user["id"], target_user)
             user_out = self._to_user_out(target_user)
         else:
-            # Create new user registered via Google SSO
+            # Create new user registered via Google SSO with default RESEARCHER role
             user_id = f"usr-g-{uuid.uuid4().hex[:10]}"
-            user_role = payload.role or ("ADMIN" if len(users) == 0 else "ENGINEER")
+            user_role = "RESEARCHER"
 
             new_user = {
                 "id": user_id,

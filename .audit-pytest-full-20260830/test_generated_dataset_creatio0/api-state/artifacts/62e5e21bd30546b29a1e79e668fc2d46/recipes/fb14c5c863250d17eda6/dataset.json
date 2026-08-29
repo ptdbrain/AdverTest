@@ -1,0 +1,18 @@
+{
+  "anonymized": true,
+  "catalog_version": "1.0.0",
+  "format": "advertest-generated-v3",
+  "generation_id": "fb14c5c863250d17eda6",
+  "intended_use": "training",
+  "lineage_report_hash": "311c8526f889d1fd94e50364baad2b0e3a374e62a1d79e1d2952a7999a7e7565",
+  "manifest_hash": "15ea39cfb0391f88c2daafff36467dcf",
+  "n_source_samples": 1,
+  "n_variants": 1,
+  "recipe_hash": "7cbada5eec4acf2752442073c1349b3b06bd8682f62cbe0303d3709f3d21f1a0",
+  "schema_version": "3.0.0",
+  "source_dataset_version_id": "dataset-4dfd3fcb056eaa342a3ff33687ae06be",
+  "source_manifest_hash": "4dfd3fcb056eaa342a3ff33687ae06be858b17a749b076626352d99267d8e0e6",
+  "status": "complete",
+  "validation_status": "passed",
+  "version_id": "generated-fb14c5c863250d17eda6"
+}

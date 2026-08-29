@@ -1,0 +1,121 @@
+{
+  "benchmark_id": "4b72da5259aecb42",
+  "benchmark_version": "1.1.0",
+  "cells": [
+    {
+      "ap_attacked": 1.0,
+      "ap_attacked_per_class": {
+        "Cyclist": 1.0,
+        "Pedestrian": 1.0
+      },
+      "ap_clean": 1.0,
+      "ap_clean_per_class": {
+        "Cyclist": 1.0,
+        "Pedestrian": 1.0
+      },
+      "attack": "gaussian_noise",
+      "attack_success": {
+        "clean_detected_truths": 6,
+        "lost_truths": 0,
+        "rate": 0.0
+      },
+      "attack_surrogate_checkpoint_hash": null,
+      "attack_variant": null,
+      "attack_version": "1.0.0",
+      "attacked": {
+        "detections": 6,
+        "false_negatives": 0,
+        "false_positives": 0,
+        "ground_truths": 6,
+        "precision": 1.0,
+        "recall": 1.0,
+        "true_positives": 6
+      },
+      "benchmark_checkpoint_hash": null,
+      "clean": {
+        "detections": 6,
+        "false_negatives": 0,
+        "false_positives": 0,
+        "ground_truths": 6,
+        "precision": 1.0,
+        "recall": 1.0,
+        "true_positives": 6
+      },
+      "degradation": 0.0,
+      "false_positive_delta": 0,
+      "generation_id": "238e7e610457a701",
+      "generation_root": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_benchmark_pairs_clean_and0\\attacked\\synthetic_shapes\\gaussian_noise\\238e7e610457a701",
+      "mean_attacked_latency_ms": 1.97,
+      "mean_clean_latency_ms": 1.801,
+      "n_samples": 2,
+      "patch_artifact_hash": null,
+      "relative_ap_change": 0.0,
+      "severity": 1,
+      "source": "synthetic_shapes",
+      "white_box_same_checkpoint": false
+    },
+    {
+      "ap_attacked": 1.0,
+      "ap_attacked_per_class": {
+        "Cyclist": 1.0,
+        "Pedestrian": 1.0
+      },
+      "ap_clean": 1.0,
+      "ap_clean_per_class": {
+        "Cyclist": 1.0,
+        "Pedestrian": 1.0
+      },
+      "attack": "gaussian_noise",
+      "attack_success": {
+        "clean_detected_truths": 6,
+        "lost_truths": 0,
+        "rate": 0.0
+      },
+      "attack_surrogate_checkpoint_hash": null,
+      "attack_variant": null,
+      "attack_version": "1.0.0",
+      "attacked": {
+        "detections": 6,
+        "false_negatives": 0,
+        "false_positives": 0,
+        "ground_truths": 6,
+        "precision": 1.0,
+        "recall": 1.0,
+        "true_positives": 6
+      },
+      "benchmark_checkpoint_hash": null,
+      "clean": {
+        "detections": 6,
+        "false_negatives": 0,
+        "false_positives": 0,
+        "ground_truths": 6,
+        "precision": 1.0,
+        "recall": 1.0,
+        "true_positives": 6
+      },
+      "degradation": 0.0,
+      "false_positive_delta": 0,
+      "generation_id": "238e7e610457a701",
+      "generation_root": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_benchmark_pairs_clean_and0\\attacked\\synthetic_shapes\\gaussian_noise\\238e7e610457a701",
+      "mean_attacked_latency_ms": 1.831,
+      "mean_clean_latency_ms": 1.801,
+      "n_samples": 2,
+      "patch_artifact_hash": null,
+      "relative_ap_change": 0.0,
+      "severity": 3,
+      "source": "synthetic_shapes",
+      "white_box_same_checkpoint": false
+    }
+  ],
+  "checkpoint_hash": null,
+  "format": "advertest-benchmark-v1",
+  "iou_threshold": 0.5,
+  "metric": "macro AP at one IoU threshold (AdverTest AP50 when IoU=0.5)",
+  "model": "blob_detector",
+  "model_version": "blob-1.0.0:thr0.45",
+  "n_cells": 2,
+  "precision_recall_note": "precision/recall counts use model.score_threshold; AP uses the retained score-ranked detections",
+  "score_threshold": 0.001,
+  "seconds": 0.096,
+  "simulation_only": true
+}

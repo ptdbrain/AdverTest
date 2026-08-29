@@ -11,12 +11,14 @@ import math
 import uuid
 from collections import defaultdict
 from collections.abc import Sequence
+from typing import Any
 
 from src.core.types import Box3D, DetectionPrediction, ModelPrediction, Sample
 from src.evaluation.base import EvaluationResult
+from src.evaluation.benchmark_protocol import BenchmarkProtocol
 from src.evaluation.contracts import FailureCase, MetricEnvelope
+from src.evaluation.detection_metrics import AttackSuccessSummary
 from src.evaluation.geometry3d import bev_iou, match_boxes3d
-from src.pipeline.protocol import BenchmarkProtocol
 
 
 def _box_distance(box: Box3D) -> float:
@@ -64,9 +66,7 @@ class Kitti3DEvaluator:
                         or if predictions are not DetectionPrediction.
         """
         if len(predictions) != len(samples):
-            raise ValueError(
-                f"prediction count ({len(predictions)}) != sample count ({len(samples)})"
-            )
+            raise ValueError(f"prediction count ({len(predictions)}) != sample count ({len(samples)})")
 
         per_sample_metrics: dict[str, tuple[MetricEnvelope, ...]] = {}
         failures: list[FailureCase] = []
@@ -102,13 +102,10 @@ class Kitti3DEvaluator:
         for prediction, sample in zip(predictions, samples, strict=False):
             if prediction.sample_id != sample.sample_id:
                 raise ValueError(
-                    f"sample ID mismatch: prediction={prediction.sample_id!r}, "
-                    f"sample={sample.sample_id!r}"
+                    f"sample ID mismatch: prediction={prediction.sample_id!r}, sample={sample.sample_id!r}"
                 )
             if not isinstance(prediction, DetectionPrediction):
-                raise ValueError(
-                    f"expected DetectionPrediction, got {type(prediction).__name__}"
-                )
+                raise ValueError(f"expected DetectionPrediction, got {type(prediction).__name__}")
 
             ground_truths = sample.boxes3d or ()
             predicted_boxes = prediction.boxes3d or ()
@@ -120,9 +117,7 @@ class Kitti3DEvaluator:
                 bucket_gt_counts[gt_bucket][gt_box.label] += 1
 
             # Greedy BEV matching
-            matches = match_boxes3d(
-                ground_truths, predicted_boxes, iou_threshold=self._iou_threshold
-            )
+            matches = match_boxes3d(ground_truths, predicted_boxes, iou_threshold=self._iou_threshold)
             matched_gt_indices = {m.gt_index for m in matches}
             matched_pred_indices = {m.prediction_index for m in matches}
 
@@ -148,9 +143,7 @@ class Kitti3DEvaluator:
                 class_fp_scores[pred_box.label].append(pred_box.score)
                 bucket_fp_scores[pred_bucket][pred_box.label].append(pred_box.score)
 
-            mean_sample_iou = (
-                sample_iou_sum / len(matches) if matches else 0.0
-            )
+            mean_sample_iou = sample_iou_sum / len(matches) if matches else 0.0
 
             # --- Failure detection ---
             _detect_failures(
@@ -179,30 +172,18 @@ class Kitti3DEvaluator:
         total_tp_count = sum(len(v) for v in class_tp_scores.values())
         total_fp_count = sum(len(v) for v in class_fp_scores.values())
 
-        kitti_3d_ap = _macro_average_precision(
-            class_tp_scores, class_fp_scores, class_gt_counts
-        )
-        ap_near = _macro_average_precision(
-            bucket_tp_scores["near"], bucket_fp_scores["near"], bucket_gt_counts["near"]
-        )
+        kitti_3d_ap = _macro_average_precision(class_tp_scores, class_fp_scores, class_gt_counts)
+        ap_near = _macro_average_precision(bucket_tp_scores["near"], bucket_fp_scores["near"], bucket_gt_counts["near"])
         ap_medium = _macro_average_precision(
             bucket_tp_scores["medium"], bucket_fp_scores["medium"], bucket_gt_counts["medium"]
         )
-        ap_far = _macro_average_precision(
-            bucket_tp_scores["far"], bucket_fp_scores["far"], bucket_gt_counts["far"]
-        )
+        ap_far = _macro_average_precision(bucket_tp_scores["far"], bucket_fp_scores["far"], bucket_gt_counts["far"])
 
-        global_mean_bev_iou = (
-            total_iou_sum / total_matched_count if total_matched_count > 0 else 0.0
-        )
+        global_mean_bev_iou = total_iou_sum / total_matched_count if total_matched_count > 0 else 0.0
         global_precision = (
-            total_tp_count / (total_tp_count + total_fp_count)
-            if (total_tp_count + total_fp_count) > 0
-            else 0.0
+            total_tp_count / (total_tp_count + total_fp_count) if (total_tp_count + total_fp_count) > 0 else 0.0
         )
-        global_recall = (
-            total_tp_count / total_gt_count if total_gt_count > 0 else 0.0
-        )
+        global_recall = total_tp_count / total_gt_count if total_gt_count > 0 else 0.0
 
         headline = MetricEnvelope(
             name="kitti_3d_ap",
@@ -272,6 +253,104 @@ class Kitti3DEvaluator:
             per_sample_metrics=per_sample_metrics,
             failures=tuple(failures),
         )
+
+
+# ---------------------------------------------------------------------------
+# TestRunner Integration
+# ---------------------------------------------------------------------------
+
+
+def kitti3d_metric_suite(
+    predictions: Sequence[DetectionPrediction],
+    samples: Sequence[Sample],
+    iou_threshold: float = 0.5,
+) -> dict[str, Any]:
+    """Compute 3D metrics for TestRunner without a full BenchmarkProtocol."""
+    if len(predictions) != len(samples):
+        raise ValueError("predictions and samples length mismatch")
+
+    class_tp_scores: dict[str, list[float]] = defaultdict(list)
+    class_fp_scores: dict[str, list[float]] = defaultdict(list)
+    class_gt_counts: dict[str, int] = defaultdict(int)
+
+    bucket_tp_scores = {"near": defaultdict(list), "medium": defaultdict(list), "far": defaultdict(list)}
+    bucket_fp_scores = {"near": defaultdict(list), "medium": defaultdict(list), "far": defaultdict(list)}
+    bucket_gt_counts = {"near": defaultdict(int), "medium": defaultdict(int), "far": defaultdict(int)}
+
+    total_iou_sum = 0.0
+    total_matched_count = 0
+
+    for prediction, sample in zip(predictions, samples, strict=False):
+        ground_truths = sample.boxes3d or ()
+        predicted_boxes = prediction.boxes3d or ()
+
+        for gt_box in ground_truths:
+            class_gt_counts[gt_box.label] += 1
+            bucket_gt_counts[_distance_bucket(_box_distance(gt_box))][gt_box.label] += 1
+
+        matches = match_boxes3d(ground_truths, predicted_boxes, iou_threshold=iou_threshold)
+        matched_pred_indices = {m.prediction_index for m in matches}
+
+        for match in matches:
+            matched_pred = predicted_boxes[match.prediction_index]
+            bucket = _distance_bucket(_box_distance(matched_pred))
+            class_tp_scores[matched_pred.label].append(matched_pred.score)
+            bucket_tp_scores[bucket][matched_pred.label].append(matched_pred.score)
+            total_iou_sum += match.iou
+            total_matched_count += 1
+
+        for pred_idx, pred_box in enumerate(predicted_boxes):
+            if pred_idx not in matched_pred_indices:
+                bucket = _distance_bucket(_box_distance(pred_box))
+                class_fp_scores[pred_box.label].append(pred_box.score)
+                bucket_fp_scores[bucket][pred_box.label].append(pred_box.score)
+
+    kitti_3d_ap = _macro_average_precision(class_tp_scores, class_fp_scores, class_gt_counts)
+    ap_near = _macro_average_precision(bucket_tp_scores["near"], bucket_fp_scores["near"], bucket_gt_counts["near"])
+    ap_medium = _macro_average_precision(
+        bucket_tp_scores["medium"], bucket_fp_scores["medium"], bucket_gt_counts["medium"]
+    )
+    ap_far = _macro_average_precision(bucket_tp_scores["far"], bucket_fp_scores["far"], bucket_gt_counts["far"])
+    mean_bev_iou = total_iou_sum / total_matched_count if total_matched_count > 0 else 0.0
+
+    return {
+        "kitti_3d_ap": kitti_3d_ap,
+        "kitti_3d_ap_near": ap_near,
+        "kitti_3d_ap_medium": ap_medium,
+        "kitti_3d_ap_far": ap_far,
+        "mean_bev_iou": mean_bev_iou,
+        "metric_implementation": "advertest-bev-v1",
+    }
+
+
+def kitti3d_attack_success_rate(
+    clean_predictions: Sequence[DetectionPrediction],
+    attacked_predictions: Sequence[DetectionPrediction],
+    samples: Sequence[Sample],
+    iou_threshold: float,
+) -> AttackSuccessSummary:
+    """ASR for 3D boxes: ground truths detected cleanly but lost after attack."""
+    clean_detected = 0
+    lost = 0
+
+    for clean_pred, atk_pred, sample in zip(clean_predictions, attacked_predictions, samples, strict=False):
+        truths = sample.boxes3d or ()
+        if not truths:
+            continue
+
+        clean_boxes = clean_pred.boxes3d or ()
+        atk_boxes = atk_pred.boxes3d or ()
+
+        clean_matches = match_boxes3d(truths, clean_boxes, iou_threshold=iou_threshold)
+        atk_matches = match_boxes3d(truths, atk_boxes, iou_threshold=iou_threshold)
+
+        clean_matched_gt = {m.gt_index for m in clean_matches}
+        atk_matched_gt = {m.gt_index for m in atk_matches}
+
+        clean_detected += len(clean_matched_gt)
+        lost += len(clean_matched_gt - atk_matched_gt)
+
+    return AttackSuccessSummary(clean_detected, lost)
 
 
 # ---------------------------------------------------------------------------

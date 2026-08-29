@@ -1,0 +1,54 @@
+{
+  "anonymization_manifest": null,
+  "dataset_name": null,
+  "dataset_params": {},
+  "fail_fast": true,
+  "input_dir": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_generated_dataset_creatio0\\source",
+  "input_format": "advertest",
+  "intended_use": "training",
+  "limit": null,
+  "logical_source_id": "generated-source-1b8a2170ee42",
+  "output_dir": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_generated_dataset_creatio0\\api-state\\artifacts\\62e5e21bd30546b29a1e79e668fc2d46",
+  "preview": false,
+  "recipe": {
+    "catalog_version": "1.0.0",
+    "constraints": {
+      "max_expensive_steps": 1,
+      "max_gpu_hours": 1000.0,
+      "max_occlusion_ratio": 0.6,
+      "max_steps": 4,
+      "max_storage_bytes": 100000000000,
+      "max_variants": 10000,
+      "max_white_box_steps": 1,
+      "supported_spatial_transforms": [
+        "identity",
+        "crop",
+        "translate",
+        "scale",
+        "horizontal_flip",
+        "rotate_90",
+        "affine",
+        "resize_pad"
+      ]
+    },
+    "metadata": {},
+    "name": "Single Gaussian noise",
+    "recipe_hash": "7cbada5eec4acf2752442073c1349b3b06bd8682f62cbe0303d3709f3d21f1a0",
+    "recipe_id": "recipe-7cbada5eec4acf275244",
+    "steps": [
+      {
+        "attack_name": "gaussian_noise",
+        "expected_cost": 1.0,
+        "implementation_version": "1.0.0",
+        "objective": null,
+        "parameters": {},
+        "position": 0,
+        "probability": 1.0,
+        "seed": 17,
+        "severity": 1
+      }
+    ]
+  },
+  "seed": 17,
+  "surrogate": null
+}

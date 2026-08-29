@@ -163,6 +163,7 @@ class Kitti3D(DatasetSource):
         candidate_root = Path(settings.root).expanduser()
         if not candidate_root.is_absolute():
             from src.config import PROJECT_ROOT
+
             if (PROJECT_ROOT / candidate_root).exists():
                 candidate_root = PROJECT_ROOT / candidate_root
             elif (PROJECT_ROOT.parent.parent / candidate_root).exists():
@@ -171,6 +172,7 @@ class Kitti3D(DatasetSource):
                 candidate_root = candidate_root.resolve()
         elif not candidate_root.exists():
             from src.config import PROJECT_ROOT
+
             try:
                 rel = candidate_root.relative_to(PROJECT_ROOT)
                 if (PROJECT_ROOT.parent.parent / rel).exists():

@@ -1,0 +1,62 @@
+{
+  "manifest_id": "training-f4a7e74038c441642c8e",
+  "manifest_hash": "f4a7e74038c441642c8ea0399ed16fdba58032ed8490b568d4c1cdc0ab7046e6",
+  "dataset_version_id": "dataset-1",
+  "split_manifest_hash": "bcb2810e9fe915d4d79d6c0a449d8eb2819edaebfb17a41e22c8707edfe59998",
+  "defense_profile_id": "balanced",
+  "entries": [
+    {
+      "entry_id": "clean:sample-2",
+      "kind": "clean",
+      "source_sample_id": "sample-2",
+      "source_dataset_version_id": "dataset-1",
+      "artifact_path": "fixture://sample-2",
+      "source_hash": "source-2",
+      "ground_truth_hash": "gt-2",
+      "split": "train",
+      "recipe_hash": null,
+      "severity": null,
+      "seed": null,
+      "transform_log_hash": null,
+      "failure_id": null,
+      "generation_mode": "clean"
+    },
+    {
+      "entry_id": "generated:variant-1",
+      "kind": "generated",
+      "source_sample_id": "sample-2",
+      "source_dataset_version_id": "dataset-1",
+      "artifact_path": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_estimate_is_dry_run_and_b0\\generated\\image.npy",
+      "source_hash": "source-2",
+      "ground_truth_hash": "gt-2",
+      "split": "train",
+      "recipe_hash": "recipe-1",
+      "severity": 2,
+      "seed": 2,
+      "transform_log_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "failure_id": null,
+      "generation_mode": "offline"
+    }
+  ],
+  "distribution_report": {
+    "clean_count": 1,
+    "generated_count": 1,
+    "estimated_bytes": 462,
+    "online_count": 0,
+    "offline_count": 1,
+    "class_distribution": {
+      "Car": 1
+    },
+    "object_size_distribution": {},
+    "recipe_distribution": {
+      "recipe-1": 1
+    },
+    "severity_distribution": {
+      "2": 1
+    },
+    "warnings": [],
+    "hard_cap_violations": []
+  },
+  "leakage_report_hash": "d49e8086c0d2b30885b162e8af5591c63581597552011da03c42e88804403707",
+  "schema_version": "1.0.0"
+}

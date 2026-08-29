@@ -72,10 +72,13 @@ def test_low_scored_false_positive_does_not_erase_ap() -> None:
 
 
 def test_no_predictions_scores_zero() -> None:
-    assert average_precision(
-        [DetectionPrediction(sample_id="s0")],
-        [_sample((CAR,))],
-    ) == 0.0
+    assert (
+        average_precision(
+            [DetectionPrediction(sample_id="s0")],
+            [_sample((CAR,))],
+        )
+        == 0.0
+    )
 
 
 def test_detection_summary_counts_tp_fp_and_fn() -> None:
@@ -153,8 +156,8 @@ def test_per_object_detection_comparison_categorizes_failures() -> None:
         sample_id="s0",
         boxes=(
             # car is missed completely
-            Box(20, 20, 30, 30, "Car", 0.75),       # misclassified Pedestrian -> Car
-            Box(40, 40, 50, 50, "Cyclist", 0.15),   # confidence collapsed (0.15 < 0.25)
+            Box(20, 20, 30, 30, "Car", 0.75),  # misclassified Pedestrian -> Car
+            Box(40, 40, 50, 50, "Cyclist", 0.15),  # confidence collapsed (0.15 < 0.25)
         ),
     )
 
@@ -180,4 +183,3 @@ def test_per_object_detection_comparison_categorizes_failures() -> None:
     assert cyc_detail.status_clean == "correct"
     assert cyc_detail.status_attacked == "confidence_collapsed"
     assert cyc_detail.failure_reason == "confidence_collapsed"
-

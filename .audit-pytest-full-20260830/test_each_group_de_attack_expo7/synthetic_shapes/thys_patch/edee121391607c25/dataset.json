@@ -1,0 +1,20 @@
+{
+  "anonymized": true,
+  "attack": "thys_patch",
+  "canonical_image_format": "npy-float32-hwc-0-1",
+  "estimate": {
+    "canonical_bytes": 120171,
+    "gradient_steps": 0,
+    "model_queries": 0,
+    "variants": 1
+  },
+  "format": "advertest-generated-v2",
+  "generation_id": "edee121391607c25",
+  "manifest_hash": "fdef2f49be569e8e714b2b7a442b7f7b",
+  "multimodal_payloads": true,
+  "n_source_samples": 1,
+  "n_variants": 1,
+  "source": "synthetic_shapes",
+  "source_fingerprint": "b9a4e2cdeebd6ea27089faf2df87cc5f",
+  "status": "complete"
+}

@@ -1,0 +1,278 @@
+{
+  "status": "PASSED",
+  "task": "segmentation",
+  "timestamp": "2026-08-29 09:59:35",
+  "models": {
+    "baseline": {
+      "version_id": "sam21-clean-b0",
+      "model_id": "sam21",
+      "adapter_name": "sam2",
+      "task": "segmentation",
+      "checkpoint_path": "runs/train/sam2_b0/sam21-clean-b0_best.pt",
+      "parent_version_id": null,
+      "description": "SAM2.1 Hiera Small baseline clean segmentation model",
+      "checkpoint_hash": "6d1aa6f30de5c92224f8172114de081d",
+      "is_available": true,
+      "metrics": {
+        "clean_miou": 0.725,
+        "boundary_iou": 0.681
+      }
+    },
+    "defended": {
+      "version_id": "sam21-robust-r1",
+      "model_id": "sam21",
+      "adapter_name": "sam2",
+      "task": "segmentation",
+      "checkpoint_path": "runs/train/sam2_r1/sam21-robust-r1_best.pt",
+      "parent_version_id": "sam21-clean-b0",
+      "description": "SAM2.1 Hiera Small robust fine-tuned segmentation model",
+      "checkpoint_hash": "278910f070997f683aa9a1671d348090",
+      "is_available": true,
+      "metrics": {
+        "clean_miou": 0.731,
+        "boundary_iou": 0.695
+      }
+    }
+  },
+  "evaluation_summary": {
+    "clean_miou_baseline": 99.96,
+    "clean_miou_defended": 99.19,
+    "attacked_avg_miou_baseline": 97.87,
+    "attacked_avg_miou_defended": 97.55,
+    "average_robustness_gain_miou": -0.32,
+    "failure_rate_reduction": 1.0
+  },
+  "detailed_results": [
+    {
+      "attack_name": "clean",
+      "attack_label": "\u1ea2nh s\u1ea1ch (Clean Baseline)",
+      "group": "none",
+      "baseline": {
+        "miou": 99.96,
+        "dice": 99.98,
+        "boundary_iou": 99.8,
+        "failure_rate": 0.0,
+        "latency_ms": 2047.1
+      },
+      "defended": {
+        "miou": 99.19,
+        "dice": 99.59,
+        "boundary_iou": 91.9,
+        "failure_rate": 0.0,
+        "latency_ms": 1604.3
+      },
+      "delta_miou": -0.78,
+      "recovery_percentage": 0.0
+    },
+    {
+      "attack_name": "fog",
+      "attack_label": "Th\u1eddi ti\u1ebft: S\u01b0\u01a1ng m\u00f9 d\u00e0y",
+      "group": "weather",
+      "baseline": {
+        "miou": 99.91,
+        "dice": 99.96,
+        "boundary_iou": 99.3,
+        "failure_rate": 0.0,
+        "latency_ms": 1576.4
+      },
+      "defended": {
+        "miou": 98.58,
+        "dice": 99.29,
+        "boundary_iou": 86.51,
+        "failure_rate": 0.0,
+        "latency_ms": 1604.9
+      },
+      "delta_miou": -1.33,
+      "recovery_percentage": 0.0
+    },
+    {
+      "attack_name": "snow",
+      "attack_label": "Th\u1eddi ti\u1ebft: B\u00e3o tuy\u1ebft",
+      "group": "weather",
+      "baseline": {
+        "miou": 99.58,
+        "dice": 99.79,
+        "boundary_iou": 96.16,
+        "failure_rate": 0.0,
+        "latency_ms": 1648.1
+      },
+      "defended": {
+        "miou": 98.87,
+        "dice": 99.43,
+        "boundary_iou": 88.86,
+        "failure_rate": 10.0,
+        "latency_ms": 1610.1
+      },
+      "delta_miou": -0.71,
+      "recovery_percentage": 0.0
+    },
+    {
+      "attack_name": "frost",
+      "attack_label": "Th\u1eddi ti\u1ebft: B\u0103ng tuy\u1ebft b\u00e1m k\u00ednh",
+      "group": "weather",
+      "baseline": {
+        "miou": 99.92,
+        "dice": 99.96,
+        "boundary_iou": 99.33,
+        "failure_rate": 0.0,
+        "latency_ms": 1600.1
+      },
+      "defended": {
+        "miou": 99.47,
+        "dice": 99.74,
+        "boundary_iou": 94.4,
+        "failure_rate": 0.0,
+        "latency_ms": 1608.4
+      },
+      "delta_miou": -0.45,
+      "recovery_percentage": 0.0
+    },
+    {
+      "attack_name": "gaussian_noise",
+      "attack_label": "Nhi\u1ec5u c\u1ea3m bi\u1ebfn ISO (Gaussian)",
+      "group": "noise",
+      "baseline": {
+        "miou": 99.65,
+        "dice": 99.82,
+        "boundary_iou": 96.85,
+        "failure_rate": 0.0,
+        "latency_ms": 1651.5
+      },
+      "defended": {
+        "miou": 98.68,
+        "dice": 99.34,
+        "boundary_iou": 87.92,
+        "failure_rate": 0.0,
+        "latency_ms": 1609.6
+      },
+      "delta_miou": -0.97,
+      "recovery_percentage": 0.0
+    },
+    {
+      "attack_name": "motion_blur",
+      "attack_label": "Xe rung l\u1eafc (Motion blur)",
+      "group": "blur",
+      "baseline": {
+        "miou": 89.39,
+        "dice": 94.39,
+        "boundary_iou": 30.26,
+        "failure_rate": 100.0,
+        "latency_ms": 1623.3
+      },
+      "defended": {
+        "miou": 93.43,
+        "dice": 96.54,
+        "boundary_iou": 56.23,
+        "failure_rate": 20.0,
+        "latency_ms": 1645.2
+      },
+      "delta_miou": 4.04,
+      "recovery_percentage": 38.21
+    },
+    {
+      "attack_name": "defocus_blur",
+      "attack_label": "M\u1ea5t n\u00e9t \u1ed1ng k\u00ednh (Defocus)",
+      "group": "blur",
+      "baseline": {
+        "miou": 94.79,
+        "dice": 97.31,
+        "boundary_iou": 58.13,
+        "failure_rate": 30.0,
+        "latency_ms": 1644.0
+      },
+      "defended": {
+        "miou": 92.58,
+        "dice": 96.14,
+        "boundary_iou": 44.91,
+        "failure_rate": 70.0,
+        "latency_ms": 1625.4
+      },
+      "delta_miou": -2.2,
+      "recovery_percentage": 0.0
+    },
+    {
+      "attack_name": "jpeg_compression",
+      "attack_label": "N\u00e9n truy\u1ec1n d\u1eabn (JPEG)",
+      "group": "digital",
+      "baseline": {
+        "miou": 97.7,
+        "dice": 98.84,
+        "boundary_iou": 79.19,
+        "failure_rate": 0.0,
+        "latency_ms": 1578.8
+      },
+      "defended": {
+        "miou": 98.09,
+        "dice": 99.04,
+        "boundary_iou": 82.3,
+        "failure_rate": 10.0,
+        "latency_ms": 1637.9
+      },
+      "delta_miou": 0.39,
+      "recovery_percentage": 17.3
+    },
+    {
+      "attack_name": "random_erasing",
+      "attack_label": "Che khu\u1ea5t c\u1ea3m bi\u1ebfn (Cutout)",
+      "group": "occlusion",
+      "baseline": {
+        "miou": 98.0,
+        "dice": 98.95,
+        "boundary_iou": 94.33,
+        "failure_rate": 0.0,
+        "latency_ms": 1584.2
+      },
+      "defended": {
+        "miou": 97.37,
+        "dice": 98.62,
+        "boundary_iou": 87.05,
+        "failure_rate": 10.0,
+        "latency_ms": 1620.7
+      },
+      "delta_miou": -0.63,
+      "recovery_percentage": 0.0
+    },
+    {
+      "attack_name": "pgd_adversarial",
+      "attack_label": "T\u1ea5n c\u00f4ng \u0111\u1ed1i kh\u00e1ng PGD (4/255)",
+      "group": "adversarial",
+      "baseline": {
+        "miou": 99.96,
+        "dice": 99.98,
+        "boundary_iou": 99.82,
+        "failure_rate": 0.0,
+        "latency_ms": 1664.5
+      },
+      "defended": {
+        "miou": 99.29,
+        "dice": 99.64,
+        "boundary_iou": 93.05,
+        "failure_rate": 0.0,
+        "latency_ms": 1624.9
+      },
+      "delta_miou": -0.68,
+      "recovery_percentage": 0.0
+    },
+    {
+      "attack_name": "compound_fog_pgd",
+      "attack_label": "Chu\u1ed7i li\u00ean ho\u00e0n (Fog + PGD)",
+      "group": "compound",
+      "baseline": {
+        "miou": 99.83,
+        "dice": 99.91,
+        "boundary_iou": 98.46,
+        "failure_rate": 0.0,
+        "latency_ms": 1606.1
+      },
+      "defended": {
+        "miou": 99.13,
+        "dice": 99.56,
+        "boundary_iou": 91.63,
+        "failure_rate": 0.0,
+        "latency_ms": 1642.9
+      },
+      "delta_miou": -0.7,
+      "recovery_percentage": 0.0
+    }
+  ]
+}

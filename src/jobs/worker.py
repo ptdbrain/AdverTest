@@ -54,7 +54,9 @@ class PlatformWorker:
             )
         if job["type"] == "attacked_dataset_export":
             progress(stage="EXPORTING", completed=1, total=2, message="Building attacked dataset archive")
-            result = self._exports.run(project_id=job["project_id"], actor_id=job["owner_user_id"], request=job["request"])
+            result = self._exports.run(
+                project_id=job["project_id"], actor_id=job["owner_user_id"], request=job["request"]
+            )
             progress(stage="PERSISTING", completed=2, total=2, message="Export artifact stored")
             return result
         raise ValueError("JOB_TYPE_UNSUPPORTED")

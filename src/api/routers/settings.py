@@ -29,10 +29,12 @@ def _get_fernet() -> Fernet:
         derived = base64.urlsafe_b64encode(hashlib.sha256(key.encode("utf-8")).digest())
         return Fernet(derived)
 
+
 def encrypt_key(api_key: str) -> str:
     if not api_key:
         return ""
     return _get_fernet().encrypt(api_key.encode("utf-8")).decode("utf-8")
+
 
 def decrypt_key(encrypted_key: str) -> str:
     if not encrypted_key:
@@ -41,6 +43,7 @@ def decrypt_key(encrypted_key: str) -> str:
         return _get_fernet().decrypt(encrypted_key.encode("utf-8")).decode("utf-8")
     except Exception:
         return encrypted_key
+
 
 router = APIRouter(prefix="/settings", tags=["Settings & Integrations"])
 

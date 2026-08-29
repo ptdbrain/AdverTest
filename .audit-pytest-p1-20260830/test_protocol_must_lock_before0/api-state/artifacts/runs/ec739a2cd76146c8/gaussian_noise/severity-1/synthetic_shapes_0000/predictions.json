@@ -1,0 +1,98 @@
+{
+  "clean": {
+    "prediction_type": "detection",
+    "sample_id": "synthetic_shapes_0000",
+    "latency_ms": 2.9547,
+    "metadata": {},
+    "boxes": [
+      {
+        "xyxy": [
+          26.0,
+          4.0,
+          70.0,
+          32.0
+        ],
+        "label": "Car",
+        "score": 0.496673
+      },
+      {
+        "xyxy": [
+          15.0,
+          44.0,
+          28.0,
+          57.0
+        ],
+        "label": "Cyclist",
+        "score": 0.402703
+      },
+      {
+        "xyxy": [
+          85.0,
+          42.0,
+          94.0,
+          55.0
+        ],
+        "label": "Pedestrian",
+        "score": 0.399617
+      },
+      {
+        "xyxy": [
+          81.0,
+          82.0,
+          88.0,
+          94.0
+        ],
+        "label": "Pedestrian",
+        "score": 0.351457
+      }
+    ]
+  },
+  "attacked": {
+    "prediction_type": "detection",
+    "sample_id": "synthetic_shapes_0000",
+    "latency_ms": 2.3993,
+    "metadata": {},
+    "boxes": [
+      {
+        "xyxy": [
+          26.0,
+          4.0,
+          70.0,
+          32.0
+        ],
+        "label": "Car",
+        "score": 0.465682
+      },
+      {
+        "xyxy": [
+          15.0,
+          44.0,
+          28.0,
+          57.0
+        ],
+        "label": "Cyclist",
+        "score": 0.379697
+      },
+      {
+        "xyxy": [
+          85.0,
+          42.0,
+          94.0,
+          55.0
+        ],
+        "label": "Pedestrian",
+        "score": 0.37325
+      },
+      {
+        "xyxy": [
+          81.0,
+          82.0,
+          88.0,
+          94.0
+        ],
+        "label": "Pedestrian",
+        "score": 0.326249
+      }
+    ]
+  }
+}

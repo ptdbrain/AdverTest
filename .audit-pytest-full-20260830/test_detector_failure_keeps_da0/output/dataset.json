@@ -1,0 +1,20 @@
+{
+  "anonymized": false,
+  "detectors": {
+    "face": {
+      "checkpoint_hash": "face-hash",
+      "name": "fake:face"
+    },
+    "license_plate": {
+      "checkpoint_hash": "license_plate-hash",
+      "name": "fake:license_plate"
+    }
+  },
+  "error": "RuntimeError: detector failed",
+  "format": "kitti",
+  "method": "gaussian_mosaic",
+  "processed_samples": 0,
+  "selected_samples": 1,
+  "source_root": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_detector_failure_keeps_da0\\source",
+  "status": "incomplete"
+}

@@ -1,0 +1,24 @@
+{
+  "anonymized": true,
+  "detectors": {
+    "face": {
+      "checkpoint_hash": "face-hash",
+      "name": "fake:face"
+    },
+    "license_plate": {
+      "checkpoint_hash": "license_plate-hash",
+      "name": "fake:license_plate"
+    }
+  },
+  "face_detections": 2,
+  "format": "kitti",
+  "manifest_hash": "a46b0b67cc4c2251f3a20a90cf7e5b9c",
+  "method": "gaussian_mosaic",
+  "plate_detections": 2,
+  "processed_samples": 2,
+  "review_status": "pending_spot_check",
+  "selected_samples": 2,
+  "source_fingerprint": "f9ebaff22d25f67dc9def181585b082b",
+  "source_root": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_anonymizer_blurs_regions_0\\source",
+  "status": "complete"
+}

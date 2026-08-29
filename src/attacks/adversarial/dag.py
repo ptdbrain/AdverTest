@@ -47,4 +47,3 @@ class Dag(BaseAttack):
             step_size=epsilon / max(1, self.params.iterations),
             objective=replace(ctx.objective, kind="dag"),
         )
-

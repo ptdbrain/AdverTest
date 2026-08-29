@@ -82,7 +82,9 @@ class SquareAttack(BaseAttack):
             # while staying within the ε-ball of the *original* image.
             x_cand = x_best.copy()
             new_delta = ctx.rng.uniform(
-                -epsilon, epsilon, (side, side, c),
+                -epsilon,
+                epsilon,
+                (side, side, c),
             ).astype(np.float32)
             x_cand[y0 : y0 + side, x0 : x0 + side] = np.clip(
                 x_orig[y0 : y0 + side, x0 : x0 + side] + new_delta,

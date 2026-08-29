@@ -1,0 +1,1 @@
+{"state": "COMPLETED", "checkpoint": {"path": "train\\yolo_r2_sensor\\run-1\\yolo11s-repaired-r2-sensor_fault_best.pt", "sha256": "ignored", "parent_model_version": "yolo11s-robust-r1", "metadata": {"real_ultralytics": true}}, "registration": {"version_id": "yolo11s-repaired-r2-sensor_fault", "model_id": "yolo11s", "task": "detection2d"}}

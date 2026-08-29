@@ -63,12 +63,7 @@ class MaskWireV1(_FrozenContract):
         return cls(shape=mask.shape, runs=tuple(runs))
 
     def to_array(self) -> np.ndarray:
-        values = np.concatenate(
-            [
-                np.full(run, index % 2 == 1, dtype=np.bool_)
-                for index, run in enumerate(self.runs)
-            ]
-        )
+        values = np.concatenate([np.full(run, index % 2 == 1, dtype=np.bool_) for index, run in enumerate(self.runs)])
         return values.reshape(self.shape)
 
 

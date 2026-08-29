@@ -19,9 +19,7 @@ def input_gradient(
 ) -> np.ndarray:
     gradient = np.asarray(model.input_gradient(sample, objective), dtype=np.float32)
     if gradient.shape != sample.image.shape:
-        raise ValueError(
-            f"surrogate gradient shape {gradient.shape} != image shape {sample.image.shape}"
-        )
+        raise ValueError(f"surrogate gradient shape {gradient.shape} != image shape {sample.image.shape}")
     if not np.isfinite(gradient).all():
         raise ValueError("surrogate gradient contains NaN or inf")
     if not allow_zero and not np.any(np.abs(gradient) > 1e-12):

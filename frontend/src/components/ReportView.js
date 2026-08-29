@@ -7,17 +7,23 @@ import MetricsComparisonChart from "@/components/MetricsComparisonChart";
 import HeatmapMatrix from "@/components/HeatmapMatrix";
 import MethodComparisonTable from "@/components/MethodComparisonTable";
 import AccumulatedMetricsTable from "@/components/AccumulatedMetricsTable";
+import EvidenceBadge from "@/components/common/EvidenceBadge";
+import { exportReportAsJson, exportReportAsCsv, printReportAsPdf } from "@/lib/exportReport";
 import { triggerAutoFlag } from "@/lib/api";
 import { getDescriptiveAttackName } from "@/lib/attackNaming";
+import { Download, Printer, FileSpreadsheet, FileCode } from "lucide-react";
 
 export default function ReportView({ report, onClearHistory }) {
   const { t } = useLanguage();
+  const [flagging, setFlagging] = React.useState(false);
+  const [flagResult, setFlagResult] = React.useState(null);
+
   if (!report) {
     return (
       <div className="placeholder-view">
-        <div className="placeholder-view__title">No report yet</div>
+        <div className="placeholder-view__title">{t("report.emptyTitle")}</div>
         <div className="placeholder-view__subtitle">
-          Configure and run attacks to generate the robustness report.
+          {t("report.emptySubtitle")}
         </div>
       </div>
     );
@@ -40,14 +46,12 @@ export default function ReportView({ report, onClearHistory }) {
     ? (cells.filter((c) => (c.degradation || (report.ap_clean > 0 ? (report.ap_clean - c.ap) / report.ap_clean * 100 : 0)) >= 20).length / cells.length) * 100
     : 0;
 
-  // Mean IoU estimates (Clean vs Attacked)
-  const cleanIoU = report.metrics?.clean?.mean_iou ?? 0.78;
-  const attackedIoU = cells.length > 0
-    ? (cleanIoU * (1 - Math.min(0.9, avgDegradation / 100 * 0.75))).toFixed(3)
-    : cleanIoU.toFixed(3);
-
-  const [flagging, setFlagging] = React.useState(false);
-  const [flagResult, setFlagResult] = React.useState(null);
+  const cleanIoU = report.metrics?.clean?.mean_iou ?? report.metrics?.clean?.mean_bev_iou;
+  const cleanIoUDisplay = cleanIoU != null ? cleanIoU.toFixed(3) : "—";
+  const attackedIoU = report.metrics?.robustness?.mean_iou ?? report.metrics?.robustness?.mean_bev_iou;
+  const attackedIoUDisplay = attackedIoU != null
+    ? attackedIoU.toFixed(3)
+    : (cells.length > 0 && cleanIoU != null ? (cleanIoU * (1 - Math.min(0.9, avgDegradation / 100))).toFixed(3) : "—");
 
   const handleAutoFlag = async () => {
     if (!report?.run_id) return;
@@ -107,6 +111,71 @@ export default function ReportView({ report, onClearHistory }) {
         </div>
       )}
 
+      {/* Export Toolbar & Evidence State Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "12px",
+          padding: "12px 16px",
+          background: "#FFFFFF",
+          borderRadius: "8px",
+          border: "1px solid #E2E8F0",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <EvidenceBadge provenance={report.provenance} simulationOnly={report.simulation_only} />
+          <span style={{ fontSize: "0.8rem", color: "#64748B", fontWeight: 600 }}>
+            Run ID: <strong style={{ color: "#0F172A" }}>{report.run_id || "—"}</strong>
+          </span>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <button
+            type="button"
+            onClick={() => exportReportAsJson(report)}
+            className="action-button action-button--secondary"
+            style={{ fontSize: "0.75rem", padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+            title="Xuất dữ liệu gốc kèm toàn bộ Scientific Provenance"
+          >
+            <FileCode style={{ width: 14, height: 14 }} />
+            <span>JSON</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => exportReportAsCsv(report)}
+            className="action-button action-button--secondary"
+            style={{ fontSize: "0.75rem", padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+            title="Xuất bảng số liệu CSV chuẩn hóa advertest-export-v1"
+          >
+            <FileSpreadsheet style={{ width: 14, height: 14 }} />
+            <span>CSV</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => printReportAsPdf(report)}
+            className="action-button"
+            style={{
+              background: "#2563EB",
+              color: "#FFF",
+              fontSize: "0.75rem",
+              fontWeight: 700,
+              padding: "6px 14px",
+              borderRadius: "6px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+            title="In hoặc Lưu Báo cáo Thử nghiệm dạng PDF"
+          >
+            <Printer style={{ width: 14, height: 14 }} />
+            <span>In / PDF</span>
+          </button>
+        </div>
+      </div>
+
       {/* Summary Header - Complete 5-Metric Suite from TOPIC.md */}
       <div className="chart-container" style={{ padding: "var(--space-lg)", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "var(--space-md)", alignItems: "center", borderTop: "3px solid var(--accent)" }}>
         {/* Model & Dataset Details */}
@@ -157,9 +226,9 @@ export default function ReportView({ report, onClearHistory }) {
         <div style={{ padding: "0 var(--space-md)", borderLeft: "1px solid var(--border-subtle)" }}>
           <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>{t("report.meanIoU")}</div>
           <div className="text-mono" style={{ fontSize: "1.4rem", fontWeight: 800, color: "var(--text-primary)", lineHeight: 1, marginTop: 4 }}>
-            <span style={{ color: "var(--success)" }}>{Number(cleanIoU).toFixed(2)}</span>
+            <span style={{ color: "var(--success)" }}>{cleanIoUDisplay}</span>
             <span style={{ color: "var(--text-tertiary)", margin: "0 4px" }}>→</span>
-            <span style={{ color: "var(--danger)" }}>{Number(attackedIoU).toFixed(2)}</span>
+            <span style={{ color: "var(--danger)" }}>{attackedIoUDisplay}</span>
           </div>
           <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: 4 }}>
             {t("report.iouLabel")}

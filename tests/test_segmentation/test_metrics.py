@@ -11,14 +11,17 @@ def _sample() -> Sample:
     mask = np.zeros((10, 10), dtype=np.uint8)
     mask[2:7, 2:7] = 1
     return Sample(
-        "s1", np.zeros((10, 10, 3), dtype=np.float32), mask=mask,
+        "s1",
+        np.zeros((10, 10, 3), dtype=np.float32),
+        mask=mask,
         meta={"mask_reviewed": True, "mask_source": "human", "instance_labels": {1: "Car"}},
     )
 
 
 def _prediction(mask: np.ndarray) -> SegmentationPrediction:
     return SegmentationPrediction(
-        sample_id="s1", prompt_id="gt-box:s1:1",
+        sample_id="s1",
+        prompt_id="gt-box:s1:1",
         instances=(MaskPrediction(instance_id="1", mask=mask.astype(np.bool_), score=0.9),),
     )
 

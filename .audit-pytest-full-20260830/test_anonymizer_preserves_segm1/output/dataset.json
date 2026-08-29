@@ -1,0 +1,25 @@
+{
+  "annotation_policy": "copied_byte_for_byte",
+  "anonymized": true,
+  "detectors": {
+    "face": {
+      "checkpoint_hash": "face-hash",
+      "name": "fake:face"
+    },
+    "license_plate": {
+      "checkpoint_hash": "license_plate-hash",
+      "name": "fake:license_plate"
+    }
+  },
+  "face_detections": 1,
+  "format": "bdd100k",
+  "manifest_hash": "14832ae9faef2517c1cb4bb95bd0f428",
+  "method": "gaussian_mosaic",
+  "plate_detections": 1,
+  "processed_samples": 1,
+  "review_status": "pending_spot_check",
+  "selected_samples": 1,
+  "source_fingerprint": "3eef5927a84189a47a2dfcdc19e023df",
+  "source_root": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_anonymizer_preserves_segm1\\source",
+  "status": "complete"
+}

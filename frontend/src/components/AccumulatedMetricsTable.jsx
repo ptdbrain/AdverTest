@@ -64,7 +64,8 @@ function retentionTokens(retainedPct) {
 function buildMatrix(report) {
   const apClean = report?.ap_clean ?? 0;
   const cleanMetrics = report?.metrics?.clean ?? {};
-  const cleanAp50 = cleanMetrics.ap50 ?? apClean;
+  const is3D = cleanMetrics.kitti_3d_ap != null;
+  const cleanAp50 = cleanMetrics.kitti_3d_ap ?? cleanMetrics.ap50 ?? apClean;
   const cleanMap = cleanMetrics.map50_95 ?? null;
   const rawCells = report?.cells ?? [];
 
@@ -74,7 +75,7 @@ function buildMatrix(report) {
   rawCells.forEach((cell) => {
     const key = getCanonicalAttackKey(cell, cell.severity, report);
     const label = getDescriptiveAttackName(cell, cell.severity, report);
-    const ap50 = cell.metrics?.ap50 ?? cell.ap ?? 0;
+    const ap50 = cell.metrics?.kitti_3d_ap ?? cell.metrics?.ap50 ?? cell.ap ?? 0;
     const map = cell.metrics?.map50_95 ?? null;
     const retained = apClean > 0 ? Math.max(0, Math.min(100, (ap50 / apClean) * 100)) : null;
     columnMap.set(key, {
@@ -87,14 +88,14 @@ function buildMatrix(report) {
 
   const columns = Array.from(columnMap.values());
 
-  return { apClean, cleanAp50, cleanMap, columns };
-}
+  const metricRows = [
+    { key: "ap50", label: is3D ? "BEV AP" : "AP@50", baselinePct: null },
+    { key: "map", label: is3D ? "BEV mAP" : "mAP@50-95", baselinePct: null },
+    { key: "robustness", label: "Robustness (giữ lại)", baselinePct: 100 },
+  ];
 
-const METRIC_ROWS = [
-  { key: "ap50", label: "AP@50", baselinePct: null },
-  { key: "map", label: "mAP@50-95", baselinePct: null },
-  { key: "robustness", label: "Robustness (giữ lại)", baselinePct: 100 },
-];
+  return { apClean, cleanAp50, cleanMap, columns, metricRows };
+}
 
 function formatMetric(key, value) {
   if (value == null) return "—";
@@ -148,7 +149,7 @@ function MetricCell({ metricKey, value, retained, isBaseline }) {
 
 export default function AccumulatedMetricsTable({ report }) {
   const { t } = useLanguage();
-  const { apClean, cleanAp50, cleanMap, columns } = useMemo(() => buildMatrix(report), [report]);
+  const { apClean, cleanAp50, cleanMap, columns, metricRows = [] } = useMemo(() => buildMatrix(report), [report]);
 
   if (!report || columns.length === 0) {
     return (
@@ -297,7 +298,7 @@ export default function AccumulatedMetricsTable({ report }) {
           </thead>
 
           <tbody>
-            {METRIC_ROWS.map((row) => (
+            {metricRows.map((row) => (
               <tr key={row.key}>
                 <td
                   style={{

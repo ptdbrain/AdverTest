@@ -71,9 +71,7 @@ class HardExampleBank:
             raise TypeError("hard-example artifact must be a numpy array")
         actual_hash = array_digest(artifact, length=64)
         if actual_hash != record.artifact_hash:
-            raise ValueError(
-                f"artifact hash mismatch: {actual_hash} != {record.artifact_hash}"
-            )
+            raise ValueError(f"artifact hash mismatch: {actual_hash} != {record.artifact_hash}")
         destination = self._object_path(record.artifact_hash)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.exists():
@@ -91,12 +89,9 @@ class HardExampleBank:
         ).fetchone()
         serialized = record.model_dump_json()
         if existing_row is not None and existing_row[0] != serialized:
-            raise ValueError(
-                f"artifact_id {record.artifact_id!r} already has different provenance"
-            )
+            raise ValueError(f"artifact_id {record.artifact_id!r} already has different provenance")
         self._connection.execute(
-            "INSERT OR REPLACE INTO hard_examples"
-            "(artifact_id, artifact_hash, payload) VALUES (?, ?, ?)",
+            "INSERT OR REPLACE INTO hard_examples(artifact_id, artifact_hash, payload) VALUES (?, ?, ?)",
             (record.artifact_id, record.artifact_hash, serialized),
         )
         self._connection.commit()
@@ -115,9 +110,7 @@ class HardExampleBank:
             raise KeyError(f"unknown hard example: {artifact_id!r}")
         record = HardExampleRecord.model_validate_json(row[1])
         if intended_use not in record.allowed_uses:
-            raise PermissionError(
-                f"hard example {artifact_id!r} is not allowed for {intended_use}"
-            )
+            raise PermissionError(f"hard example {artifact_id!r} is not allowed for {intended_use}")
         artifact = np.load(self._object_path(row[0]), allow_pickle=False)
         if array_digest(artifact, length=64) != record.artifact_hash:
             raise ValueError(f"stored hard example {artifact_id!r} failed hash validation")
@@ -135,30 +128,17 @@ class HardExampleBank:
         severity_min: int | None = None,
         severity_max: int | None = None,
     ) -> tuple[HardExampleRecord, ...]:
-        rows = self._connection.execute(
-            "SELECT payload FROM hard_examples ORDER BY artifact_id"
-        ).fetchall()
-        records = [
-            HardExampleRecord.model_validate_json(row[0]) for row in rows
-        ]
+        rows = self._connection.execute("SELECT payload FROM hard_examples ORDER BY artifact_id").fetchall()
+        records = [HardExampleRecord.model_validate_json(row[0]) for row in rows]
         return tuple(
             record
             for record in records
             if intended_use in record.allowed_uses
             and (task is None or record.task == task)
-            and (
-                attack_family is None
-                or record.attack_family == attack_family
-            )
-            and (
-                failure_reason is None
-                or record.failure_reason == failure_reason
-            )
+            and (attack_family is None or record.attack_family == attack_family)
+            and (failure_reason is None or record.failure_reason == failure_reason)
             and (class_label is None or record.class_label == class_label)
-            and (
-                object_size_bucket is None
-                or record.object_size_bucket == object_size_bucket
-            )
+            and (object_size_bucket is None or record.object_size_bucket == object_size_bucket)
             and (severity_min is None or record.severity >= severity_min)
             and (severity_max is None or record.severity <= severity_max)
         )
@@ -170,9 +150,7 @@ class HardExampleBank:
 def _validate_record(record: HardExampleRecord) -> None:
     required_provenance = {"dataset_version_id", "recipe_hash"}
     if not required_provenance.issubset(record.provenance):
-        raise ValueError(
-            "hard example provenance requires dataset_version_id and recipe_hash"
-        )
+        raise ValueError("hard example provenance requires dataset_version_id and recipe_hash")
     if not record.seeds:
         raise ValueError("hard example requires at least one seed")
     if record.locked_test and "training" in record.allowed_uses:

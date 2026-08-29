@@ -1,0 +1,57 @@
+{
+  "anonymization_manifest": null,
+  "dataset_name": "synthetic_shapes",
+  "dataset_params": {
+    "n_samples": 2,
+    "seed": 42
+  },
+  "fail_fast": true,
+  "input_dir": null,
+  "input_format": "advertest",
+  "intended_use": "training",
+  "limit": null,
+  "logical_source_id": "generated-cancellation-test",
+  "output_dir": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_recipe_generation_checks_0",
+  "preview": false,
+  "recipe": {
+    "catalog_version": "1.0.0",
+    "constraints": {
+      "max_expensive_steps": 1,
+      "max_gpu_hours": 1000.0,
+      "max_occlusion_ratio": 0.6,
+      "max_steps": 4,
+      "max_storage_bytes": 100000000000,
+      "max_variants": 10000,
+      "max_white_box_steps": 1,
+      "supported_spatial_transforms": [
+        "identity",
+        "crop",
+        "translate",
+        "scale",
+        "horizontal_flip",
+        "rotate_90",
+        "affine",
+        "resize_pad"
+      ]
+    },
+    "metadata": {},
+    "name": "noise",
+    "recipe_hash": "92544b5fde30a6dfb804f1a9146d1e80e5b6040b2a20fb3349e3f719923c3fb9",
+    "recipe_id": "recipe-92544b5fde30a6dfb804",
+    "steps": [
+      {
+        "attack_name": "gaussian_noise",
+        "expected_cost": 1.0,
+        "implementation_version": "1.0.0",
+        "objective": null,
+        "parameters": {},
+        "position": 0,
+        "probability": 1.0,
+        "seed": 17,
+        "severity": 1
+      }
+    ]
+  },
+  "seed": 17,
+  "surrogate": null
+}

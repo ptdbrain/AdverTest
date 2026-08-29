@@ -1,0 +1,20 @@
+{
+  "anonymized": true,
+  "attack": "depth_fog",
+  "canonical_image_format": "npy-float32-hwc-0-1",
+  "estimate": {
+    "canonical_bytes": 11234,
+    "gradient_steps": 0,
+    "model_queries": 0,
+    "variants": 1
+  },
+  "format": "advertest-generated-v2",
+  "generation_id": "efa1389d8439d14a",
+  "manifest_hash": "07179cb7ee41ccffef9c129944eec3e2",
+  "multimodal_payloads": true,
+  "n_source_samples": 1,
+  "n_variants": 1,
+  "source": "sensor_fixture",
+  "source_fingerprint": "f58247374c02503490b1d4a94b576e83",
+  "status": "complete"
+}

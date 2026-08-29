@@ -213,9 +213,7 @@ class AttackDatasetGenerator:
                 "catalog_version": config.recipe.catalog_version,
                 "seed": config.seed,
                 "intended_use": config.intended_use,
-                "surrogate_version": (
-                    surrogate.metadata().version if surrogate is not None else None
-                ),
+                "surrogate_version": (surrogate.metadata().version if surrogate is not None else None),
                 "preview": config.preview,
             },
             length=20,
@@ -227,9 +225,7 @@ class AttackDatasetGenerator:
             (root / "previews").mkdir(exist_ok=True)
         _write_json(root / "config.json", config.model_dump(mode="json"))
         manifest_path = root / "manifest.jsonl"
-        existing_records = {
-            row["variant_id"]: row for row in _read_manifest(manifest_path)
-        }
+        existing_records = {row["variant_id"]: row for row in _read_manifest(manifest_path)}
         descriptor = GeneratedDatasetVersion(
             generation_id=generation_id,
             version_id=f"generated-{generation_id}",
@@ -256,11 +252,7 @@ class AttackDatasetGenerator:
                         "source_sample_hash": _sample_digest(sample),
                         "recipe_hash": config.recipe.recipe_hash,
                         "seed": config.seed,
-                        "surrogate_version": (
-                            surrogate.metadata().version
-                            if surrogate is not None
-                            else None
-                        ),
+                        "surrogate_version": (surrogate.metadata().version if surrogate is not None else None),
                     },
                     length=24,
                 )
@@ -268,15 +260,9 @@ class AttackDatasetGenerator:
                     dataset_version_id=source_version.version_id,
                     source_hash=array_digest(sample.image, length=32),
                     recipe_hash=config.recipe.recipe_hash,
-                    implementation_versions=tuple(
-                        step.implementation_version for step in config.recipe.steps
-                    ),
+                    implementation_versions=tuple(step.implementation_version for step in config.recipe.steps),
                     seed=config.seed,
-                    surrogate_version=(
-                        surrogate.metadata().version
-                        if surrogate is not None
-                        else None
-                    ),
+                    surrogate_version=(surrogate.metadata().version if surrogate is not None else None),
                 )
                 existing = existing_records.get(variant_id)
                 if (
@@ -298,9 +284,7 @@ class AttackDatasetGenerator:
                     ),
                 )
                 if not result.loadable or result.final_sample is None:
-                    raise ValueError(
-                        f"recipe variant {variant_id} failed: {result.errors}"
-                    )
+                    raise ValueError(f"recipe variant {variant_id} failed: {result.errors}")
                 record = self._persist_recipe_variant(
                     root,
                     source_version.version_id,
@@ -357,10 +341,7 @@ class AttackDatasetGenerator:
             )
         )
         if not lineage.passed:
-            raise ValueError(
-                f"generated lineage validation failed: "
-                f"{[finding.code for finding in lineage.errors]}"
-            )
+            raise ValueError(f"generated lineage validation failed: {[finding.code for finding in lineage.errors]}")
         manifest_hash = stable_digest(ordered, length=32)
         complete = descriptor.model_copy(
             update={
@@ -438,11 +419,7 @@ class AttackDatasetGenerator:
             result.intermediate_arrays,
             strict=True,
         ):
-            relative = (
-                Path("intermediates")
-                / variant_id
-                / f"{step_record.position}.npy"
-            )
+            relative = Path("intermediates") / variant_id / f"{step_record.position}.npy"
             (root / relative).parent.mkdir(parents=True, exist_ok=True)
             _write_npy(root / relative, array)
             intermediate_paths.append(relative.as_posix())
@@ -472,11 +449,7 @@ class AttackDatasetGenerator:
                 output_hash=step.output_hash or step.input_hash,
                 intermediate_path=intermediate_paths[index],
                 cost=step.cost,
-                transform_log=(
-                    step.transform_log.model_dump(mode="json")
-                    if step.transform_log is not None
-                    else None
-                ),
+                transform_log=(step.transform_log.model_dump(mode="json") if step.transform_log is not None else None),
                 status=step.status,
             )
             for index, step in enumerate(result.step_records)
@@ -484,11 +457,7 @@ class AttackDatasetGenerator:
         ground_truth_hash = stable_digest(
             {
                 "annotations": label_payload,
-                "mask": (
-                    array_digest(source.mask, length=32)
-                    if source.mask is not None
-                    else None
-                ),
+                "mask": (array_digest(source.mask, length=32) if source.mask is not None else None),
             },
             length=32,
         )
@@ -509,21 +478,13 @@ class AttackDatasetGenerator:
             label_path=label_relative.as_posix(),
             label_hash=stable_digest(label_payload, length=32),
             mask_path=mask_relative.as_posix() if mask_relative else None,
-            mask_hash=(
-                array_digest(generated.mask, length=32)
-                if generated.mask is not None
-                else None
-            ),
+            mask_hash=(array_digest(generated.mask, length=32) if generated.mask is not None else None),
             intended_use=config.intended_use,
             validation_status="passed",
             status="complete",
             anonymized=source.anonymized,
-            transform_logs=tuple(
-                log.model_dump(mode="json") for log in result.transform_logs
-            ),
-            preview_path=(
-                preview_relative.as_posix() if preview_relative else None
-            ),
+            transform_logs=tuple(log.model_dump(mode="json") for log in result.transform_logs),
+            preview_path=(preview_relative.as_posix() if preview_relative else None),
         )
 
     def _generate_legacy(
@@ -693,13 +654,8 @@ class AttackDatasetGenerator:
             return None
         if config.surrogate is None:
             raise ValueError(f"attack {attack.name!r} requires a surrogate config")
-        if (
-            config.surrogate.name in {"yolo11", "faster_rcnn", "sam2_surrogate"}
-            and config.surrogate.checkpoint is None
-        ):
-            raise ValueError(
-                f"surrogate {config.surrogate.name!r} requires an explicit checkpoint path"
-            )
+        if config.surrogate.name in {"yolo11", "faster_rcnn", "sam2_surrogate"} and config.surrogate.checkpoint is None:
+            raise ValueError(f"surrogate {config.surrogate.name!r} requires an explicit checkpoint path")
         params = dict(config.surrogate.params)
         if config.surrogate.checkpoint is not None:
             params.setdefault("weights", config.surrogate.checkpoint)
@@ -731,31 +687,20 @@ class AttackDatasetGenerator:
         sample_ids = [sample.sample_id for sample in samples]
         if len(sample_ids) != len(set(sample_ids)):
             raise ValueError("source dataset contains duplicate sample IDs")
-        invalid_severities = [
-            severity
-            for severity in severities
-            if not 0 <= severity <= attack.severity_levels
-        ]
+        invalid_severities = [severity for severity in severities if not 0 <= severity <= attack.severity_levels]
         if invalid_severities:
             raise ValueError(
-                f"severity for {attack.name!r} must be 0..{attack.severity_levels}, "
-                f"got {invalid_severities}"
+                f"severity for {attack.name!r} must be 0..{attack.severity_levels}, got {invalid_severities}"
             )
         if objective.kind == "targeted" and objective.target_label is None:
             raise ValueError("targeted objective requires surrogate.target_label")
         for sample in samples:
             attack.validate_requirements(sample, surrogate)
             if objective.kind == "targeted" and not sample.boxes:
+                raise ValueError(f"targeted objective requires boxes; sample {sample.sample_id!r} has none")
+            if objective.target_box_index is not None and not 0 <= objective.target_box_index < len(sample.boxes):
                 raise ValueError(
-                    f"targeted objective requires boxes; sample {sample.sample_id!r} has none"
-                )
-            if (
-                objective.target_box_index is not None
-                and not 0 <= objective.target_box_index < len(sample.boxes)
-            ):
-                raise ValueError(
-                    f"target_box_index {objective.target_box_index} is invalid for "
-                    f"sample {sample.sample_id!r}"
+                    f"target_box_index {objective.target_box_index} is invalid for sample {sample.sample_id!r}"
                 )
 
     @staticmethod
@@ -850,11 +795,7 @@ class AttackDatasetGenerator:
             _write_png(root / preview_rel, attacked.image)
         delta = attacked.image.astype(np.float64) - source.image.astype(np.float64)
         label_hash = stable_digest(annotations_payload(attacked.boxes, attacked.boxes3d), length=32)
-        mask_hash = (
-            array_digest(attacked.mask, length=32)
-            if attacked.mask is not None
-            else None
-        )
+        mask_hash = array_digest(attacked.mask, length=32) if attacked.mask is not None else None
         return {
             "variant_id": variant_id,
             "source_sample_id": source.sample_id,
@@ -874,11 +815,7 @@ class AttackDatasetGenerator:
             "surrogate_version": surrogate["version"],
             "checkpoint_hash": surrogate["checkpoint_hash"],
             "patch_artifact_hash": getattr(attack, "artifact_hash", None),
-            "patch_artifact_path": (
-                artifact_path.as_posix()
-                if artifact_path is not None
-                else None
-            ),
+            "patch_artifact_path": (artifact_path.as_posix() if artifact_path is not None else None),
             "image_path": image_rel.as_posix(),
             "preview_path": preview_rel.as_posix() if preview_rel else None,
             "label_path": label_rel.as_posix(),
@@ -891,8 +828,7 @@ class AttackDatasetGenerator:
             "camera_payloads": camera_payloads,
             "lidar_path": lidar_path.as_posix() if lidar_path else None,
             "lidar_hash": (
-                array_digest(attacked.lidar_frame.points, length=32)
-                if attacked.lidar_frame is not None else None
+                array_digest(attacked.lidar_frame.points, length=32) if attacked.lidar_frame is not None else None
             ),
             "lidar_fields": list(attacked.lidar_frame.fields) if attacked.lidar_frame else None,
             "lidar_sensor_model": attacked.lidar_frame.sensor_model if attacked.lidar_frame else None,
@@ -942,12 +878,7 @@ def inspect_generated_dataset(path: str | Path) -> dict[str, Any]:
         "invalid_variants": invalid,
         "count_matches": count_matches,
         "manifest_hash_matches": manifest_hash_matches,
-        "valid": (
-            descriptor.get("status") == "complete"
-            and not invalid
-            and count_matches
-            and manifest_hash_matches
-        ),
+        "valid": (descriptor.get("status") == "complete" and not invalid and count_matches and manifest_hash_matches),
     }
 
 
@@ -1005,11 +936,14 @@ def _same_optional_array(first: np.ndarray | None, second: np.ndarray | None) ->
 def _sample_digest(sample: Sample) -> str:
     # Keep labels/masks in the generation fingerprint while delegating all
     # sensor payloads to the shared multimodal digest used by the run cache.
-    return stable_digest({
-        "sensors": sample_digest(sample, length=32),
-        "labels": annotations_payload(sample.boxes, sample.boxes3d),
-        "mask_hash": array_digest(sample.mask, length=32) if sample.mask is not None else None,
-    }, length=32)
+    return stable_digest(
+        {
+            "sensors": sample_digest(sample, length=32),
+            "labels": annotations_payload(sample.boxes, sample.boxes3d),
+            "mask_hash": array_digest(sample.mask, length=32) if sample.mask is not None else None,
+        },
+        length=32,
+    )
 
 
 def _dataset_fingerprint(samples: list[Sample]) -> str:
@@ -1047,31 +981,30 @@ def _estimate_generation(
     variants = len(samples) * len(severities)
     bytes_per_severity = sum(
         sample.image.nbytes
-            + len(json.dumps(annotations_payload(sample.boxes, sample.boxes3d), sort_keys=True).encode("utf-8"))
-            + (sample.mask.nbytes if sample.mask is not None else 0)
+        + len(json.dumps(annotations_payload(sample.boxes, sample.boxes3d), sort_keys=True).encode("utf-8"))
+        + (sample.mask.nbytes if sample.mask is not None else 0)
+        + sum(
+            view.image.nbytes
             + sum(
-                view.image.nbytes
-                + sum(array.nbytes for array in (view.depth, view.intrinsic, view.sensor_to_ego, view.previous_image) if array is not None)
-                for view in sample.camera_views
+                array.nbytes
+                for array in (view.depth, view.intrinsic, view.sensor_to_ego, view.previous_image)
+                if array is not None
             )
-            + (sample.lidar_frame.points.nbytes if sample.lidar_frame is not None else 0)
+            for view in sample.camera_views
+        )
+        + (sample.lidar_frame.points.nbytes if sample.lidar_frame is not None else 0)
         for sample in samples
     )
     params = attack.param_dict()
     steps_per_variant = 0
     if attack.needs_gradients:
         if attack.name == "cw_l2":
-            steps_per_variant = int(params.get("iterations", 1)) * int(
-                params.get("binary_search_steps", 1)
-            )
+            steps_per_variant = int(params.get("iterations", 1)) * int(params.get("binary_search_steps", 1))
         else:
             steps_per_variant = int(params.get("steps", params.get("iterations", 1)))
             steps_per_variant *= int(params.get("restarts", 1))
     active_variants = len(samples) * sum(severity > 0 for severity in severities)
-    model_queries = sum(
-        attack.model_queries_for_severity(severity) * len(samples)
-        for severity in severities
-    )
+    model_queries = sum(attack.model_queries_for_severity(severity) * len(samples) for severity in severities)
     return {
         "variants": variants,
         "canonical_bytes": bytes_per_severity * len(severities),
@@ -1095,27 +1028,18 @@ def _validate_perturbation_budget(
         budget = attack.level(severity, epsilon_values)
         actual = float(np.max(np.abs(delta)))
         if actual > budget + 1e-6:
-            raise ValueError(
-                f"attack {attack.name!r} exceeded L-inf budget: "
-                f"{actual:.8f} > {budget:.8f}"
-            )
+            raise ValueError(f"attack {attack.name!r} exceeded L-inf budget: {actual:.8f} > {budget:.8f}")
     epsilon = params.get("epsilon")
     if isinstance(epsilon, (float, int)):
         actual = float(np.max(np.abs(delta)))
         if actual > float(epsilon) + 1e-6:
-            raise ValueError(
-                f"attack {attack.name!r} exceeded L-inf budget: "
-                f"{actual:.8f} > {float(epsilon):.8f}"
-            )
+            raise ValueError(f"attack {attack.name!r} exceeded L-inf budget: {actual:.8f} > {float(epsilon):.8f}")
     radius_values = params.get("radius_per_severity")
     if radius_values:
         budget = attack.level(severity, radius_values)
         actual = float(np.linalg.norm(delta))
         if actual > budget + 1e-6:
-            raise ValueError(
-                f"attack {attack.name!r} exceeded L2 budget: "
-                f"{actual:.8f} > {budget:.8f}"
-            )
+            raise ValueError(f"attack {attack.name!r} exceeded L2 budget: {actual:.8f} > {budget:.8f}")
 
 
 def _persist_attack_artifact(root: Path, attack: BaseAttack) -> Path | None:
@@ -1124,14 +1048,10 @@ def _persist_attack_artifact(root: Path, attack: BaseAttack) -> Path | None:
     patch = getattr(attack, "patch", None)
     artifact_hash = getattr(attack, "artifact_hash", None)
     if not isinstance(patch, np.ndarray) or not isinstance(artifact_hash, str):
-        raise ValueError(
-            f"artifact attack {attack.name!r} did not expose patch and artifact_hash"
-        )
+        raise ValueError(f"artifact attack {attack.name!r} did not expose patch and artifact_hash")
     actual_hash = array_digest(patch, length=32)
     if actual_hash != artifact_hash:
-        raise ValueError(
-            f"artifact attack {attack.name!r} has an invalid in-memory patch hash"
-        )
+        raise ValueError(f"artifact attack {attack.name!r} has an invalid in-memory patch hash")
     relative = Path("artifacts") / f"{attack.name}-{artifact_hash}.npy"
     destination = root / relative
     if destination.is_file():
@@ -1241,11 +1161,7 @@ def _recipe_record_is_valid(root: Path, record: dict[str, Any]) -> bool:
 def _read_manifest(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
-    return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def _write_manifest(path: Path, records: list[dict[str, Any]]) -> None:

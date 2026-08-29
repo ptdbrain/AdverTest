@@ -1,0 +1,1 @@
+{"task_id": "segmentation", "annotations": [{"class_id": "car", "polygon": [[1, 1], [10, 1], [6, 8]]}], "calibration": null, "lidar_path": null}

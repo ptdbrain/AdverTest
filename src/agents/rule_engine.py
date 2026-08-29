@@ -89,7 +89,7 @@ def evaluate_rules(
                     priority="HIGH",
                     action_type="ADJUST_TRAINING",
                     title="Mitigate Clean Accuracy Regression",
-                    reason=f"Defended model suffered a clean mAP drop of {abs(clean_score_delta)*100:.1f}%. Increase clean replay ratio in defense profile.",
+                    reason=f"Defended model suffered a clean mAP drop of {abs(clean_score_delta) * 100:.1f}%. Increase clean replay ratio in defense profile.",
                     evidence=[
                         f"comparison_id:{comp.get('comparison_id')}",
                         f"clean_score_delta:{clean_score_delta}",
@@ -127,9 +127,7 @@ def evaluate_rules(
     return sorted(recommendations, key=lambda r: priority_order.get(r.priority, 99))
 
 
-def _evaluate_run_specific_rules(
-    report: dict[str, Any], recommendations: list[Recommendation]
-) -> None:
+def _evaluate_run_specific_rules(report: dict[str, Any], recommendations: list[Recommendation]) -> None:
     """Evaluate performance patterns inside a completed single run report."""
     run_id = report.get("run_id", "")
     clean_ap = float(report.get("ap_clean", 0.0))
@@ -154,11 +152,11 @@ def _evaluate_run_specific_rules(
                 priority="HIGH",
                 action_type="GENERATE_DEFENCE_DATASET",
                 title=f"Generate Robustness Defense for '{worst_attack_name}'",
-                reason=f"Attack '{worst_attack_name}' caused a severe {worst_degradation*100:.1f}% accuracy drop. Build a training dataset with corresponding corruption mix.",
+                reason=f"Attack '{worst_attack_name}' caused a severe {worst_degradation * 100:.1f}% accuracy drop. Build a training dataset with corresponding corruption mix.",
                 evidence=[
                     f"run_id:{run_id}",
                     f"worst_attack:{worst_attack_name}",
-                    f"degradation:{worst_degradation*100:.1f}%",
+                    f"degradation:{worst_degradation * 100:.1f}%",
                 ],
                 risks=["Model remains vulnerable to high-severity perturbation in production"],
                 suggested_parameters={
@@ -172,9 +170,7 @@ def _evaluate_run_specific_rules(
     # Check 3D distance vulnerabilities
     if task == "detection3d":
         worst_cases = list(report.get("worst_cases", []))
-        far_failures = sum(
-            1 for f in worst_cases if (f.get("metadata") or {}).get("distance_bucket") == "far"
-        )
+        far_failures = sum(1 for f in worst_cases if (f.get("metadata") or {}).get("distance_bucket") == "far")
         if far_failures > 5:
             recommendations.append(
                 Recommendation(

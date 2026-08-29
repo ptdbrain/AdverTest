@@ -30,11 +30,15 @@ def test_advisor_recommendations_endpoint_returns_200(client) -> None:
 def test_advisor_dismiss_endpoint(client) -> None:
     # Populate a pending checkpoint to trigger a recommendation
     store = app.dependency_overrides.get(get_store, get_store)()
-    store.put_record("checkpoint", "ckpt-test-dismiss", {
-        "checkpoint_id": "ckpt-test-dismiss",
-        "display_name": "Dismiss Test Checkpoint",
-        "status": "PENDING_VALIDATION",
-    })
+    store.put_record(
+        "checkpoint",
+        "ckpt-test-dismiss",
+        {
+            "checkpoint_id": "ckpt-test-dismiss",
+            "display_name": "Dismiss Test Checkpoint",
+            "status": "PENDING_VALIDATION",
+        },
+    )
 
     recs_res = client.get("/api/v1/advisor/recommendations")
     assert recs_res.status_code == 200

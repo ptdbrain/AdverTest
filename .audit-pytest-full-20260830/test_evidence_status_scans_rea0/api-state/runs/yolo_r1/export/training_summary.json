@@ -1,0 +1,10 @@
+{
+          "checkpoint": {
+            "path": "yolo_r1/export/robust.pt",
+            "parent_model_version": "yolo11s-clean-b0"
+          },
+          "registration": {
+            "version_id": "yolo11s-robust-r1",
+            "model_id": "yolo11s"
+          }
+        }

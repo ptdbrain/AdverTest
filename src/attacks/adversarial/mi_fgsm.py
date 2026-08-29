@@ -47,4 +47,3 @@ class MiFgsm(BaseAttack):
             random_start=False,
             momentum=self.params.momentum,
         )
-

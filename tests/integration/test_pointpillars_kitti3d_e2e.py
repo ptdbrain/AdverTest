@@ -32,10 +32,7 @@ try:
 except ImportError:
     pass
 
-_has_env = all(
-    os.environ.get(key)
-    for key in ("KITTI_ROOT", "POINTPILLARS_CONFIG", "POINTPILLARS_WEIGHTS")
-)
+_has_env = all(os.environ.get(key) for key in ("KITTI_ROOT", "POINTPILLARS_CONFIG", "POINTPILLARS_WEIGHTS"))
 
 
 @pytest.mark.models
@@ -55,14 +52,18 @@ def test_pointpillars_kitti3d_full_pipeline() -> None:
 
     # 2. Create locked protocol
     sample_ids = tuple(s.sample_id for s in samples[:1])
-    protocol = BenchmarkProtocol(
-        name="e2e-pointpillars-kitti3d",
-        dataset_version_id="kitti3d-e2e-test",
-        sample_ids=sample_ids,
-        sample_hashes={sid: f"hash-{sid}" for sid in sample_ids},
-        ground_truth_hashes={sid: f"gt-{sid}" for sid in sample_ids},
-        metric_versions={"kitti_3d_ap": "advertest-bev-v1", "bev_iou": "1.0.0"},
-    ).transition("VALIDATED").transition("LOCKED")
+    protocol = (
+        BenchmarkProtocol(
+            name="e2e-pointpillars-kitti3d",
+            dataset_version_id="kitti3d-e2e-test",
+            sample_ids=sample_ids,
+            sample_hashes={sid: f"hash-{sid}" for sid in sample_ids},
+            ground_truth_hashes={sid: f"gt-{sid}" for sid in sample_ids},
+            metric_versions={"kitti_3d_ap": "advertest-bev-v1", "bev_iou": "1.0.0"},
+        )
+        .transition("VALIDATED")
+        .transition("LOCKED")
+    )
 
     # 3. Create PointPillarsAdapter
     adapter = PointPillarsAdapter(

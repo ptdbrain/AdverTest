@@ -24,8 +24,12 @@ from src.evaluation.model_comparison import (
 def _metric(name: str, value: float, *, unit: str = "ratio", higher_is_better: bool = True) -> MetricEnvelope:
     percent = value * 100.0 if unit == "ratio" else value if unit == "percent" else None
     return MetricEnvelope(
-        name=name, value=value, unit=unit,
-        percent_value=percent, version="1.0.0", higher_is_better=higher_is_better,
+        name=name,
+        value=value,
+        unit=unit,
+        percent_value=percent,
+        version="1.0.0",
+        higher_is_better=higher_is_better,
         ci95=(value - 0.01, value + 0.01),
     )
 
@@ -62,8 +66,12 @@ class TestCheckpointGate:
     """Verify checkpoint promotion gate enforces plan thresholds."""
 
     def test_good_candidate_passes(self):
-        baseline = _input("b0", clean=0.85, attacked=0.55, robust_score=50.0, mean_degradation=0.35, asr=0.45, external=0.82)
-        candidate = _input("r1", clean=0.84, attacked=0.70, robust_score=62.0, mean_degradation=0.20, asr=0.30, external=0.81)
+        baseline = _input(
+            "b0", clean=0.85, attacked=0.55, robust_score=50.0, mean_degradation=0.35, asr=0.45, external=0.82
+        )
+        candidate = _input(
+            "r1", clean=0.84, attacked=0.70, robust_score=62.0, mean_degradation=0.20, asr=0.30, external=0.81
+        )
         comparison = compare_models(baseline, candidate)
         result = checkpoint_gate(comparison)
         assert result.passed, f"Gate should pass but failed: {result.reasons}"

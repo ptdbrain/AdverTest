@@ -537,6 +537,10 @@ class ReviewOut(BaseModel):
     decision_note: str | None = None
     flagged_by: str = "system_auto"
     resolved_by: str | None = None
+    risk_level: str | None = None
+    risk_category: str | None = None
+    affected_class: str | None = None
+    distance_meters: float | None = None
     created_at: str = ""
     updated_at: str = ""
 
@@ -557,9 +561,17 @@ class CreateReviewIn(BaseModel):
 class ResolveReviewIn(BaseModel):
     """Review resolution request."""
 
-    decision: str  # ACCEPT_RISK | REQUEST_RETRAIN
+    decision: Literal[
+        "ACCEPT_RISK",
+        "REQUEST_RETRAIN",
+        "BLOCK_DEPLOY",
+        "RESTRICT_ODD",
+        "RELABEL_DATA",
+        "REJECT_SAMPLE",
+    ]
     decision_note: str
     resolved_by: str = "reviewer"
+    batch_cluster_id: str | None = None
 
 
 class ClosedLoopStartIn(BaseModel):
@@ -577,7 +589,6 @@ class ClosedLoopAdvanceIn(BaseModel):
 
     target: str = Field(min_length=1, max_length=128)
     artifact_id: str = Field(min_length=1, max_length=256)
-
 
 
 class ClosedLoopSnapshotOut(BaseModel):

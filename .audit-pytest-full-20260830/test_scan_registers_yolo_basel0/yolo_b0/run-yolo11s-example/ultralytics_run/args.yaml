@@ -1,0 +1,4 @@
+model: yolo11s.pt
+data: /data/yolo_kitti/kitti.yaml
+seed: 20260807
+imgsz: 640

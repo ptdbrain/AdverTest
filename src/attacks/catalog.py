@@ -203,9 +203,7 @@ def _entry(name: str, group: AttackGroup) -> CatalogEntry:
 
 
 CATALOG_ENTRIES: dict[str, CatalogEntry] = {
-    name: _entry(name, group)
-    for group, names in _GROUPS.items()
-    for name in names
+    name: _entry(name, group) for group, names in _GROUPS.items() for name in names
 }
 
 
@@ -220,34 +218,24 @@ class AttackCatalog:
         for attack_cls in attack_classes:
             entry = self._entries.get(attack_cls.name)
             if entry is None:
-                raise AttackCatalogError(
-                    f"attack {attack_cls.name!r} has no centralized catalog entry"
-                )
+                raise AttackCatalogError(f"attack {attack_cls.name!r} has no centralized catalog entry")
             if entry.expected_version != attack_cls.version:
                 raise AttackCatalogError(
                     f"attack {attack_cls.name!r} version {attack_cls.version!r} "
                     f"does not match catalog version {entry.expected_version!r}"
                 )
             if entry.group != attack_cls.group:
-                raise AttackCatalogError(
-                    f"attack {attack_cls.name!r} group does not match catalog"
-                )
+                raise AttackCatalogError(f"attack {attack_cls.name!r} group does not match catalog")
             if entry.severity_levels != attack_cls.severity_levels:
-                raise AttackCatalogError(
-                    f"attack {attack_cls.name!r} severity map does not match implementation"
-                )
+                raise AttackCatalogError(f"attack {attack_cls.name!r} severity map does not match implementation")
 
     def bind(self, attack_classes: list[type[Any]]) -> None:
         self.validate_registry(attack_classes)
         registered = {attack_cls.name for attack_cls in attack_classes}
         orphaned = sorted(set(self._entries) - registered)
         if orphaned:
-            raise AttackCatalogError(
-                f"catalog entries have no registered implementation: {', '.join(orphaned)}"
-            )
-        self._attack_classes = {
-            attack_cls.name: attack_cls for attack_cls in attack_classes
-        }
+            raise AttackCatalogError(f"catalog entries have no registered implementation: {', '.join(orphaned)}")
+        self._attack_classes = {attack_cls.name: attack_cls for attack_cls in attack_classes}
 
     def get(self, name: str) -> AttackMetadata:
         try:
@@ -296,19 +284,11 @@ class AttackCatalog:
 def metadata_for_attack(attack_cls: type[Any]) -> AttackMetadata:
     entry = CATALOG_ENTRIES.get(attack_cls.name)
     if entry is None:
-        raise AttackCatalogError(
-            f"attack {attack_cls.name!r} has no centralized catalog entry"
-        )
+        raise AttackCatalogError(f"attack {attack_cls.name!r} has no centralized catalog entry")
     if entry.expected_version != attack_cls.version:
-        raise AttackCatalogError(
-            f"attack {attack_cls.name!r} implementation/catalog version mismatch"
-        )
+        raise AttackCatalogError(f"attack {attack_cls.name!r} implementation/catalog version mismatch")
     runtime_class: RuntimeClass = (
-        "instant"
-        if attack_cls.cost_class == "cheap"
-        else "short"
-        if attack_cls.cost_class == "medium"
-        else "long"
+        "instant" if attack_cls.cost_class == "cheap" else "short" if attack_cls.cost_class == "medium" else "long"
     )
     labels = ("no-op", "very low", "low", "medium", "high", "critical")
     threat_model, attack_type, scenario_kind = _taxonomy_for(attack_cls.name, attack_cls.group)
@@ -325,8 +305,7 @@ def metadata_for_attack(attack_cls: type[Any]) -> AttackMetadata:
         rationale=entry.rationale,
         failure_symptoms=entry.failure_symptoms,
         severity_map={
-            severity: labels[min(severity, len(labels) - 1)]
-            for severity in range(attack_cls.severity_levels + 1)
+            severity: labels[min(severity, len(labels) - 1)] for severity in range(attack_cls.severity_levels + 1)
         },
         compatibility=AttackCompatibility(
             tasks=tuple(sorted(attack_cls.required_tasks)),

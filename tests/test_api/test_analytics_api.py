@@ -88,7 +88,9 @@ async def test_comparison_analytics_endpoints(client) -> None:
 
     # 1. Summary
     summary_resp = await client.get(f"/api/v1/analytics/comparisons/{comparison_id}/summary")
-    assert summary_resp.status_code == 200, f"summary_resp {summary_resp.status_code}: {summary_resp.text}, comparison_id={comparison_id}"
+    assert summary_resp.status_code == 200, (
+        f"summary_resp {summary_resp.status_code}: {summary_resp.text}, comparison_id={comparison_id}"
+    )
     summary_data = summary_resp.json()
     assert summary_data["comparison_id"] == comparison_id
     assert summary_data["paired"] is True

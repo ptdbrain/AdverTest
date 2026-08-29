@@ -139,8 +139,7 @@ class ClosedLoopTracker:
         """Advance to next state if transition is valid."""
         if not validate_transition(self.state, target):
             raise ValueError(
-                f"Invalid transition: {self.state} → {target}. "
-                f"Valid: {sorted(_NEXT_STATES.get(self.state, set()))}"
+                f"Invalid transition: {self.state} → {target}. Valid: {sorted(_NEXT_STATES.get(self.state, set()))}"
             )
         entry = ClosedLoopAuditEntry(
             step=len(self.audit),

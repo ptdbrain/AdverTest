@@ -1,0 +1,32 @@
+{
+  "name": "uploaded-detection",
+  "logical_source_id": "upload-1",
+  "version_id": "dataset-38c9f5dc30590b5beb9d91cb698658ea",
+  "manifest_hash": "38c9f5dc30590b5beb9d91cb698658ea478c6e81a0fd740fb09309020c7d7f80",
+  "schema_version": "1.0.0",
+  "loader_version": "folder-v1",
+  "records": [
+    {
+      "sample_id": "frame",
+      "source_uri": "folder://advertest/frame.png",
+      "source_hash": "8c8a5d7a17fc9b38603832adc4ad3f76b184dbeaffbae99c3ba625d640306393",
+      "ground_truth_hash": "a246d8e7977abbd08e8ed63132418ed7b5b26d71840ad198ba0682058ed73254",
+      "annotation_type": "none",
+      "class_labels": [],
+      "anonymized": true,
+      "official_split": "test",
+      "provenance": {
+        "source_format": "advertest",
+        "native_labels": [],
+        "loader_version": "folder-v1",
+        "split": "test",
+        "anonymization_manifest_hash": "89d64bd750c1bc6299972056cb7f7bc8990107f3d31b0afdf8d74552f0382e4f",
+        "logical_source_id": "upload-1"
+      }
+    }
+  ],
+  "metadata": {
+    "input_format": "advertest",
+    "task_id": "detection2d"
+  }
+}

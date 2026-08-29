@@ -1,0 +1,20 @@
+{
+  "anonymized": true,
+  "attack": "gaussian_noise",
+  "canonical_image_format": "npy-float32-hwc-0-1",
+  "estimate": {
+    "canonical_bytes": 480366,
+    "gradient_steps": 0,
+    "model_queries": 0,
+    "variants": 4
+  },
+  "format": "advertest-generated-v2",
+  "generation_id": "238e7e610457a701",
+  "manifest_hash": "ad8117a316a472c6c00a118579f5b24b",
+  "multimodal_payloads": true,
+  "n_source_samples": 2,
+  "n_variants": 4,
+  "source": "synthetic_shapes",
+  "source_fingerprint": "2b0fd79a7e057c83802b59080c04f20a",
+  "status": "complete"
+}

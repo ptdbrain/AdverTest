@@ -11,7 +11,9 @@ def _sample(*, reviewed: bool = True) -> Sample:
     mask = np.zeros((8, 8), dtype=np.uint8)
     mask[1:4, 1:4] = 1
     return Sample(
-        "s1", np.zeros((8, 8, 3), dtype=np.float32), mask=mask,
+        "s1",
+        np.zeros((8, 8, 3), dtype=np.float32),
+        mask=mask,
         meta={"mask_reviewed": reviewed, "mask_source": "human", "instance_labels": {1: "Car"}},
     )
 

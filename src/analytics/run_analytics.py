@@ -59,14 +59,10 @@ def compute_run_summary(report: Mapping[str, Any]) -> dict[str, Any]:
         group_cells_map[group_name].append(cell)
 
     mean_attack_ap = sum(float(cell.get("ap", 0.0)) for cell in cells) / len(cells)
-    overall_degradation_ratio = (
-        max(0.0, (clean_ap - mean_attack_ap) / clean_ap) if clean_ap > 0.0 else 0.0
-    )
+    overall_degradation_ratio = max(0.0, (clean_ap - mean_attack_ap) / clean_ap) if clean_ap > 0.0 else 0.0
 
     attack_summaries = _aggregate_attack_metrics(attack_cells_map, clean_ap)
-    sorted_by_degradation = sorted(
-        attack_summaries, key=lambda item: item["mean_degradation_ratio"], reverse=True
-    )
+    sorted_by_degradation = sorted(attack_summaries, key=lambda item: item["mean_degradation_ratio"], reverse=True)
 
     worst_attack = sorted_by_degradation[0] if sorted_by_degradation else None
     most_resilient_attack = sorted_by_degradation[-1] if sorted_by_degradation else None
@@ -74,9 +70,7 @@ def compute_run_summary(report: Mapping[str, Any]) -> dict[str, Any]:
     group_summaries: dict[str, dict[str, Any]] = {}
     for group_name, group_cells in sorted(group_cells_map.items()):
         group_mean_ap = sum(float(cell.get("ap", 0.0)) for cell in group_cells) / len(group_cells)
-        group_degradation_ratio = (
-            max(0.0, (clean_ap - group_mean_ap) / clean_ap) if clean_ap > 0.0 else 0.0
-        )
+        group_degradation_ratio = max(0.0, (clean_ap - group_mean_ap) / clean_ap) if clean_ap > 0.0 else 0.0
         group_attacks = sorted({str(cell.get("attack", "")) for cell in group_cells})
         group_summaries[group_name] = {
             "cell_count": len(group_cells),
@@ -136,9 +130,7 @@ def compute_run_attacks_breakdown(report: Mapping[str, Any]) -> list[dict[str, A
         if degradation_hint > 0.0 or sample.get("failed") is True:
             attack_failure_counts[str(sample.get("attack", ""))] += 1
 
-    breakdowns = _aggregate_attack_metrics(
-        attack_cells_map, clean_ap, failure_counts=attack_failure_counts
-    )
+    breakdowns = _aggregate_attack_metrics(attack_cells_map, clean_ap, failure_counts=attack_failure_counts)
     return sorted(breakdowns, key=lambda item: item["mean_degradation_ratio"], reverse=True)
 
 
@@ -168,9 +160,7 @@ def compute_run_severity_breakdown(report: Mapping[str, Any]) -> list[dict[str, 
         mean_ap = sum(aps) / len(aps) if aps else 0.0
         min_ap = min(aps) if aps else 0.0
         max_ap = max(aps) if aps else 0.0
-        degradation_ratio = (
-            max(0.0, (clean_ap - mean_ap) / clean_ap) if clean_ap > 0.0 else 0.0
-        )
+        degradation_ratio = max(0.0, (clean_ap - mean_ap) / clean_ap) if clean_ap > 0.0 else 0.0
 
         worst_cell = min(sev_cells, key=lambda c: float(c.get("ap", 0.0))) if sev_cells else None
         worst_attack_name = str(worst_cell.get("attack", "")) if worst_cell else None
@@ -181,19 +171,21 @@ def compute_run_severity_breakdown(report: Mapping[str, Any]) -> list[dict[str, 
             else 0.0
         )
 
-        results.append({
-            "severity": severity_level,
-            "evaluated_cells_count": len(sev_cells),
-            "mean_ap": round(mean_ap, 4),
-            "mean_degradation_ratio": round(degradation_ratio, 6),
-            "mean_degradation_percent": round(degradation_ratio * 100.0, 4),
-            "min_ap": round(min_ap, 4),
-            "max_ap": round(max_ap, 4),
-            "worst_attack": worst_attack_name,
-            "worst_attack_ap": round(worst_attack_ap, 4) if worst_attack_ap is not None else None,
-            "worst_attack_degradation_percent": round(worst_attack_degradation, 4),
-            "attacks": sorted({str(cell.get("attack", "")) for cell in sev_cells}),
-        })
+        results.append(
+            {
+                "severity": severity_level,
+                "evaluated_cells_count": len(sev_cells),
+                "mean_ap": round(mean_ap, 4),
+                "mean_degradation_ratio": round(degradation_ratio, 6),
+                "mean_degradation_percent": round(degradation_ratio * 100.0, 4),
+                "min_ap": round(min_ap, 4),
+                "max_ap": round(max_ap, 4),
+                "worst_attack": worst_attack_name,
+                "worst_attack_ap": round(worst_attack_ap, 4) if worst_attack_ap is not None else None,
+                "worst_attack_degradation_percent": round(worst_attack_degradation, 4),
+                "attacks": sorted({str(cell.get("attack", "")) for cell in sev_cells}),
+            }
+        )
 
     return results
 
@@ -211,14 +203,16 @@ def compute_run_classes_breakdown(report: Mapping[str, Any]) -> list[dict[str, A
     if not sample_results:
         return []
 
-    class_stats: dict[str, dict[str, int]] = defaultdict(lambda: {
-        "ground_truth_count": 0,
-        "clean_detected_count": 0,
-        "attacked_detected_count": 0,
-        "lost_objects_count": 0,
-        "hallucinated_objects_count": 0,
-        "unaffected_objects_count": 0,
-    })
+    class_stats: dict[str, dict[str, int]] = defaultdict(
+        lambda: {
+            "ground_truth_count": 0,
+            "clean_detected_count": 0,
+            "attacked_detected_count": 0,
+            "lost_objects_count": 0,
+            "hallucinated_objects_count": 0,
+            "unaffected_objects_count": 0,
+        }
+    )
 
     for sample in sample_results:
         object_evidences = sample.get("object_evidence", [])
@@ -255,19 +249,21 @@ def compute_run_classes_breakdown(report: Mapping[str, Any]) -> list[dict[str, A
         attack_rate = attack_count / gt_count if gt_count > 0 else 0.0
         drop_ratio = max(0.0, (clean_rate - attack_rate) / clean_rate) if clean_rate > 0.0 else 0.0
 
-        class_breakdowns.append({
-            "class_name": class_name,
-            "total_ground_truth_objects": gt_count,
-            "clean_detected_count": clean_count,
-            "attacked_detected_count": attack_count,
-            "clean_detection_rate": round(clean_rate, 4),
-            "attacked_detection_rate": round(attack_rate, 4),
-            "detection_drop_ratio": round(drop_ratio, 6),
-            "detection_drop_percent": round(drop_ratio * 100.0, 4),
-            "lost_objects_count": stats["lost_objects_count"],
-            "hallucinated_objects_count": stats["hallucinated_objects_count"],
-            "unaffected_objects_count": stats["unaffected_objects_count"],
-        })
+        class_breakdowns.append(
+            {
+                "class_name": class_name,
+                "total_ground_truth_objects": gt_count,
+                "clean_detected_count": clean_count,
+                "attacked_detected_count": attack_count,
+                "clean_detection_rate": round(clean_rate, 4),
+                "attacked_detection_rate": round(attack_rate, 4),
+                "detection_drop_ratio": round(drop_ratio, 6),
+                "detection_drop_percent": round(drop_ratio * 100.0, 4),
+                "lost_objects_count": stats["lost_objects_count"],
+                "hallucinated_objects_count": stats["hallucinated_objects_count"],
+                "unaffected_objects_count": stats["unaffected_objects_count"],
+            }
+        )
 
     return class_breakdowns
 
@@ -315,28 +311,28 @@ def compute_run_samples_breakdown(
             if transition_str:
                 transitions.append(str(transition_str))
 
-        filtered_samples.append({
-            "sample_id": str(sample.get("sample_id", "")),
-            "attack": str(sample.get("attack", "")),
-            "severity": int(sample.get("severity", 1)),
-            "degradation_hint": round(float(sample.get("degradation_hint", 0.0)), 6),
-            "clean_boxes_count": clean_boxes,
-            "attacked_boxes_count": attacked_boxes,
-            "ground_truth_boxes_count": gt_boxes,
-            "lost_detections_count": max(0, clean_boxes - attacked_boxes),
-            "new_false_positives_count": max(0, attacked_boxes - clean_boxes),
-            "object_transitions": transitions,
-            "clean_image_path": sample.get("clean_image_path"),
-            "attacked_image_path": sample.get("attacked_image_path"),
-        })
+        filtered_samples.append(
+            {
+                "sample_id": str(sample.get("sample_id", "")),
+                "attack": str(sample.get("attack", "")),
+                "severity": int(sample.get("severity", 1)),
+                "degradation_hint": round(float(sample.get("degradation_hint", 0.0)), 6),
+                "clean_boxes_count": clean_boxes,
+                "attacked_boxes_count": attacked_boxes,
+                "ground_truth_boxes_count": gt_boxes,
+                "lost_detections_count": max(0, clean_boxes - attacked_boxes),
+                "new_false_positives_count": max(0, attacked_boxes - clean_boxes),
+                "object_transitions": transitions,
+                "clean_image_path": sample.get("clean_image_path"),
+                "attacked_image_path": sample.get("attacked_image_path"),
+            }
+        )
 
     # Sort primarily by largest degradation hint
     filtered_samples.sort(key=lambda s: s["degradation_hint"], reverse=True)
 
     total_count = len(filtered_samples)
-    paginated_items = (
-        filtered_samples[offset : offset + limit] if limit is not None else filtered_samples[offset:]
-    )
+    paginated_items = filtered_samples[offset : offset + limit] if limit is not None else filtered_samples[offset:]
 
     return {
         "total_samples": len(sample_results),
@@ -388,31 +384,31 @@ def _aggregate_attack_metrics(
 
         fail_count = (failure_counts or {}).get(attack_name, 0)
 
-        summaries.append({
-            "attack": attack_name,
-            "group": group_name,
-            "category": category_name,
-            "severities_evaluated": severities_evaluated,
-            "ap_by_severity": ap_by_sev,
-            "degradation_percent_by_severity": deg_percent_by_sev,
-            "degradation_ratio_by_severity": deg_ratio_by_sev,
-            "mean_ap": round(mean_ap, 4),
-            "min_ap": round(min_ap, 4),
-            "max_ap": round(max_ap, 4),
-            "mean_degradation_ratio": round(mean_deg_ratio, 6),
-            "mean_degradation_percent": round(mean_deg_ratio * 100.0, 4),
-            "worst_severity": worst_sev,
-            "total_samples": total_samples,
-            "total_seconds": round(total_seconds, 3),
-            "failure_sample_count": fail_count,
-        })
+        summaries.append(
+            {
+                "attack": attack_name,
+                "group": group_name,
+                "category": category_name,
+                "severities_evaluated": severities_evaluated,
+                "ap_by_severity": ap_by_sev,
+                "degradation_percent_by_severity": deg_percent_by_sev,
+                "degradation_ratio_by_severity": deg_ratio_by_sev,
+                "mean_ap": round(mean_ap, 4),
+                "min_ap": round(min_ap, 4),
+                "max_ap": round(max_ap, 4),
+                "mean_degradation_ratio": round(mean_deg_ratio, 6),
+                "mean_degradation_percent": round(mean_deg_ratio * 100.0, 4),
+                "worst_severity": worst_sev,
+                "total_samples": total_samples,
+                "total_seconds": round(total_seconds, 3),
+                "failure_sample_count": fail_count,
+            }
+        )
 
     return summaries
 
 
-def _extract_classes_from_predictions(
-    sample: Mapping[str, Any], class_stats: dict[str, dict[str, int]]
-) -> None:
+def _extract_classes_from_predictions(sample: Mapping[str, Any], class_stats: dict[str, dict[str, int]]) -> None:
     """Fallback class extraction when explicit object_evidence is missing."""
     clean_pred = sample.get("clean_prediction") or {}
     attacked_pred = sample.get("attacked_prediction") or {}
@@ -445,15 +441,9 @@ def compute_run_distance_breakdown(report: Mapping[str, Any]) -> dict[str, Any]:
 
     # Bucket failures from worst_cases
     worst_cases = list(report.get("worst_cases", []))
-    near_failures = sum(
-        1 for f in worst_cases if (f.get("metadata") or {}).get("distance_bucket") == "near"
-    )
-    medium_failures = sum(
-        1 for f in worst_cases if (f.get("metadata") or {}).get("distance_bucket") == "medium"
-    )
-    far_failures = sum(
-        1 for f in worst_cases if (f.get("metadata") or {}).get("distance_bucket") == "far"
-    )
+    near_failures = sum(1 for f in worst_cases if (f.get("metadata") or {}).get("distance_bucket") == "near")
+    medium_failures = sum(1 for f in worst_cases if (f.get("metadata") or {}).get("distance_bucket") == "medium")
+    far_failures = sum(1 for f in worst_cases if (f.get("metadata") or {}).get("distance_bucket") == "far")
 
     # Aggregate attack performance across cells
     attack_near_scores = []
@@ -469,21 +459,9 @@ def compute_run_distance_breakdown(report: Mapping[str, Any]) -> dict[str, Any]:
         if "kitti_3d_ap_far" in cell_metrics:
             attack_far_scores.append(float(cell_metrics["kitti_3d_ap_far"]))
 
-    mean_near_ap = (
-        sum(attack_near_scores) / len(attack_near_scores)
-        if attack_near_scores
-        else clean_near
-    )
-    mean_medium_ap = (
-        sum(attack_medium_scores) / len(attack_medium_scores)
-        if attack_medium_scores
-        else clean_medium
-    )
-    mean_far_ap = (
-        sum(attack_far_scores) / len(attack_far_scores)
-        if attack_far_scores
-        else clean_far
-    )
+    mean_near_ap = sum(attack_near_scores) / len(attack_near_scores) if attack_near_scores else clean_near
+    mean_medium_ap = sum(attack_medium_scores) / len(attack_medium_scores) if attack_medium_scores else clean_medium
+    mean_far_ap = sum(attack_far_scores) / len(attack_far_scores) if attack_far_scores else clean_far
 
     deg_near = max(0.0, (clean_near - mean_near_ap) / clean_near) if clean_near > 0.0 else 0.0
     deg_medium = max(0.0, (clean_medium - mean_medium_ap) / clean_medium) if clean_medium > 0.0 else 0.0
@@ -516,10 +494,6 @@ def compute_run_distance_breakdown(report: Mapping[str, Any]) -> dict[str, Any]:
             },
         },
         "most_vulnerable_distance": (
-            "far"
-            if deg_far >= max(deg_near, deg_medium)
-            else "medium"
-            if deg_medium >= deg_near
-            else "near"
+            "far" if deg_far >= max(deg_near, deg_medium) else "medium" if deg_medium >= deg_near else "near"
         ),
     }

@@ -24,6 +24,7 @@ from src.datasets.io import load_image
 
 # ---- Versioned class mapping ----
 
+
 @dataclass(frozen=True)
 class ClassMapping:
     """Maps BDD100K class names to the canonical AdverTest class space."""
@@ -68,6 +69,7 @@ def class_mapping_report(mapping: ClassMapping) -> dict[str, Any]:
 
 # ---- Dataset loader ----
 
+
 class BDD100KDetectionParams(DatasetParams):
     root: str
     split: Literal["train", "val"] = "val"
@@ -98,8 +100,7 @@ class BDD100KDetectionDataset(DatasetSource):
         mapping_version = self.params.class_mapping_version  # type: ignore[attr-defined]
         if mapping_version not in self._KNOWN_MAPPINGS:
             raise ValueError(
-                f"unknown class mapping version {mapping_version!r}; "
-                f"available: {sorted(self._KNOWN_MAPPINGS)}"
+                f"unknown class mapping version {mapping_version!r}; available: {sorted(self._KNOWN_MAPPINGS)}"
             )
         self.class_mapping = self._KNOWN_MAPPINGS[mapping_version]
 
@@ -155,25 +156,29 @@ class BDD100KDetectionDataset(DatasetSource):
                 if canonical is None:
                     continue  # dropped class
                 b = det["box2d"]
-                boxes.append(Box(
-                    x1=float(b["x1"]),
-                    y1=float(b["y1"]),
-                    x2=float(b["x2"]),
-                    y2=float(b["y2"]),
-                    label=canonical,
-                ))
+                boxes.append(
+                    Box(
+                        x1=float(b["x1"]),
+                        y1=float(b["y1"]),
+                        x2=float(b["x2"]),
+                        y2=float(b["y2"]),
+                        label=canonical,
+                    )
+                )
 
-            samples.append(Sample(
-                sample_id=f"bdd100k/{split}/{image_path.stem}",
-                image=load_image(image_path),
-                boxes=tuple(boxes),
-                meta={
-                    "source": "bdd100k",
-                    "split": split,
-                    "class_mapping_version": self.class_mapping.version,
-                    "evaluation_scope": "external",
-                    "checkpoint_selection_prohibited": True,
-                },
-            ))
+            samples.append(
+                Sample(
+                    sample_id=f"bdd100k/{split}/{image_path.stem}",
+                    image=load_image(image_path),
+                    boxes=tuple(boxes),
+                    meta={
+                        "source": "bdd100k",
+                        "split": split,
+                        "class_mapping_version": self.class_mapping.version,
+                        "evaluation_scope": "external",
+                        "checkpoint_selection_prohibited": True,
+                    },
+                )
+            )
 
         return samples

@@ -35,11 +35,7 @@ DIFFICULTY_LIMITS: dict[Difficulty, tuple[float, int, float]] = {
 class KittiParams(DatasetParams):
     """Selection and label policy for a KITTI export."""
 
-    root: str = Field(
-        default_factory=lambda: os.environ.get(
-            "ADVERTEST_KITTI_ROOT", "data/anonymized/kitti-de"
-        )
-    )
+    root: str = Field(default_factory=lambda: os.environ.get("ADVERTEST_KITTI_ROOT", "data/anonymized/kitti-de"))
     split: Literal["train", "val", "all"] = "val"
     difficulty: Difficulty = "moderate"
     anonymize: Literal["required", "off"] = "required"
@@ -65,6 +61,7 @@ class Kitti(DatasetSource):
         candidate_root = Path(settings.root).expanduser()
         if not candidate_root.is_absolute():
             from src.config import PROJECT_ROOT
+
             if (PROJECT_ROOT / candidate_root).exists():
                 candidate_root = PROJECT_ROOT / candidate_root
             elif (PROJECT_ROOT.parent.parent / candidate_root).exists():
@@ -73,6 +70,7 @@ class Kitti(DatasetSource):
                 candidate_root = candidate_root.resolve()
         elif not candidate_root.exists():
             from src.config import PROJECT_ROOT
+
             try:
                 rel = candidate_root.relative_to(PROJECT_ROOT)
                 if (PROJECT_ROOT.parent.parent / rel).exists():
@@ -105,11 +103,7 @@ class Kitti(DatasetSource):
             payload = json.loads(descriptor.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return False
-        manifest = (
-            Path(settings.manifest_path).expanduser()
-            if settings.manifest_path
-            else self.root / "manifest.jsonl"
-        )
+        manifest = Path(settings.manifest_path).expanduser() if settings.manifest_path else self.root / "manifest.jsonl"
         return bool(payload.get("anonymized", False)) and manifest.is_file()
 
     def info(self) -> DatasetInfo:
@@ -118,10 +112,7 @@ class Kitti(DatasetSource):
             name=self.name,
             anonymized=self.anonymized,
             modality=self.modality,
-            note=(
-                f"root={self.root} split={settings.split} "
-                f"difficulty={settings.difficulty}"
-            ),
+            note=(f"root={self.root} split={settings.split} difficulty={settings.difficulty}"),
         )
 
     def load(self, limit: int | None = None) -> list[Sample]:
@@ -139,9 +130,7 @@ class Kitti(DatasetSource):
 
     def _require_layout(self) -> None:
         if not self.image_dir.is_dir() or not self.label_dir.is_dir():
-            raise FileNotFoundError(
-                f"KITTI image_2/label_2 directories do not exist under {self.root}"
-            )
+            raise FileNotFoundError(f"KITTI image_2/label_2 directories do not exist under {self.root}")
 
     def _ids(self) -> Iterable[str]:
         settings: KittiParams = self.params  # type: ignore[assignment]
@@ -151,25 +140,19 @@ class Kitti(DatasetSource):
         if split_file.is_file():
             return [line.strip() for line in split_file.read_text().splitlines() if line.strip()]
         return sorted(
-            path.stem
-            for path in self.image_dir.iterdir()
-            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+            path.stem for path in self.image_dir.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
         )
 
     def _load_sample(self, image_id: str) -> Sample:
         settings: KittiParams = self.params  # type: ignore[assignment]
         image_path = self.image_dir / f"{image_id}.png"
         if not image_path.is_file():
-            candidates = [
-                path for path in self.image_dir.glob(f"{image_id}.*") if path.is_file()
-            ]
+            candidates = [path for path in self.image_dir.glob(f"{image_id}.*") if path.is_file()]
             if not candidates:
                 raise FileNotFoundError(f"KITTI image not found: {image_id}")
             image_path = candidates[0]
         image = load_image(image_path)
-        boxes, dropped = self._read_labels(
-            self.label_dir / f"{image_id}.txt", image.shape[:2]
-        )
+        boxes, dropped = self._read_labels(self.label_dir / f"{image_id}.txt", image.shape[:2])
         variant = stable_digest(
             {
                 "anonymize": settings.anonymize,
@@ -188,9 +171,7 @@ class Kitti(DatasetSource):
                 "source_path": str(image_path),
                 "source_uri": f"kitti://{image_id}",
                 "source_format": "kitti",
-                "native_labels": self._native_labels(
-                    self.label_dir / f"{image_id}.txt"
-                ),
+                "native_labels": self._native_labels(self.label_dir / f"{image_id}.txt"),
                 "loader_version": self.loader_version,
                 "split": settings.split,
                 "anonymization_manifest_hash": self._anonymization_manifest_hash(),
@@ -202,24 +183,14 @@ class Kitti(DatasetSource):
     def _native_labels(path: Path) -> tuple[str, ...]:
         if not path.is_file():
             return ()
-        return tuple(
-            fields[0]
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if (fields := line.split())
-        )
+        return tuple(fields[0] for line in path.read_text(encoding="utf-8").splitlines() if (fields := line.split()))
 
     def _anonymization_manifest_hash(self) -> str | None:
         settings: KittiParams = self.params  # type: ignore[assignment]
-        manifest = (
-            Path(settings.manifest_path).expanduser()
-            if settings.manifest_path
-            else self.root / "manifest.jsonl"
-        )
+        manifest = Path(settings.manifest_path).expanduser() if settings.manifest_path else self.root / "manifest.jsonl"
         return file_digest(manifest, length=64) if manifest.is_file() else None
 
-    def _read_labels(
-        self, path: Path, shape: tuple[int, int]
-    ) -> tuple[tuple[Box, ...], dict[str, int]]:
+    def _read_labels(self, path: Path, shape: tuple[int, int]) -> tuple[tuple[Box, ...], dict[str, int]]:
         if not path.is_file():
             raise FileNotFoundError(f"KITTI label file not found: {path}")
         height, width = shape
@@ -255,17 +226,11 @@ class Kitti(DatasetSource):
         x1, y1, x2, y2 = (float(value) for value in fields[4:8])
         x1, x2 = np.clip([x1, x2], 0.0, float(width))
         y1, y2 = np.clip([y1, y2], 0.0, float(height))
-        min_height, max_occlusion, max_truncation = DIFFICULTY_LIMITS[
-            settings.difficulty
-        ]
+        min_height, max_occlusion, max_truncation = DIFFICULTY_LIMITS[settings.difficulty]
         if x2 <= x1 or y2 <= y1:
             dropped["degenerate"] = dropped.get("degenerate", 0) + 1
             return None
-        if (
-            (y2 - y1) < min_height
-            or occluded > max_occlusion
-            or truncated > max_truncation
-        ):
+        if (y2 - y1) < min_height or occluded > max_occlusion or truncated > max_truncation:
             key = f"{raw_label}:difficulty"
             dropped[key] = dropped.get(key, 0) + 1
             return None

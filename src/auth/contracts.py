@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-UserRole = Literal["USER", "ADMIN", "ENGINEER", "REVIEWER", "AUDITOR"]
+UserRole = Literal["RESEARCHER", "USER", "ADMIN", "ENGINEER", "REVIEWER", "AUDITOR"]
 UserStatus = Literal["ACTIVE", "SUSPENDED", "DISABLED"]
 
 

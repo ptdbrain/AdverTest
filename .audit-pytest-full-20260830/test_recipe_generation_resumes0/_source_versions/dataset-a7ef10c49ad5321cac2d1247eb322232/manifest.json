@@ -1,0 +1,28 @@
+{
+  "name": "synthetic_shapes",
+  "logical_source_id": "synthetic-fixture",
+  "version_id": "dataset-a7ef10c49ad5321cac2d1247eb322232",
+  "manifest_hash": "a7ef10c49ad5321cac2d1247eb322232d054b056b804285b770ef5e548ad1a37",
+  "schema_version": "1.0.0",
+  "loader_version": "1.0.0",
+  "records": [
+    {
+      "sample_id": "synthetic_shapes_0000",
+      "source_uri": "synthetic-fixture://synthetic_shapes_0000",
+      "source_hash": "f20f96a96ca24b44ba7db3d463151551d6ad82e348b2d9fa8fbce61ba446770d",
+      "ground_truth_hash": "6166dc4ac0044ab660f4c719c254d0676a0661c1bf63376a5f37e0643fee7caf",
+      "annotation_type": "boxes_and_mask",
+      "class_labels": [
+        "Car",
+        "Cyclist"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "logical_source_id": "synthetic-fixture",
+        "loader_version": "1.0.0"
+      }
+    }
+  ],
+  "metadata": {}
+}

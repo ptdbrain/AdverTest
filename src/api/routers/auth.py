@@ -19,7 +19,7 @@ async def register_user(
     payload: UserCreateIn,
     auth_service: AuthService = Depends(get_auth_service),
 ) -> TokenOut:
-    """Register a new user account. The first registered user automatically becomes ADMIN."""
+    """Register a new user account with default RESEARCHER privileges."""
     try:
         user_out, token = auth_service.register(payload)
         return TokenOut(
@@ -62,11 +62,11 @@ async def login_google_sso(
             user=user_out,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
 
-@router.get("/google/config")
-@router.get("/google-config")
+@router.get("/google/config", operation_id="get_google_auth_config_canonical")
+@router.get("/google-config", operation_id="get_google_auth_config_alias")
 async def get_google_auth_config() -> dict[str, Any]:
     """Retrieve public Google OAuth2 Client ID and SSO status."""
     client_id = os.getenv("GOOGLE_CLIENT_ID", "")

@@ -1,0 +1,30 @@
+{
+  "blur_ratio": 0.25,
+  "device": "cpu",
+  "face_detector": {
+    "checkpoint": "face.onnx",
+    "confidence": 0.2,
+    "expansion": 0.0,
+    "image_size": 640,
+    "iou": 0.5,
+    "tile_overlap": 0.2
+  },
+  "input_dir": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_anonymizer_preserves_segm1\\source",
+  "input_format": "bdd100k",
+  "limit": null,
+  "method": "gaussian_mosaic",
+  "mosaic_divisor": 8,
+  "output_dir": "D:\\Project\\AIthucchien\\P-195\\.audit-pytest-full-20260830\\test_anonymizer_preserves_segm1\\output",
+  "plate_detector": {
+    "checkpoint": "plate.onnx",
+    "confidence": 0.2,
+    "expansion": 0.0,
+    "image_size": 640,
+    "iou": 0.5,
+    "tile_overlap": 0.2
+  },
+  "sample_ids": null,
+  "splits": [
+    "train"
+  ]
+}

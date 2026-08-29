@@ -242,9 +242,7 @@ class BenchmarkRunner:
         protocol: BenchmarkProtocol,
     ) -> None:
         if evaluation.task != task:
-            raise ValueError(
-                f"evaluator returned task {evaluation.task!r} for model task {task!r}"
-            )
+            raise ValueError(f"evaluator returned task {evaluation.task!r} for model task {task!r}")
         if evaluation.protocol_id != protocol.protocol_id:
             raise ValueError("evaluator result does not reference the locked protocol")
         if set(evaluation.per_sample_metrics) - set(protocol.sample_ids):

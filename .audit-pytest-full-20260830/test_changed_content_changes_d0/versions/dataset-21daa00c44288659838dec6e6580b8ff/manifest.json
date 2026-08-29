@@ -1,0 +1,30 @@
+{
+  "name": "fixture",
+  "logical_source_id": "fixture-source",
+  "version_id": "dataset-21daa00c44288659838dec6e6580b8ff",
+  "manifest_hash": "21daa00c44288659838dec6e6580b8ff33187da55c1cb839034989c7852fe50c",
+  "schema_version": "1.0.0",
+  "loader_version": "fixture-loader-1",
+  "records": [
+    {
+      "sample_id": "sample-a",
+      "source_uri": "fixture://sample-a",
+      "source_hash": "4feec9e94f506ac0e3ed976bfe80747d0b18b6124148b34e7e3ae726cebfd4dc",
+      "ground_truth_hash": "2c75b16e17a39009779478363b40e39bdf1f169977b0694da5bc44aaf7cceef9",
+      "annotation_type": "boxes",
+      "class_labels": [
+        "Car"
+      ],
+      "anonymized": true,
+      "official_split": null,
+      "provenance": {
+        "native_labels": [
+          "vehicle"
+        ],
+        "loader_version": "fixture-loader-1",
+        "logical_source_id": "fixture-source"
+      }
+    }
+  ],
+  "metadata": {}
+}

@@ -64,7 +64,9 @@ class CheckpointRecord(Base):
     class_schema_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     validation_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class CheckpointValidationRecord(Base):
@@ -140,4 +142,32 @@ class JobEventRecord(Base):
     total: Mapped[int] = mapped_column(Integer)
     percent: Mapped[float] = mapped_column()
     message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProjectRecord(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    owner_user_id: Mapped[str] = mapped_column(String(36), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ProjectMembershipRecord(Base):
+    __tablename__ = "project_memberships"
+    __table_args__ = (
+        UniqueConstraint("project_id", "user_id", name="uq_project_user_membership"),
+        Index("ix_project_memberships_user", "user_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    role: Mapped[str] = mapped_column(String(32), default="MEMBER")
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

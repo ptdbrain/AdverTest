@@ -8,6 +8,7 @@ from src.datasets import load_datasets
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
 
+
 @router.get("/attacks", response_model=list[AttackCatalogItem])
 async def list_attacks(
     group: str | None = Query(default=None, min_length=1, max_length=1),
@@ -27,7 +28,11 @@ async def list_attacks(
             items = [item for item in items if item.get(field) == wanted]
     if task_id is not None:
         items = [item for item in items if task_id in item.get("task_ids", [])]
-    for field, wanted in (("threat_model", threat_model), ("attack_type", attack_type), ("scenario_kind", scenario_kind)):
+    for field, wanted in (
+        ("threat_model", threat_model),
+        ("attack_type", attack_type),
+        ("scenario_kind", scenario_kind),
+    ):
         if wanted is not None:
             items = [item for item in items if item.get(field) == wanted]
 
@@ -46,9 +51,11 @@ async def list_attacks(
 
     return [AttackCatalogItem(**item) for item in items]
 
+
 @router.get("/models", response_model=list[ModelCatalogItem])
 async def list_models() -> list[ModelCatalogItem]:
     return [ModelCatalogItem(**adapter.describe()) for adapter in load_adapters().values()]
+
 
 @router.get("/datasets", response_model=list[DatasetCatalogItem])
 async def list_datasets(task_id: str | None = None) -> list[DatasetCatalogItem]:
