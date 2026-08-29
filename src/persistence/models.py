@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -23,7 +23,7 @@ class UserRecord(Base):
     display_name: Mapped[str] = mapped_column(String(200))
     role: Mapped[str] = mapped_column(String(32), default="VIEWER")
     status: Mapped[str] = mapped_column(String(32), default="ACTIVE")
-    storage_quota_bytes: Mapped[int] = mapped_column(default=10 * 1024 * 1024 * 1024)
+    storage_quota_bytes: Mapped[int] = mapped_column(BigInteger, default=10 * 1024 * 1024 * 1024)
     compute_quota_hours: Mapped[float] = mapped_column(default=100.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
