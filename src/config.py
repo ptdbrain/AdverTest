@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     checkpoint_sandbox_token: str | None = None
     external_gpu_worker_url: str | None = None
     external_gpu_worker_token: str | None = None
+    # Cloud Run workers never connect to PostgreSQL directly.  They claim a
+    # job and report progress through this authenticated API callback instead.
+    worker_callback_api_url: str | None = None
+    worker_callback_token: str | None = None
     # Benchmark jobs normally use the lightweight local worker. Production can
     # opt into the durable Postgres + dispatcher + GCE execution plane.
     run_execution_backend: Literal["local", "platform"] = "local"
