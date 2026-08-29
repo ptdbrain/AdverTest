@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import UserMenu from "@/components/UserMenu.jsx";
 import { useLanguage } from "@/context/LanguageContext";
 import {
@@ -260,7 +261,7 @@ export default function ReviewPage() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <a
+          <Link
             href="/"
             style={{
               color: "var(--accent, #38BDF8)",
@@ -274,7 +275,7 @@ export default function ReviewPage() {
             }}
           >
             {t("review.backDashboard")}
-          </a>
+          </Link>
           <span style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FBBF24" }}>
             {t("review.title")}
           </span>

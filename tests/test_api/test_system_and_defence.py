@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+
 from fastapi.testclient import TestClient
 
 from src.main import app

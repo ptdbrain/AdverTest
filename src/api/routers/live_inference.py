@@ -11,12 +11,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
-from PIL import Image, ImageEnhance
 import cv2
 import imagecorruptions
+import numpy as np
+from fastapi import APIRouter, HTTPException
+from PIL import Image, ImageEnhance
+from pydantic import BaseModel, Field
 from ultralytics import YOLO
 
 router = APIRouter(prefix="/runs/live-inference", tags=["Live Model Inference"])
@@ -44,8 +44,8 @@ class PredictionStat(BaseModel):
 
 
 class MetricSummary(BaseModel):
-    bboxCount: int
-    confAvg: float
+    bboxCount: int  # noqa: N815 - public UI payload is camelCase
+    confAvg: float  # noqa: N815 - public UI payload is camelCase
     map50: float
     miou: float
     top: list[PredictionStat]
@@ -126,19 +126,19 @@ def _apply_realistic_rain(img_arr: np.ndarray, severity: int = 3) -> np.ndarray:
     h, w, c = img_arr.shape
     enhancer = ImageEnhance.Brightness(Image.fromarray(img_arr))
     dimmed = np.array(enhancer.enhance(max(0.65, 0.90 - severity * 0.06)))
-    
+
     rain_layer = np.zeros((h, w), dtype=np.float32)
     num_drops = int(w * h * 0.0009 * severity)
-    
+
     xs = np.random.randint(0, w, num_drops)
     ys = np.random.randint(0, h, num_drops)
-    
+
     length = 14 + severity * 7
     slant = int(length * 0.35)
-    
+
     for x, y in zip(xs, ys):
         cv2.line(rain_layer, (x, y), (x - slant, y + length), 255, thickness=1 + (1 if severity >= 4 else 0))
-        
+
     rain_blur = cv2.GaussianBlur(rain_layer, (3, 3), 0)
     rain_rgb = np.stack([rain_blur, rain_blur, rain_blur], axis=2) / 255.0
     return (dimmed.astype(np.float32) * (1.0 - rain_rgb * 0.35) + rain_rgb * 230 * 0.65).clip(0, 255).astype(np.uint8)
@@ -212,7 +212,7 @@ async def run_live_inference(payload: LiveInferenceRequest) -> LiveInferenceResp
     # 4. Save dynamic visual assets
     dynamic_dir = Path("frontend/public/samples/kitti")
     dynamic_dir.mkdir(parents=True, exist_ok=True)
-    
+
     timestamp = int(time.time())
     dynamic_atk_path = dynamic_dir / f"dynamic_{sample_stem}.png"
     Image.fromarray(arr_current).save(dynamic_atk_path)
@@ -261,7 +261,7 @@ async def run_live_inference(payload: LiveInferenceRequest) -> LiveInferenceResp
 
     avg_clean_conf = round(float(np.mean([d.conf for d in clean_detections])), 2) if clean_detections else 0.90
     avg_atk_conf = round(float(np.mean([d.conf for d in attacked_detections])), 2) if attacked_detections else 0.00
-    
+
     clean_map50 = round(float(avg_clean_conf * 0.89), 2)
     atk_map50 = round(float(avg_atk_conf * 0.72 * (attacked_count / max(1, clean_count))), 2)
 

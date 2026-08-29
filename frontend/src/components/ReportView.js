@@ -12,6 +12,8 @@ import { getDescriptiveAttackName } from "@/lib/attackNaming";
 
 export default function ReportView({ report, onClearHistory }) {
   const { t } = useLanguage();
+  const [flagging, setFlagging] = React.useState(false);
+  const [flagResult, setFlagResult] = React.useState(null);
   if (!report) {
     return (
       <div className="placeholder-view">
@@ -45,9 +47,6 @@ export default function ReportView({ report, onClearHistory }) {
   const attackedIoU = cells.length > 0
     ? (cleanIoU * (1 - Math.min(0.9, avgDegradation / 100 * 0.75))).toFixed(3)
     : cleanIoU.toFixed(3);
-
-  const [flagging, setFlagging] = React.useState(false);
-  const [flagResult, setFlagResult] = React.useState(null);
 
   const handleAutoFlag = async () => {
     if (!report?.run_id) return;

@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -209,7 +209,7 @@ async def add_run_to_session(session_id: str, run: RunRecord) -> SessionRecord:
             updated_at=time.strftime("%d/%m/%Y %H:%M:%S"),
             runs=[],
         )
-    
+
     sess = sessions[session_id]
     # Check if run with same ID exists, update or append
     existing_idx = next((i for i, r in enumerate(sess.runs) if r.id == run.id), None)
@@ -239,7 +239,7 @@ async def delete_run(session_id: str, run_id: str) -> SessionRecord:
     sessions = _load_sessions()
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
-    
+
     sess = sessions[session_id]
     sess.runs = [r for r in sess.runs if r.id != run_id]
     sess.updated_at = time.strftime("%d/%m/%Y %H:%M:%S")

@@ -167,25 +167,27 @@ async def download_run_artifacts_zip(
     import json
     import zipfile
     from pathlib import Path
+
     from fastapi.responses import StreamingResponse
+
     from src.config import get_settings
 
     record = store.get(run_id)
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
-    
+
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         if "report" in record and record["report"]:
             zf.writestr("metrics_report.json", json.dumps(record["report"], indent=2))
-        
+
         if "config" in record:
             zf.writestr("run_config.json", json.dumps(record["config"], indent=2))
-            
+
         samples = store.list_samples(run_id)
         if samples:
             zf.writestr("samples_diagnostics.json", json.dumps(samples, indent=2))
-            
+
         settings = get_settings()
         artifacts_dir = Path(settings.artifact_root) / run_id
         if artifacts_dir.is_dir():
@@ -193,7 +195,7 @@ async def download_run_artifacts_zip(
                 if file_path.is_file():
                     rel_name = f"artifacts/{file_path.relative_to(artifacts_dir)}"
                     zf.write(file_path, arcname=rel_name)
-                    
+
     zip_buffer.seek(0)
     return StreamingResponse(
         zip_buffer,

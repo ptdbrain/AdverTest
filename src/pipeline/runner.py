@@ -35,9 +35,9 @@ from src.evaluation.detection_metrics import (
     detection_metric_suite,
     per_object_detection_comparison,
 )
-from src.evaluation.segmentation_metrics import evaluate_prediction
 from src.evaluation.report import CellResult, RunReport, SampleResult, SkippedAttack
 from src.evaluation.robustness_metrics import summary
+from src.evaluation.segmentation_metrics import evaluate_prediction
 from src.pipeline.cache import MemoryCache, PredictionCache
 from src.pipeline.composition import CompositionContext, CompositionEngine
 from src.pipeline.evidence import EvidenceWriter, prediction_payload

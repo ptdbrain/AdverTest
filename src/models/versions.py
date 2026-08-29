@@ -324,7 +324,7 @@ def scan_base_checkpoints(root: Path) -> list[ModelVersion]:
     # 3D PointPillars base checkpoint discovery
     from src.config import PROJECT_ROOT
     is_project_root = root in {PROJECT_ROOT, PROJECT_ROOT / "checkpoints", PROJECT_ROOT.parent.parent / "checkpoints"}
-    
+
     pp_candidates = [
         root / "pointpillars_kitti_3class.pth",
         root / "pointpillars.pth",
