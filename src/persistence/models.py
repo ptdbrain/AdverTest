@@ -1,9 +1,4 @@
-"""Platform-owned relational records.
-
-Project and user tables are deliberately not duplicated here: person D owns
-their migrations. Platform records retain project/user UUIDs and gain foreign
-keys once those shared tables land in the migration registry.
-"""
+"""Platform-owned relational records for the Render PostgreSQL control plane."""
 
 from __future__ import annotations
 
@@ -15,6 +10,56 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 class Base(DeclarativeBase):
     pass
+
+
+class UserRecord(Base):
+    """Control-plane identity persisted by the production PostgreSQL database."""
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    display_name: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(32), default="VIEWER")
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE")
+    storage_quota_bytes: Mapped[int] = mapped_column(default=10 * 1024 * 1024 * 1024)
+    compute_quota_hours: Mapped[float] = mapped_column(default=100.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProjectRecord(Base):
+    """A project is the ownership boundary for sessions, jobs, and artifacts."""
+
+    __tablename__ = "projects"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ExperimentSessionRecord(Base):
+    """Durable experiment session used by the NewUI multi-run workflow."""
+
+    __tablename__ = "sessions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="RESTRICT"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text, default="")
+    task_id: Mapped[str] = mapped_column(String(100))
+    model_id: Mapped[str] = mapped_column(String(200))
+    dataset_id: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    runs_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ArtifactRecord(Base):
