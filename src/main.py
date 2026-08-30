@@ -38,6 +38,7 @@ from src.api.routers import (
     system,
     worker_callbacks,
 )
+from src.api.routers import settings as settings_router
 from src.api.routes import router
 from src.attacks import load_attacks
 from src.config import get_settings
