@@ -4,7 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from src.api.dependencies import get_runner, get_store, get_worker
 from src.api.jobs import LocalRunWorker, SqliteRunStore
 from src.api.platform_dependencies import get_platform_compute, get_platform_jobs
-from src.api.routes import _resolve_run_config, _sample_with_artifact_urls, normalize_dataset_params
+from src.api.routes import (
+    _refresh_report_artifact_urls,
+    _resolve_run_config,
+    _sample_with_artifact_urls,
+    normalize_dataset_params,
+)
 from src.api.schemas.run import CostEstimateOut, PreflightOut, RunJobOut, RunReportOut
 from src.compute.backends import ComputeBackend
 from src.config import get_settings
@@ -25,7 +30,7 @@ def _platform_job_out(job: dict) -> RunJobOut:
         status=status,
         progress=(job["completed_units"] / job["total_units"] if job["total_units"] else 0.0),
         detail=detail,
-        report=job["result"],
+        report=_refresh_report_artifact_urls(job["result"]) if job["result"] else None,
         error=job["error_message"],
     )
 
@@ -134,12 +139,12 @@ async def get_run_report(
 
         job = _get_platform_jobs().get(settings.platform_default_project_id, run_id)
         if job is not None and job["type"] == "benchmark_run" and job["result"] is not None:
-            return RunReportOut(**job["result"])
+            return RunReportOut(**_refresh_report_artifact_urls(job["result"]))
     if not record:
         raise HTTPException(status_code=404)
     if "report" not in record:
         raise HTTPException(status_code=404, detail="Report not ready")
-    return RunReportOut(**record["report"])
+    return RunReportOut(**_refresh_report_artifact_urls(record["report"]))
 
 @router.get("/{run_id}/samples")
 async def get_run_samples(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import uuid
+from copy import deepcopy
 from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
@@ -1518,6 +1519,23 @@ def _sample_with_artifact_urls(sample: dict[str, Any]) -> dict[str, Any]:
         "attacked_prediction_url": _artifact_uri(sample.get("attacked_prediction_path")),
     }
     return result
+
+
+def _refresh_report_artifact_urls(report: dict[str, Any]) -> dict[str, Any]:
+    """Refresh persisted evidence URLs before exposing a report to the UI."""
+    refreshed = deepcopy(report)
+    fields = (
+        "clean_image_path",
+        "attacked_image_path",
+        "clean_prediction_path",
+        "attacked_prediction_path",
+    )
+    for collection in ("sample_results", "worst_cases"):
+        for sample in refreshed.get(collection, []):
+            for field in fields:
+                if field in sample:
+                    sample[field] = _artifact_uri(sample[field])
+    return refreshed
 
 
 def _artifact_uri(path_value: Any) -> str | None:
