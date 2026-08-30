@@ -8,6 +8,20 @@ from src.datasets import load_datasets
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
 
+# Counts are part of the reviewed, versioned catalog bundles in GCS.  Keep
+# them in the control-plane response so the UI never has to label a dataset as
+# a vague "demo bundle" or probe object storage from the browser.
+_CATALOG_SAMPLE_COUNTS: dict[str, int] = {
+    "bdd100k_detection": 1,
+    "bdd100k_semantic": 1,
+    "cityscapes_segmentation": 200,
+    "folder_dataset": 6,
+    "generated_dataset": 1,
+    "kitti": 200,
+    "kitti3d": 200,
+    "synthetic_shapes": 24,
+}
+
 
 def _demo_dataset_params(name: str) -> dict[str, object]:
     """Runtime paths for the maintained smoke bundles on the GPU worker."""
@@ -20,14 +34,16 @@ def _demo_dataset_params(name: str) -> dict[str, object]:
             "root": f"{root}/bdd100k_semantic", "split": "train", "anonymization_manifest": "manifest.jsonl",
         },
         "cityscapes_segmentation": {
-            "root": f"{root}/cityscapes_segmentation", "split": "train", "anonymization_manifest": "manifest.jsonl",
+            "root": "/app/data/catalog/cityscapes-200", "split": "val", "anonymization_manifest": "manifest.jsonl",
         },
         "folder_dataset": {"root": f"{root}/folder_dataset", "input_format": "kitti"},
         "generated_dataset": {"root": f"{root}/generated_dataset"},
         "kitti3d": {
-            "root": f"{root}/kitti3d", "split": "all", "anonymization_manifest": "manifest.jsonl",
+            "root": "/app/data/catalog/kitti3d-200", "split": "all", "anonymization_manifest": "manifest.jsonl",
         },
-        "kitti": {"root": "/app/data/anonymized/kitti-de", "split": "val"},
+        "kitti": {
+            "root": "/app/data/catalog/kitti-200", "split": "val", "manifest_path": "manifest.jsonl",
+        },
     }
     return params.get(name, {})
 
@@ -81,6 +97,7 @@ async def list_datasets(task_id: str | None = None) -> list[DatasetCatalogItem]:
         params = _demo_dataset_params(dataset.name)
         item["dataset_params"] = params
         item["demo"] = bool(params)
+        item["sample_count"] = _CATALOG_SAMPLE_COUNTS.get(dataset.name)
         if params:
             item["anonymized"] = True
         items.append(DatasetCatalogItem(**item))

@@ -8,12 +8,15 @@ from typing import Any
 import torch
 from fastapi import APIRouter
 
+from src.config import get_settings
+
 router = APIRouter(prefix="/system", tags=["System & Runtime"])
 
 
 @router.get("/runtime-specs")
 async def get_runtime_specs() -> dict[str, Any]:
-    """Auto-detect available computing hardware, GPU/CPU resources, and recommend runtime hyperparameters."""
+    """Expose both the API host and the hardware that executes benchmark jobs."""
+    settings = get_settings()
     has_cuda = torch.cuda.is_available()
     device_name = "CPU"
     total_vram_gb = 0.0
@@ -48,7 +51,7 @@ async def get_runtime_specs() -> dict[str, Any]:
         recommended_batch_size = 2
         recommended_precision = "FP32"
 
-    return {
+    control_plane = {
         "has_cuda": has_cuda,
         "device_target": "cuda:0" if has_cuda else "cpu",
         "device_name": device_name,
@@ -60,4 +63,35 @@ async def get_runtime_specs() -> dict[str, Any]:
         "recommended_precision": recommended_precision,
         "recommended_workers": min(4, cpu_count),
         "supported_precisions": ["FP16", "FP32"] if has_cuda else ["FP32"],
+    }
+    uses_remote_gpu = (
+        settings.run_execution_backend == "platform"
+        and settings.queue_backend == "http_dispatcher"
+    )
+    execution_plane = (
+        {
+            "kind": "cloud_run_gpu",
+            "status": "on_demand",
+            "has_cuda": True,
+            "device_target": "cuda:0",
+            "device_name": settings.remote_gpu_name,
+            "total_vram_gb": settings.remote_gpu_vram_gb,
+            "free_vram_gb": None,
+            "recommended_batch_size": 16,
+            "recommended_precision": "FP16",
+            "supported_precisions": ["FP16", "FP32"],
+            "description": "Cloud Run GPU tự khởi động khi job được gửi và tự scale về 0 khi rảnh.",
+        }
+        if uses_remote_gpu
+        else {
+            "kind": "local",
+            "status": "ready",
+            **control_plane,
+            "description": "Job chạy ngay trên API host.",
+        }
+    )
+    return {
+        **control_plane,
+        "control_plane": control_plane,
+        "execution_plane": execution_plane,
     }

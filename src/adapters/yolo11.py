@@ -227,6 +227,18 @@ class Yolo11Adapter(ModelAdapter):
                 ):
                     m.strides = m.strides.clone()
         tensor = torch.from_numpy(sample.image).permute(2, 0, 1).unsqueeze(0).to(self.device)
+        # Ultralytics may keep the loaded module in fp16 after a regular
+        # ``predict(..., half=True)`` call.  Gradient attacks build their
+        # input from the float32 Sample image, which then fails at the first
+        # convolution with ``float``/``Half`` mismatch.  Match the input to
+        # the model dtype while retaining a float32 numpy gradient at the
+        # adapter boundary.
+        model_parameter = next(backend.model.parameters(), None)
+        if model_parameter is not None and str(model_parameter.device) != str(self.device):
+            backend.model.to(self.device)
+            model_parameter = next(backend.model.parameters(), None)
+        if model_parameter is not None:
+            tensor = tensor.to(device=model_parameter.device, dtype=model_parameter.dtype)
         tensor.requires_grad_(requires_grad)
         model_input = _letterbox_tensor(tensor, self.image_size)
         raw = backend.model(model_input)

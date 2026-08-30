@@ -113,13 +113,21 @@ function resolveBackendDataset(context, datasets) {
 
 function buildRealRunConfig(context, attackQueue, model, dataset, attackMode = "combined") {
   const isCombined = attackMode === "combined";
+  // Each dataset uses a strict parameter schema.  Start with the parameters
+  // advertised by the backend and add KITTI-only controls only for KITTI.
+  const datasetParams = { ...(dataset.dataset_params || {}) };
+  if (dataset.name === "kitti") {
+    datasetParams.split = datasetParams.split || "val";
+    datasetParams.difficulty = datasetParams.difficulty || "all";
+    datasetParams.merge_van_truck = true;
+  }
   if (isCombined) {
     return {
       checkpoint_id: model.id,
       model_family_id: model.model_family_id,
       task_id: context.selectedTask,
       dataset: dataset.name,
-      dataset_params: { split: "val", difficulty: "all", merge_van_truck: true },
+      dataset_params: datasetParams,
       recipe: {
         name: `recipe-${attackQueue.map((a) => a.id).join("-")}`,
         steps: attackQueue.map((attack, index) => ({
@@ -146,7 +154,7 @@ function buildRealRunConfig(context, attackQueue, model, dataset, attackMode = "
     model_family_id: model.model_family_id,
     task_id: context.selectedTask,
     dataset: dataset.name,
-    dataset_params: { split: "val", difficulty: "all", merge_van_truck: true },
+    dataset_params: datasetParams,
     attacks: attackQueue.map((attack) => attack.id),
     severities: Array.from(new Set(attackQueue.map((attack) => Number(attack.severity)))),
     limit: 8,
@@ -171,6 +179,30 @@ async function waitForRealRun(runId, onProgress) {
     }
     await new Promise((resolve) => window.setTimeout(resolve, 750));
   }
+}
+
+function executionStepForJob(job) {
+  const stage = job?.detail?.stage || job?.status;
+  if (stage === "COMPLETED") return 5;
+  if (["EVALUATING", "COMPUTING_METRICS"].includes(stage)) return 4;
+  if (stage === "INFERENCING") return 3;
+  // The remote worker may report PREPARING, GPU_STARTING, GENERATING, or its
+  // durable RUNNING state while it materialises data and synthesises variants.
+  return 2;
+}
+
+function executionStatusMessageForJob(job) {
+  const stage = job?.detail?.stage || job?.status;
+  if (stage === "GPU_STARTING") {
+    return "GPU đang khởi động";
+  }
+  if (stage === "PREPARING") {
+    return "GPU đã sẵn sàng, đang nạp checkpoint và dữ liệu đã ẩn danh từ GCS.";
+  }
+  if (stage === "GENERATING") return "Đang sinh biến thể nhiễu đối kháng trên GPU.";
+  if (stage === "INFERENCING") return "Đang suy luận clean và attacked trên GPU.";
+  if (["EVALUATING", "COMPUTING_METRICS"].includes(stage)) return "Đang tính metric và chuẩn bị evidence.";
+  return "Đang gửi job tới GPU worker.";
 }
 
 function ConfigureAttackPageContent() {
@@ -199,6 +231,7 @@ function ConfigureAttackPageContent() {
   const [attackMode, setAttackMode] = useState("combined"); // "combined" | "individual"
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionStep, setExecutionStep] = useState(0);
+  const [executionStatusMessage, setExecutionStatusMessage] = useState("");
   const [executionError, setExecutionError] = useState("");
 
   // Attack Recipe Summary (The active queue of confirmed attacks)
@@ -297,6 +330,7 @@ function ConfigureAttackPageContent() {
   const handleStartExecution = async () => {
     setIsExecuting(true);
     setExecutionStep(1);
+    setExecutionStatusMessage("Đang kiểm tra cấu hình và gửi job tới GPU worker...");
     setExecutionError("");
     try {
       const [versions, datasets] = await Promise.all([
@@ -328,8 +362,12 @@ function ConfigureAttackPageContent() {
       if (preflight.fatal_errors?.length) throw new Error(preflight.fatal_errors.join(" "));
       setExecutionStep(2);
       const created = await createRun(config);
+      setExecutionStatusMessage(executionStatusMessageForJob(created));
       const { job, report, samples } = await waitForRealRun(created.run_id, (currentJob) => {
-        setExecutionStep(currentJob.status === "INFERENCING" ? 3 : currentJob.status === "COMPUTING_METRICS" ? 4 : 2);
+        // A poll can observe a lower-level worker state after INFERENCING.
+        // Keep the checklist monotonic so the UI never appears to run backward.
+        setExecutionStep((previous) => Math.max(previous, executionStepForJob(currentJob)));
+        setExecutionStatusMessage(executionStatusMessageForJob(currentJob));
       });
 
       const executedAt = new Date().toISOString();
@@ -871,6 +909,12 @@ function ConfigureAttackPageContent() {
                 <p className="text-xs text-slate-500 font-mono">Mô hình: {expContext.selectedModelName}</p>
               </div>
             </div>
+
+            {executionStatusMessage && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                {executionStatusMessage}
+              </div>
+            )}
 
             {/* Step Progress Checklist */}
             <div className="space-y-2.5 text-xs border border-slate-100 p-3 rounded-xl bg-slate-50">

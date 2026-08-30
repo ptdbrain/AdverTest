@@ -62,6 +62,7 @@ coverage.xml
 .pytest-*/
 .pytest-*.log
 .pytest-*.err
+.tmp.driveupload/
 
 # Docker
 docker-compose.override.yml

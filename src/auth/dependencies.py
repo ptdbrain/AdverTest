@@ -7,14 +7,18 @@ import functools
 from fastapi import Depends, Header, HTTPException, status
 
 from src.api.dependencies import get_store
+from src.api.platform_dependencies import get_platform_database
 from src.auth.contracts import UserOut
 from src.auth.security import decode_access_token
-from src.auth.service import AuthService
+from src.auth.service import AuthService, PostgresAuthService
+from src.config import get_settings
 
 
 @functools.lru_cache
-def get_auth_service() -> AuthService:
-    """Singleton AuthService instance."""
+def get_auth_service() -> AuthService | PostgresAuthService:
+    """Use PostgreSQL for production identities; keep SQLite for local dev."""
+    if get_settings().app_env == "production":
+        return PostgresAuthService(get_platform_database())
     return AuthService(get_store())
 
 

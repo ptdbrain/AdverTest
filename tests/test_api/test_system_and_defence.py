@@ -23,6 +23,8 @@ def test_system_runtime_specs_endpoint():
     assert "recommended_precision" in data
     assert data["recommended_batch_size"] in (2, 4, 8, 16, 32)
     assert data["recommended_precision"] in ("FP16", "FP32")
+    assert data["control_plane"]["device_target"] == data["device_target"]
+    assert data["execution_plane"]["status"] in ("ready", "on_demand")
 
 
 def test_download_zip_endpoint_404_for_unknown_run():

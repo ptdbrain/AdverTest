@@ -35,10 +35,6 @@ from src.evaluation.detection_metrics import (
     detection_metric_suite,
     per_object_detection_comparison,
 )
-from src.evaluation.kitti3d import (
-    kitti3d_attack_success_rate,
-    kitti3d_metric_suite,
-)
 from src.evaluation.report import CellResult, RunReport, SampleResult, SkippedAttack
 from src.evaluation.robustness_metrics import summary
 from src.evaluation.segmentation_metrics import evaluate_prediction
@@ -73,8 +69,6 @@ class RunConfig(BaseModel):
     execution_mode: Literal["benchmark", "quick_inference"] = "benchmark"
     gpu_budget_cap: float | None = Field(default=None, gt=0.0)
     evidence_dir: str | None = None
-    confirmed: bool = False
-    estimate_token: str | None = None
     bootstrap_repetitions: int = Field(default=1000, ge=0, le=5000)
 
 
@@ -122,69 +116,6 @@ class RunCancelledError(RuntimeError):
     """Raised by a cooperative worker between completed cells."""
 
 
-def _build_scientific_provenance(
-    config: RunConfig, dataset: DatasetSource, info: ModelInfo, samples: Sequence[Sample]
-) -> dict[str, Any]:
-    import hashlib
-    import json
-    import platform
-    import sys
-
-    sample_hashes = {sample.sample_id: sample_digest(sample) for sample in samples}
-    manifest_raw = "\n".join(f"{sid}:{h}" for sid, h in sorted(sample_hashes.items()))
-    split_manifest_hash = hashlib.sha256(manifest_raw.encode()).hexdigest()
-    config_dump = config.model_dump(mode="json")
-    config_sha256 = hashlib.sha256(json.dumps(config_dump, sort_keys=True).encode()).hexdigest()
-
-    iou_thresholds = (
-        {"Car": 0.7, "Pedestrian": 0.5, "Cyclist": 0.5}
-        if info.task == "detection3d"
-        else {"default": config.iou_threshold}
-    )
-
-    return {
-        "dataset_name": dataset.name,
-        "dataset_version": getattr(dataset, "version", "1.0.0"),
-        "official_split": getattr(dataset, "split", "val"),
-        "split_manifest_hash": split_manifest_hash,
-        "sample_ids": tuple(s.sample_id for s in samples),
-        "manifest_reference": f"manifest-{split_manifest_hash[:12]}",
-        "annotation_schema": getattr(
-            dataset, "annotation_schema", "detection3d_v1" if info.task == "detection3d" else "detection2d_v1"
-        ),
-        "calibration_version": "kitti_calib_v1" if info.task == "detection3d" else "standard_pinhole_v1",
-        "model": {
-            "name": info.name,
-            "version": info.version,
-            "checkpoint_hash": info.checkpoint_hash,
-            "preprocessing_version": info.preprocessing_version,
-        },
-        "model_family": config.model_family_id or info.name,
-        "model_version": config.model_version_id or info.version,
-        "checkpoint_sha256": info.checkpoint_hash,
-        "config_sha256": config_sha256,
-        "metric_implementation_version": "advertest-eval-v1.4.0",
-        "iou_thresholds": iou_thresholds,
-        "confidence_threshold": config.confidence_threshold,
-        "seed": config.seed,
-        "code_commit_sha": "git-v1.0.0-production-hardened",
-        "dependency_versions": {
-            "python": sys.version.split()[0],
-            "numpy": np.__version__,
-        },
-        "simulation_only": dataset.name == "synthetic_shapes",
-        "hardware_metadata": {
-            "platform": platform.platform(),
-            "processor": platform.processor() or "generic-x86_64",
-            "device": "cpu",
-        },
-        "model_version_id": config.model_version_id or info.version,
-        "benchmark_protocol_id": config.benchmark_protocol_id,
-        "source_sample_hashes": sample_hashes,
-        "run_config": config_dump,
-    }
-
-
 class TestRunner:
     """Executes a :class:`RunConfig` and returns a :class:`RunReport`."""
 
@@ -218,11 +149,7 @@ class TestRunner:
             for attack in attacks
             for severity in config.severities
         )
-        units = (
-            sum(COST_WEIGHT[attack.cost_class] * n_samples for attack in attacks)
-            if recipe_steps
-            else sum(COST_WEIGHT[attack.cost_class] * n_samples * len(config.severities) for attack in selected)
-        )
+        units = sum(COST_WEIGHT[attack.cost_class] * n_samples for attack in attacks) if recipe_steps else sum(COST_WEIGHT[attack.cost_class] * n_samples * len(config.severities) for attack in selected)
         # Gradient steps include one forward and one backward. Query attacks
         # must count every target-model call, especially Square Attack.
         work_units = units + queries + gradients * 2 + n_samples
@@ -247,7 +174,9 @@ class TestRunner:
         estimate = self.estimate(config)
         fatal = []
         if adapter.metadata().task not in {"detection2d", "segmentation", "detection3d"}:
-            fatal.append(f"primary TestRunner currently does not support adapter task {adapter.metadata().task!r}")
+            fatal.append(
+                f"primary TestRunner currently does not support adapter task {adapter.metadata().task!r}"
+            )
         if not adapter.metadata().runnable:
             fatal.append(f"adapter {adapter.metadata().name!r} is generation-only and cannot run benchmark inference")
         if not samples:
@@ -297,22 +226,9 @@ class TestRunner:
         clean = self._predict_clean(adapter, samples, info)
         if info.task == "segmentation":
             from src.evaluation.segmentation_metrics import segmentation_metric_suite
-
-            clean_ap_val = (
-                segmentation_metric_suite(clean, samples).get("miou", 0.0)
-                if config.execution_mode == "benchmark"
-                else 0.0
-            )
-        elif info.task == "detection3d":
-            clean_ap_val = (
-                kitti3d_metric_suite(clean, samples, config.iou_threshold).get("kitti_3d_ap", 0.0)
-                if config.execution_mode == "benchmark"
-                else 0.0
-            )
+            clean_ap_val = segmentation_metric_suite(clean, samples).get("miou", 0.0) if config.execution_mode == "benchmark" else 0.0
         else:
-            clean_ap_val = (
-                average_precision(clean, samples, config.iou_threshold) if config.execution_mode == "benchmark" else 0.0
-            )
+            clean_ap_val = average_precision(clean, samples, config.iou_threshold) if config.execution_mode == "benchmark" else 0.0
         report = RunReport(
             run_id=run_id or uuid.uuid4().hex[:12],
             model=info.name,
@@ -320,22 +236,33 @@ class TestRunner:
             dataset=dataset.name,
             n_samples=len(samples),
             ap_clean=clean_ap_val,
-            simulation_only=(dataset.name == "synthetic_shapes"),
-            provenance=_build_scientific_provenance(config, dataset, info, samples),
+            provenance={
+                "model": {
+                    "name": info.name,
+                    "version": info.version,
+                    "checkpoint_hash": info.checkpoint_hash,
+                    "preprocessing_version": info.preprocessing_version,
+                },
+                "model_version_id": config.model_version_id or info.version,
+                "benchmark_protocol_id": config.benchmark_protocol_id,
+                "source_sample_hashes": {
+                    sample.sample_id: sample_digest(sample) for sample in samples
+                },
+                "run_config": config.model_dump(mode="json"),
+            },
         )
         selected, skipped = self._resolve_attacks(config, dataset, info, samples)
         report.skipped = skipped
         evidence = EvidenceWriter(config.evidence_dir) if config.evidence_dir else None
 
         if config.recipe:
-            self._run_recipe(
-                config.recipe, samples, clean, adapter, config, evidence, report, should_cancel=should_cancel
-            )
+            if progress:
+                progress("GENERATING", {"attack": config.recipe.name, "completed_cells": 0})
+            self._run_recipe(config.recipe, samples, clean, adapter, config, evidence, report, should_cancel=should_cancel)
             report.seconds = perf_counter() - started
             if config.execution_mode == "benchmark":
                 if info.task == "segmentation":
                     from src.evaluation.segmentation_metrics import segmentation_metric_suite
-
                     clean_metrics = segmentation_metric_suite(clean, samples)
                 else:
                     clean_metrics = detection_metric_suite(clean, samples)
@@ -364,6 +291,15 @@ class TestRunner:
             def checkpoint_cell(cell: CellResult, results: list[SampleResult]) -> None:
                 report.cells.append(cell)
                 report.sample_results.extend(results)
+                if progress:
+                    progress(
+                        "INFERENCING",
+                        {
+                            "attack": cell.attack,
+                            "severity": cell.severity,
+                            "completed_cells": len(report.cells),
+                        },
+                    )
                 if checkpoint:
                     checkpoint(report)
 
@@ -386,11 +322,7 @@ class TestRunner:
         if config.execution_mode == "benchmark":
             if info.task == "segmentation":
                 from src.evaluation.segmentation_metrics import segmentation_metric_suite
-
                 clean_metrics = segmentation_metric_suite(clean, samples)
-            elif info.task == "detection3d":
-                clean_metrics = kitti3d_metric_suite(clean, samples, config.iou_threshold)
-                clean_metrics["ap50_ci95"] = [clean_metrics["kitti_3d_ap"], clean_metrics["kitti_3d_ap"]]
             else:
                 clean_metrics = detection_metric_suite(clean, samples)
                 clean_metrics["ap50_ci95"] = _bootstrap_interval(clean, samples, config)
@@ -426,26 +358,12 @@ class TestRunner:
             predictions = self._predict_variants(adapter, variants, attack, severity)
             if adapter.metadata().task == "segmentation":
                 from src.evaluation.segmentation_metrics import segmentation_metric_suite
-
                 metrics = (
                     {"benchmark_metrics_available": False}
                     if config.execution_mode == "quick_inference"
                     else segmentation_metric_suite(predictions, samples)
                 )
                 cell_ap = metrics.get("miou", 0.0)
-            elif adapter.metadata().task == "detection3d":
-                if config.execution_mode == "quick_inference":
-                    metrics = {"benchmark_metrics_available": False}
-                    cell_ap = 0.0
-                else:
-                    metrics = kitti3d_metric_suite(predictions, samples, config.iou_threshold)
-                    metrics["ap50_ci95"] = [metrics["kitti_3d_ap"], metrics["kitti_3d_ap"]]
-                    attack_success = kitti3d_attack_success_rate(
-                        clean_predictions, predictions, samples, config.iou_threshold
-                    )
-                    metrics["objects_broken"] = attack_success.lost_truths
-                    metrics["attack_success_rate"] = attack_success.rate
-                    cell_ap = metrics["kitti_3d_ap"]
             else:
                 metrics = (
                     {"benchmark_metrics_available": False}
@@ -454,16 +372,10 @@ class TestRunner:
                 )
                 if config.execution_mode == "benchmark":
                     metrics["ap50_ci95"] = _bootstrap_interval(predictions, samples, config)
-                    attack_success = detection_attack_success_rate(
-                        clean_predictions, predictions, samples, config.iou_threshold
-                    )
+                    attack_success = detection_attack_success_rate(clean_predictions, predictions, samples, config.iou_threshold)
                     metrics["objects_broken"] = attack_success.lost_truths
                     metrics["attack_success_rate"] = attack_success.rate
-                cell_ap = (
-                    average_precision(predictions, samples, config.iou_threshold)
-                    if config.execution_mode == "benchmark"
-                    else 0.0
-                )
+                cell_ap = average_precision(predictions, samples, config.iou_threshold) if config.execution_mode == "benchmark" else 0.0
             cell = CellResult(
                 attack=attack.name,
                 group=attack.group,
@@ -509,9 +421,7 @@ class TestRunner:
                             else [
                                 detail.as_dict()
                                 for detail in per_object_detection_comparison(
-                                    [clean_prediction],
-                                    [attacked_prediction],
-                                    [clean_sample],
+                                    [clean_prediction], [attacked_prediction], [clean_sample],
                                     iou_threshold=config.iou_threshold,
                                     confidence_threshold=config.confidence_threshold,
                                 )
@@ -531,17 +441,7 @@ class TestRunner:
                 pbar.update(1)
         return cells, sample_results
 
-    def _run_recipe(
-        self,
-        recipe: AttackRecipe,
-        samples: Sequence[Sample],
-        clean_predictions: Sequence[Prediction],
-        adapter: ModelAdapter,
-        config: RunConfig,
-        evidence: EvidenceWriter | None,
-        report: RunReport,
-        should_cancel: Callable[[], bool] | None = None,
-    ) -> None:
+    def _run_recipe(self, recipe: AttackRecipe, samples: Sequence[Sample], clean_predictions: Sequence[Prediction], adapter: ModelAdapter, config: RunConfig, evidence: EvidenceWriter | None, report: RunReport, should_cancel: Callable[[], bool] | None = None) -> None:
         """Execute the canonical ordered recipe once per sample and score its final output."""
         engine = CompositionEngine()
         results = []
@@ -555,28 +455,9 @@ class TestRunner:
         final_variants = [sample for sample in variants if sample is not None]
         if should_cancel and should_cancel():
             raise RunCancelledError("cancelled before recipe inference")
-        final_predictions = self._predict_cached(
-            adapter,
-            final_variants,
-            [
-                stable_digest(
-                    {
-                        "recipe": recipe.recipe_hash,
-                        "sample": sample_digest(sample),
-                        "model": _model_cache_identity(adapter.metadata()),
-                    }
-                )
-                for sample in final_variants
-            ],
-        )
-        attack_display_name = (
-            recipe.name
-            if recipe.name and not recipe.name.startswith("recipe-")
-            else (
-                recipe.steps[0].attack_name
-                if len(recipe.steps) == 1
-                else " + ".join(s.attack_name for s in recipe.steps)
-            )
+        final_predictions = self._predict_cached(adapter, final_variants, [stable_digest({"recipe": recipe.recipe_hash, "sample": sample_digest(sample), "model": _model_cache_identity(adapter.metadata())}) for sample in final_variants])
+        attack_display_name = recipe.name if recipe.name and not recipe.name.startswith("recipe-") else (
+            recipe.steps[0].attack_name if len(recipe.steps) == 1 else " + ".join(s.attack_name for s in recipe.steps)
         )
         # Resolve the last attack in the recipe for group/category metadata.
         last_attack_cls = get_attack(recipe.steps[-1].attack_name, **recipe.steps[-1].parameters)
@@ -591,70 +472,33 @@ class TestRunner:
         metrics["recipe_id"] = recipe.recipe_id
         metrics["attack_name"] = attack_display_name
 
-        report.cells.append(
-            CellResult(
-                attack=attack_display_name,
-                group=last_attack_cls.group,
-                severity=recipe.steps[-1].severity,
-                ap=average_precision(final_predictions, samples, config.iou_threshold)
-                if config.execution_mode == "benchmark"
-                else 0.0,
-                n_samples=len(samples),
-                category=last_attack_cls.reporting_category(),
-                metrics=metrics,
-            )
-        )
+        report.cells.append(CellResult(
+            attack=attack_display_name,
+            group=last_attack_cls.group,
+            severity=recipe.steps[-1].severity,
+            ap=average_precision(final_predictions, samples, config.iou_threshold) if config.execution_mode == "benchmark" else 0.0,
+            n_samples=len(samples),
+            category=last_attack_cls.reporting_category(),
+            metrics=metrics,
+        ))
         report.provenance["recipe"] = recipe.model_dump(mode="json")
-        for clean_sample, variant, clean_prediction, attacked_prediction, composition in zip(
-            samples, final_variants, clean_predictions, final_predictions, results, strict=True
-        ):
-            paths = (
-                evidence.write(
-                    attack=recipe.recipe_id,
-                    severity=recipe.steps[-1].severity,
-                    clean=clean_sample,
-                    attacked=variant,
-                    clean_prediction=clean_prediction,
-                    attacked_prediction=attacked_prediction,
-                )
-                if evidence
-                else {}
-            )
+        for clean_sample, variant, clean_prediction, attacked_prediction, composition in zip(samples, final_variants, clean_predictions, final_predictions, results, strict=True):
+            paths = evidence.write(attack=recipe.recipe_id, severity=recipe.steps[-1].severity, clean=clean_sample, attacked=variant, clean_prediction=clean_prediction, attacked_prediction=attacked_prediction) if evidence else {}
             obj_evidence = (
                 list(evaluate_prediction(clean_sample, attacked_prediction))
                 if adapter.metadata().task == "segmentation"
                 else [
                     detail.as_dict()
                     for detail in per_object_detection_comparison(
-                        [clean_prediction],
-                        [attacked_prediction],
-                        [clean_sample],
+                        [clean_prediction], [attacked_prediction], [clean_sample],
                         iou_threshold=config.iou_threshold,
                         confidence_threshold=config.confidence_threshold,
                     )
                 ]
             )
-            report.sample_results.append(
-                SampleResult(
-                    sample_id=clean_sample.sample_id,
-                    attack=recipe.recipe_id,
-                    severity=recipe.steps[-1].severity,
-                    clean_prediction=prediction_payload(clean_prediction),
-                    attacked_prediction=prediction_payload(attacked_prediction),
-                    clean_image_path=paths.get("clean_image"),
-                    attacked_image_path=paths.get("attacked_image"),
-                    clean_prediction_path=paths.get("clean_prediction"),
-                    attacked_prediction_path=paths.get("attacked_prediction"),
-                    object_evidence=obj_evidence,
-                    degradation_hint=_sample_degradation_hint(clean_prediction, attacked_prediction),
-                    attack_version=recipe.steps[-1].implementation_version,
-                    attack_params=recipe.steps[-1].parameters,
-                    model_checkpoint_hash=adapter.metadata().checkpoint_hash,
-                    recipe_hash=recipe.recipe_hash,
-                    recipe_steps=[record.model_dump(mode="json") for record in composition.step_records],
-                    ground_truth=_ground_truth_payload(clean_sample),
-                )
-            )
+            report.sample_results.append(SampleResult(sample_id=clean_sample.sample_id, attack=recipe.recipe_id, severity=recipe.steps[-1].severity, clean_prediction=prediction_payload(clean_prediction), attacked_prediction=prediction_payload(attacked_prediction), clean_image_path=paths.get("clean_image"), attacked_image_path=paths.get("attacked_image"), clean_prediction_path=paths.get("clean_prediction"), attacked_prediction_path=paths.get("attacked_prediction"), object_evidence=obj_evidence, degradation_hint=_sample_degradation_hint(clean_prediction, attacked_prediction), attack_version=recipe.steps[-1].implementation_version, attack_params=recipe.steps[-1].parameters, model_checkpoint_hash=adapter.metadata().checkpoint_hash, recipe_hash=recipe.recipe_hash, recipe_steps=[record.model_dump(mode="json") for record in composition.step_records], ground_truth=_ground_truth_payload(clean_sample)))
+
+
 
     def _attack_sample(
         self,
@@ -752,9 +596,7 @@ class TestRunner:
         requested = (
             [catalog.get(step.attack_name) for step in config.recipe.steps]
             if config.recipe
-            else [catalog.get(name) for name in config.attacks]
-            if config.attacks
-            else catalog.values()
+            else [catalog.get(name) for name in config.attacks] if config.attacks else catalog.values()
         )
         selected: list[type[BaseAttack]] = []
         skipped: list[SkippedAttack] = []
@@ -762,8 +604,7 @@ class TestRunner:
             reason = _incompatibility(attack, dataset, info)
             requested_severities = (
                 [step.severity for step in config.recipe.steps if step.attack_name == attack.name]
-                if config.recipe
-                else config.severities
+                if config.recipe else config.severities
             )
             if reason is None and any(
                 severity < 0 or severity > attack.severity_levels for severity in requested_severities
@@ -834,7 +675,7 @@ def _sample_degradation_hint(clean: Prediction, attacked: Prediction) -> float:
 
 
 def _ground_truth_payload(sample: Sample) -> dict[str, Any]:
-    payload = {
+    return {
         "type": "boxes",
         "image_width": int(sample.image.shape[1]),
         "image_height": int(sample.image.shape[0]),
@@ -843,22 +684,6 @@ def _ground_truth_payload(sample: Sample) -> dict[str, Any]:
             for index, box in enumerate(sample.boxes)
         ],
     }
-    if getattr(sample, "boxes3d", None):
-        payload["objects3d"] = [
-            {
-                "object_id": f"{sample.sample_id}:3d:{index}",
-                "label": box.label,
-                "x": round(box.x, 4),
-                "y": round(box.y, 4),
-                "z": round(box.z, 4),
-                "length": round(box.length, 4),
-                "width": round(box.width, 4),
-                "height": round(box.height, 4),
-                "yaw": round(box.yaw, 4),
-            }
-            for index, box in enumerate(sample.boxes3d)
-        ]
-    return payload
 
 
 def _model_cache_identity(info: ModelInfo) -> str:

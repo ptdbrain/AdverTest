@@ -31,7 +31,8 @@ import Badge from "@/components/common/Badge";
 import Button from "@/components/common/Button";
 import MetricCard from "@/components/metrics/MetricCard";
 import DonutChart from "@/components/metrics/DonutChart";
-import { listRuns, getCatalogModels, getCatalogDatasets, getCatalogAttacks } from "@/lib/api";
+import { listRuns, getModelVersions, getCatalogDatasets, getCatalogAttacks } from "@/lib/api";
+import { buildRunDecisionView, formatRatio } from "@/lib/reportMetrics";
 
 const PIPELINE_STEPS = [
   { step: 1, title: "Cấu hình bài toán", desc: "Nạp mô hình & dữ liệu gốc", icon: "database", route: "/experiments/new" },
@@ -62,7 +63,7 @@ export default function DashboardView() {
       try {
         const [runsRes, modelsRes, datasetsRes, attacksRes] = await Promise.allSettled([
           listRuns(),
-          getCatalogModels(),
+          getModelVersions(),
           getCatalogDatasets(),
           getCatalogAttacks(),
         ]);
@@ -84,12 +85,13 @@ export default function DashboardView() {
   }, []);
 
   const completedRuns = runs.filter((r) => r.status === "COMPLETED" && r.report);
-  const avgCleanMapVal = completedRuns.length
-    ? (completedRuns.reduce((acc, r) => acc + (r.report?.ap_clean || 0), 0) / completedRuns.length * 100).toFixed(1) + "%"
-    : "—";
-  const avgRobustVal = completedRuns.length
-    ? (completedRuns.reduce((acc, r) => acc + (r.report?.mPC || 0.7), 0) / completedRuns.length).toFixed(2)
-    : "—";
+  // Do not average runs from different models, datasets or protocols. The
+  // dashboard therefore exposes the latest measured run rather than a fake
+  // global score (the former code used a hard-coded 0.7 fallback).
+  const latestMeasuredRun = [...completedRuns].reverse().find((run) => buildRunDecisionView(run.report).dataState === "MEASURED");
+  const latestDecision = latestMeasuredRun ? buildRunDecisionView(latestMeasuredRun.report) : null;
+  const latestCleanMetric = latestDecision ? formatRatio(latestDecision.primary.clean) : "—";
+  const latestRobustness = latestDecision ? `${latestDecision.robustnessRetained.toFixed(1)}%` : "—";
 
   const liveKpis = [
     {
@@ -130,19 +132,19 @@ export default function DashboardView() {
     },
     {
       id: "asr",
-      title: "Clean mAP trung bình",
-      value: isLoading ? "..." : avgCleanMapVal,
-      trend: "0%",
-      trendLabel: "so với baseline",
+      title: "Clean metric mới nhất",
+      value: isLoading ? "..." : latestCleanMetric,
+      trend: "measured",
+      trendLabel: latestDecision?.primary.label || "chưa có benchmark",
       trendType: "neutral",
       color: "amber",
     },
     {
       id: "robustness",
-      title: "Điểm Robustness TB",
-      value: isLoading ? "..." : avgRobustVal,
-      trend: "0.0",
-      trendLabel: "mPC score",
+      title: "Hiệu năng giữ lại",
+      value: isLoading ? "..." : latestRobustness,
+      trend: "attacked / clean",
+      trendLabel: latestMeasuredRun ? "run đo được mới nhất" : "chưa có benchmark",
       trendType: "neutral",
       color: "emerald",
     },
@@ -298,6 +300,52 @@ export default function DashboardView() {
         </Card>
       </div>
 
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <Card
+          title="Mô hình đang khả dụng"
+          subtitle="Checkpoint catalog đã đăng ký; trạng thái thể hiện khả năng benchmark thực tế"
+          headerAction={<Link href="/experiments/new" className="text-xs font-semibold text-blue-600 hover:text-blue-800">Cấu hình test →</Link>}
+        >
+          {models.length === 0 ? (
+            <p className="py-5 text-center text-xs text-slate-500">{isLoading ? "Đang tải mô hình..." : "Chưa có mô hình khả dụng"}</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {models.map((model) => (
+                <div key={model.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-150 bg-slate-50/70 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-slate-800">{model.id}</p>
+                    <p className="text-[10px] text-slate-500">{model.model_name} · {model.task}</p>
+                  </div>
+                  <Badge variant={model.runnable ? "success" : "secondary"}>{model.runnable ? "Sẵn sàng" : "Chưa sẵn sàng"}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card
+          title="Dataset đang khả dụng"
+          subtitle="Các tập dữ liệu đã qua gate anonymization"
+          headerAction={<Link href="/experiments/new" className="text-xs font-semibold text-blue-600 hover:text-blue-800">Chọn dataset →</Link>}
+        >
+          {datasets.length === 0 ? (
+            <p className="py-5 text-center text-xs text-slate-500">{isLoading ? "Đang tải dataset..." : "Chưa có dataset khả dụng"}</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {datasets.map((dataset) => (
+                <div key={dataset.name} className="flex items-center justify-between gap-2 rounded-lg border border-slate-150 bg-slate-50/70 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-slate-800">{dataset.title || dataset.name}</p>
+                    <p className="text-[10px] text-slate-500">{dataset.task_id} · {dataset.modality}</p>
+                  </div>
+                  <Badge variant={dataset.anonymized ? "success" : "secondary"}>{dataset.anonymized ? "Anonymized" : "Pending"}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
       {/* 4. Modular Navigation Architecture + System Alerts */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Modules Grid (2 Columns) */}
@@ -407,10 +455,15 @@ export default function DashboardView() {
                       </Badge>
                     </td>
                     <td className="py-2.5 px-3 font-semibold text-red-600">
-                      {exp.report ? ((exp.report.asr || 0) * 100).toFixed(1) + "%" : "—"}
+                      {exp.report?.metrics?.robustness?.attack_success_rate != null
+                        ? `${(exp.report.metrics.robustness.attack_success_rate * 100).toFixed(1)}%`
+                        : "—"}
                     </td>
                     <td className="py-2.5 px-3 font-semibold text-emerald-600">
-                      {exp.report ? (exp.report.mPC || exp.report.ap_clean || 0).toFixed(2) : "—"}
+                      {exp.report ? (() => {
+                        const decision = buildRunDecisionView(exp.report);
+                        return decision.dataState === "MEASURED" ? `${decision.robustnessRetained.toFixed(1)}%` : "—";
+                      })() : "—"}
                     </td>
                     <td className="py-2.5 px-3 text-slate-500">
                       {exp.created_at ? new Date(exp.created_at).toLocaleTimeString() : "—"}
@@ -461,8 +514,8 @@ export default function DashboardView() {
                   { name: "Độ bền vững", value: 75, color: "#2563EB" },
                   { name: "Tổn thương", value: 25, color: "#E2E8F0" },
                 ]}
-                centerValue={avgRobustVal}
-                centerLabel="mPC Score"
+                centerValue={latestRobustness}
+                centerLabel="Hiệu năng giữ lại"
                 height={160}
               />
             </div>
@@ -488,7 +541,7 @@ export default function DashboardView() {
               <div className="space-y-1.5 text-xs font-medium">
                 {models.slice(0, 4).map((m, idx) => (
                   <div key={m.id || idx} className="flex items-center justify-between p-1.5 rounded bg-white border border-slate-150">
-                    <span className="font-mono text-slate-800">{m.name || m.id}</span>
+                    <span className="font-mono text-slate-800">{m.id}</span>
                     <Badge variant="primary">{m.task || "2D"}</Badge>
                   </div>
                 ))}

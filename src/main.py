@@ -36,10 +36,9 @@ from src.api.routers import (
     runs,
     sessions,
     system,
+    worker_callbacks,
 )
-from src.api.routers import (
-    settings as settings_router,
-)
+from src.api.routers import settings as settings_router
 from src.api.routes import router
 from src.attacks import load_attacks
 from src.config import get_settings
@@ -131,6 +130,7 @@ app.include_router(checkpoints.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(exports.router, prefix="/api/v1")
 app.include_router(platform_datasets.router, prefix="/api/v1")
+app.include_router(worker_callbacks.router, prefix="/api/v1")
 # The legacy router below already owns every defence endpoint.  Mounting both
 # routers registers identical paths twice, which makes route resolution depend
 # on registration order and produces duplicate OpenAPI operation IDs.

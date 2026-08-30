@@ -1,4 +1,5 @@
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import AppShell from "@/components/layout/AppShell";
 import AppProviders from "@/components/AppProviders";
 import "./globals.css";
@@ -13,6 +14,9 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="vi" className={inter.className} suppressHydrationWarning>
+      <head>
+        <Script src="/runtime-config.js" strategy="beforeInteractive" />
+      </head>
       <body className="antialiased bg-[#F8FAFC] text-[#0F172A]">
         <AppProviders>
           <AppShell>{children}</AppShell>

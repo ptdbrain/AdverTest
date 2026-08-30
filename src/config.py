@@ -77,9 +77,18 @@ class Settings(BaseSettings):
     checkpoint_sandbox_token: str | None = None
     external_gpu_worker_url: str | None = None
     external_gpu_worker_token: str | None = None
+    # Cloud Run workers never connect to PostgreSQL directly.  They claim a
+    # job and report progress through this authenticated API callback instead.
+    worker_callback_api_url: str | None = None
+    worker_callback_token: str | None = None
     # Benchmark jobs normally use the lightweight local worker. Production can
     # opt into the durable Postgres + dispatcher + GCE execution plane.
     run_execution_backend: Literal["local", "platform"] = "local"
+    # Presentation metadata for the remote execution plane.  This must stay
+    # separate from MODEL_DEVICE: Render hosts the API on CPU while Cloud Run
+    # materialises and executes benchmark jobs on this on-demand GPU.
+    remote_gpu_name: str = "NVIDIA L4"
+    remote_gpu_vram_gb: float = Field(default=24.0, ge=0.0)
     platform_default_project_id: str = "advertest-demo"
     platform_default_user_id: str = "demo-user"
     # Demo-only bootstrap: downloads a fixed, vendor-maintained checkpoint into
@@ -91,6 +100,12 @@ class Settings(BaseSettings):
     demo_kitti_storage_prefix: str = "catalog/datasets/kitti/v1/anonymized/kitti-de/"
     bootstrap_demo_catalog: bool = False
     demo_catalog_storage_prefix: str = "catalog/datasets/demo-catalog/v1/"
+    bootstrap_cityscapes_catalog: bool = False
+    cityscapes_catalog_storage_prefix: str = "catalog/datasets/cityscapes-200/v1/"
+    bootstrap_kitti_catalog: bool = False
+    kitti_catalog_storage_prefix: str = "catalog/datasets/kitti-200/v1/"
+    bootstrap_kitti3d_catalog: bool = False
+    kitti3d_catalog_storage_prefix: str = "catalog/datasets/kitti3d-200/v1/"
 
     # Execution hardware defaults
     model_device: str = "cpu"
@@ -164,13 +179,11 @@ class Settings(BaseSettings):
         if self.queue_backend == "redis" and (not self.redis_url or not self.redis_url.strip()):
             failed_keys.append("REDIS_URL (required when QUEUE_BACKEND=redis)")
 
-        # 6. Google OAuth client ID validation
-        if (
-            not self.google_client_id
-            or not self.google_client_id.strip()
-            or self.google_client_id == "your-google-client-id.apps.googleusercontent.com"
-        ):
-            failed_keys.append("GOOGLE_CLIENT_ID (must be configured in production)")
+        # 6. Google OAuth is optional. When configured, reject only the
+        # placeholder value; password authentication remains a supported
+        # production mode for deployments that have not enabled SSO.
+        if self.google_client_id == "your-google-client-id.apps.googleusercontent.com":
+            failed_keys.append("GOOGLE_CLIENT_ID (must not use the placeholder value)")
 
         if failed_keys:
             # Strictly do not log raw secrets or credentials in error messages
