@@ -28,7 +28,7 @@ def _demo_dataset_params(name: str) -> dict[str, object]:
             "root": "/app/data/catalog/kitti3d-200", "split": "all", "anonymization_manifest": "manifest.jsonl",
         },
         "kitti": {
-            "root": "/app/data/catalog/kitti-200", "split": "val", "anonymization_manifest": "manifest.jsonl",
+            "root": "/app/data/catalog/kitti-200", "split": "val", "manifest_path": "manifest.jsonl",
         },
     }
     return params.get(name, {})

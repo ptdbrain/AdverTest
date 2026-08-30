@@ -1675,6 +1675,24 @@ def _dataset_root() -> Path:
     return root
 
 
+def normalize_dataset_params(config: RunConfig) -> RunConfig:
+    """Drop form fields belonging to a previously selected dataset.
+
+    The web configuration form keeps values while an engineer switches a
+    dataset.  Dataset parameter models deliberately forbid unknown fields, so
+    passing those stale values to a new loader used to make otherwise valid
+    BDD100K/KITTI runs fail before dispatch.  Keep only the selected loader's
+    declared fields; required-field validation remains the loader's job.
+    """
+    try:
+        dataset_cls = load_datasets().get(config.dataset)
+    except KeyError:
+        return config
+    allowed = set(dataset_cls.params_model.model_fields)
+    filtered = {key: value for key, value in config.dataset_params.items() if key in allowed}
+    return config if filtered == config.dataset_params else config.model_copy(update={"dataset_params": filtered})
+
+
 def _resolve_run_config(config: RunConfig, *, allow_defence: bool = False) -> RunConfig:
     """Resolve a product ModelVersion server-side; browsers never receive weight paths."""
     from src.attacks import ATTACK_CATALOG, load_attacks

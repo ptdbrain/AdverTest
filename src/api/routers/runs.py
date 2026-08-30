@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from src.api.dependencies import get_runner, get_store, get_worker
 from src.api.jobs import LocalRunWorker, SqliteRunStore
 from src.api.platform_dependencies import get_platform_compute, get_platform_jobs
-from src.api.routes import _resolve_run_config, _sample_with_artifact_urls
+from src.api.routes import _resolve_run_config, _sample_with_artifact_urls, normalize_dataset_params
 from src.api.schemas.run import CostEstimateOut, PreflightOut, RunJobOut, RunReportOut
 from src.compute.backends import ComputeBackend
 from src.config import get_settings
@@ -52,7 +52,8 @@ async def preflight_run(
     config: RunConfig,
     runner: TestRunner = Depends(get_runner)
 ) -> PreflightOut:
-    return PreflightOut(**runner.preflight(_resolve_run_config(config)).as_dict())
+    config = normalize_dataset_params(_resolve_run_config(config))
+    return PreflightOut(**runner.preflight(config).as_dict())
 
 @router.post("", status_code=202, response_model=RunJobOut)
 async def create_run(
@@ -64,7 +65,7 @@ async def create_run(
     compute: ComputeBackend = Depends(get_platform_compute),
 ) -> RunJobOut:
     """Persist and enqueue a run. Heavy model work never runs in the request."""
-    config = _resolve_run_config(config)
+    config = normalize_dataset_params(_resolve_run_config(config))
     preflight = runner.preflight(config)
     if preflight.fatal_errors:
         raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
