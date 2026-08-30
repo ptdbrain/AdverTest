@@ -38,6 +38,9 @@ from src.api.routers import (
     sessions,
     system,
 )
+from src.api.routers import (
+    settings as settings_router,
+)
 from src.api.routes import router
 from src.attacks import load_attacks
 from src.config import get_settings
@@ -123,6 +126,7 @@ app.include_router(advisor.router, prefix="/api/v1")
 app.include_router(system.router, prefix="/api/v1")
 app.include_router(live_inference.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
+app.include_router(settings_router.router, prefix="/api/v1")
 app.include_router(risk_rubric.router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")
 app.mount("/data", StaticFiles(directory=str(data_root)), name="data")

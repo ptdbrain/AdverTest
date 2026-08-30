@@ -37,7 +37,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import Card from "@/components/common/Card";
 import Badge from "@/components/common/Badge";
 import Button from "@/components/common/Button";
-import { ATTACK_CATEGORIES, ATTACK_PRESETS } from "@/data/mockData";
+import { ATTACK_CATEGORIES, ATTACK_PRESETS } from "@/lib/constants";
 import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {

@@ -505,9 +505,9 @@ class LocalRunWorker:
 
 
 def _sqlite_path(url: str) -> Path:
-    if not url.startswith("sqlite:///"):
-        raise ValueError("local job backend requires a sqlite:/// database_url")
-    return Path(url.removeprefix("sqlite:///"))
+    if url.startswith("sqlite:///"):
+        return Path(url.removeprefix("sqlite:///"))
+    return Path("data/runs.db")
 
 
 def _row_payload(row: sqlite3.Row) -> dict[str, Any]:

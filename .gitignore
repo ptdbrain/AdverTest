@@ -58,6 +58,7 @@ htmlcov/
 coverage.xml
 .pytest-tmp-final/
 .pytest-tmp-*/
+.audit-pytest-*/
 .pytest-*/
 .pytest-*.log
 .pytest-*.err

@@ -1,5 +1,7 @@
-import DashboardPage from "./dashboard/page";
+"use client";
+
+import DashboardView from "@/components/DashboardView";
 
 export default function HomePage() {
-  return <DashboardPage />;
+  return <DashboardView />;
 }

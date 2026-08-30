@@ -145,6 +145,22 @@ export function getRunSamples(runId, params = {}) {
   return apiFetch(`/api/v1/runs/${runId}/samples${qs ? `?${qs}` : ""}`);
 }
 
+export function getRunAnalyticsSummary(runId) {
+  return apiFetch(`/api/v1/analytics/runs/${encodeURIComponent(runId)}/summary`);
+}
+
+export function getRunAnalyticsAttacks(runId) {
+  return apiFetch(`/api/v1/analytics/runs/${encodeURIComponent(runId)}/attacks`);
+}
+
+export function getRunAnalyticsClasses(runId) {
+  return apiFetch(`/api/v1/analytics/runs/${encodeURIComponent(runId)}/classes`);
+}
+
+export function getRunAnalyticsDistance(runId) {
+  return apiFetch(`/api/v1/analytics/runs/${encodeURIComponent(runId)}/distance`);
+}
+
 export function cancelRun(runId) {
   return apiFetch(`/api/v1/runs/${runId}/cancel`, { method: "POST" });
 }

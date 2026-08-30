@@ -157,6 +157,14 @@ class Settings(BaseSettings):
         if self.queue_backend == "redis" and (not self.redis_url or not self.redis_url.strip()):
             failed_keys.append("REDIS_URL (required when QUEUE_BACKEND=redis)")
 
+        # 6. Google OAuth client ID validation
+        if (
+            not self.google_client_id
+            or not self.google_client_id.strip()
+            or self.google_client_id == "your-google-client-id.apps.googleusercontent.com"
+        ):
+            failed_keys.append("GOOGLE_CLIENT_ID (must be configured in production)")
+
         if failed_keys:
             # Strictly do not log raw secrets or credentials in error messages
             raise ValueError(

@@ -39,6 +39,46 @@ def require_platform_actor(
     raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED: Valid Bearer token required.")
 
 
+def require_project_member(
+    project_id: str,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> str:
+    """Validate that actor has valid Bearer token and is an active member or owner of project_id."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED: Valid Bearer token required.")
+
+    token = authorization.removeprefix("Bearer ").strip()
+    claims = decode_access_token(token)
+    if not claims or "sub" not in claims:
+        raise HTTPException(status_code=401, detail="INVALID_TOKEN: Bearer token is invalid or expired.")
+
+    actor_id = claims["sub"]
+    user_role = str(claims.get("role", "")).upper()
+    if user_role == "ADMIN":
+        return actor_id
+
+    from src.persistence.models import ProjectMembershipRecord, ProjectRecord
+
+    db = get_platform_database()
+    with db.session() as session:
+        membership = session.query(ProjectMembershipRecord).filter(
+            ProjectMembershipRecord.project_id == project_id,
+            ProjectMembershipRecord.user_id == actor_id,
+            ProjectMembershipRecord.status == "ACTIVE",
+        ).first()
+        if membership:
+            return actor_id
+
+        project = session.query(ProjectRecord).filter(
+            ProjectRecord.id == project_id,
+            ProjectRecord.owner_user_id == actor_id,
+        ).first()
+        if project:
+            return actor_id
+
+    raise HTTPException(status_code=403, detail="FORBIDDEN: User is not an active member or owner of this project.")
+
+
 @functools.lru_cache
 def get_platform_database() -> PlatformDatabase:
     settings = get_settings()

@@ -309,6 +309,7 @@ def test_production_startup_validation_succeeds_on_hardened_secrets() -> None:
         jwt_secret="k9Y#mP2$vL8!zQ4@xR7^wN1&bT5*hF0~sA3_pD6",
         admin_default_password="K#8vL9!mQ2$zP4@xR7^wN1&bT5*hF0~",
         platform_database_url="postgresql://user:strongpass@prod-db:5432/advertest",
+        google_client_id="123456789-prod.apps.googleusercontent.com",
     )
     # Should not raise
     secure_settings.validate_production_environment()

@@ -157,7 +157,7 @@ export default function ReviewPage() {
     }
   }, [activeStatusTab]);
 
-  // Load or trigger smart clustering
+  // Load existing clusters
   const loadClustersData = useCallback(async () => {
     try {
       const existingClusters = await getFailureClusters();
@@ -165,15 +165,12 @@ export default function ReviewPage() {
         setClusters(existingClusters);
         setSelectedCluster(existingClusters[0]);
       } else {
-        // Auto group if no clusters exist yet
-        const autoClusters = await autoGroupFailureClusters();
-        if (Array.isArray(autoClusters) && autoClusters.length > 0) {
-          setClusters(autoClusters);
-          setSelectedCluster(autoClusters[0]);
-        }
+        setClusters([]);
+        setSelectedCluster(null);
       }
     } catch (err) {
       console.warn("Could not load failure clusters:", err);
+      setClusters([]);
     }
   }, []);
 

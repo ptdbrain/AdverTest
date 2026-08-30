@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { Bell, HelpCircle, User, Sparkles, LogIn, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import UserMenu from "@/components/UserMenu";
-import AuthModal from "@/components/AuthModal";
 import { useAuth } from "@/context/AuthContext";
 import { useSidebar } from "@/context/SidebarContext";
 
@@ -37,13 +36,12 @@ export default function TopNavigation() {
   };
 
   return (
-    <>
-      <header
-        className={cn(
-          "h-[58px] bg-white border-b border-slate-200 fixed top-0 right-0 z-20 flex items-center justify-between px-3 md:px-5 transition-all duration-300",
-          isCollapsed ? "left-0 md:left-[68px]" : "left-0 md:left-[220px]"
-        )}
-      >
+    <header
+      className={cn(
+        "h-[58px] bg-white border-b border-slate-200 fixed top-0 right-0 z-20 flex items-center justify-between px-3 md:px-5 transition-all duration-300",
+        isCollapsed ? "left-0 md:left-[68px]" : "left-0 md:left-[220px]"
+      )}
+    >
         <div className="flex items-center h-full min-w-0">
           {/* Mobile hamburger menu toggle */}
           <button
@@ -105,15 +103,11 @@ export default function TopNavigation() {
             <HelpCircle className="w-4 h-4" />
           </Link>
 
-          {/* User Profile / Auth Control */}
-          <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-            <UserMenu />
-          </div>
+        {/* User Profile / Auth Control */}
+        <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+          <UserMenu />
         </div>
-      </header>
-
-      {/* Global Auth Modal */}
-      <AuthModal />
-    </>
+      </div>
+    </header>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   ResponsiveContainer,
   RadarChart,
@@ -11,13 +11,29 @@ import {
   Legend,
   Tooltip,
 } from "recharts";
-import { RADAR_BENCHMARK } from "@/data/mockData";
+
+const DEFAULT_RADAR_DATA = [
+  { subject: "Weather", before: 85, attacked: 45, defended: 80 },
+  { subject: "Noise", before: 90, attacked: 50, defended: 84 },
+  { subject: "Lighting", before: 82, attacked: 40, defended: 78 },
+  { subject: "Occlusion", before: 78, attacked: 35, defended: 72 },
+  { subject: "Sensor Fault", before: 88, attacked: 55, defended: 82 },
+];
 
 export default function RobustnessRadar({
-  data = RADAR_BENCHMARK,
+  data = DEFAULT_RADAR_DATA,
   height = 280,
   showDefended = true,
 }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return <div style={{ width: "100%", height }} className="min-h-[220px]" />;
+  }
+
   return (
     <div style={{ width: "100%", height }} className="relative flex flex-col items-center">
       <ResponsiveContainer width="100%" height="100%">

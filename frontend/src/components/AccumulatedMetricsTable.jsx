@@ -62,7 +62,7 @@ function retentionTokens(retainedPct) {
  * }}
  */
 function buildMatrix(report) {
-  const apClean = report?.ap_clean ?? 0;
+  const apClean = typeof report?.ap_clean === "number" ? report.ap_clean : null;
   const cleanMetrics = report?.metrics?.clean ?? {};
   const is3D = cleanMetrics.kitti_3d_ap != null;
   const cleanAp50 = cleanMetrics.kitti_3d_ap ?? cleanMetrics.ap50 ?? apClean;
@@ -75,9 +75,9 @@ function buildMatrix(report) {
   rawCells.forEach((cell) => {
     const key = getCanonicalAttackKey(cell, cell.severity, report);
     const label = getDescriptiveAttackName(cell, cell.severity, report);
-    const ap50 = cell.metrics?.kitti_3d_ap ?? cell.metrics?.ap50 ?? cell.ap ?? 0;
+    const ap50 = cell.metrics?.kitti_3d_ap ?? cell.metrics?.ap50 ?? cell.ap ?? null;
     const map = cell.metrics?.map50_95 ?? null;
-    const retained = apClean > 0 ? Math.max(0, Math.min(100, (ap50 / apClean) * 100)) : null;
+    const retained = apClean > 0 && ap50 != null ? Math.max(0, Math.min(100, (ap50 / apClean) * 100)) : null;
     columnMap.set(key, {
       key,
       label,
@@ -167,7 +167,7 @@ export default function AccumulatedMetricsTable({ report }) {
   const baselineValues = {
     ap50: cleanAp50,
     map: cleanMap,
-    robustness: 100,
+    robustness: apClean > 0 ? 100 : null,
   };
 
   return (
@@ -187,7 +187,6 @@ export default function AccumulatedMetricsTable({ report }) {
           <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>
             {t("accum.title")}
           </div>
-          {/* eslint-disable-next-line react/no-danger */}
           <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text-primary)" }} dangerouslySetInnerHTML={{ __html: t("accum.heading", { count: columns.length, dataset: report.dataset ?? "—" }) }} />
         </div>
         <span

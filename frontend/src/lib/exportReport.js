@@ -10,6 +10,7 @@
  */
 
 import { getEvidenceState } from "@/components/common/EvidenceBadge";
+import { buildRunDecisionView, primaryMetricForCell } from "@/lib/reportMetrics";
 
 /**
  * Export RunReport as raw JSON with complete provenance.
@@ -26,6 +27,7 @@ export function exportReportAsJson(report, filename = null) {
  */
 export function exportReportAsCsv(report, filename = null) {
   if (!report) return;
+  const decision = buildRunDecisionView(report);
 
   const rows = [];
   // CSV Header
@@ -36,19 +38,24 @@ export function exportReportAsCsv(report, filename = null) {
     "model_version",
     "dataset",
     "n_samples",
-    "ap_clean",
+    "task_id",
+    "primary_metric_key",
+    "primary_metric_label",
+    "clean_primary_metric",
     "attack_name",
     "severity",
-    "ap_attacked",
+    "attacked_primary_metric",
     "degradation_ratio",
     "degradation_percent",
     "evidence_state",
     "simulation_only",
     "seed",
+    "benchmark_protocol_id",
+    "dataset_version_id",
   ]);
 
   const evidenceState = getEvidenceState(report.provenance, report.simulation_only);
-  const seed = report.provenance?.seed ?? "—";
+  const seed = report.provenance?.run_config?.seed ?? report.provenance?.seed ?? "—";
   const cells = report.cells || [];
 
   if (cells.length === 0) {
@@ -60,7 +67,10 @@ export function exportReportAsCsv(report, filename = null) {
       report.model_version || "—",
       report.dataset || "—",
       report.n_samples ?? "—",
-      report.ap_clean != null ? report.ap_clean : "No data",
+      decision.taskId,
+      decision.primary.key,
+      decision.primary.label,
+      decision.primary.clean ?? "No data",
       "—",
       "—",
       "—",
@@ -69,12 +79,17 @@ export function exportReportAsCsv(report, filename = null) {
       evidenceState,
       report.simulation_only ?? true,
       seed,
+      decision.protocol.benchmarkProtocolId ?? "—",
+      decision.protocol.datasetVersionId ?? "—",
     ]);
   } else {
     cells.forEach((cell) => {
-      const degRatio = typeof report.degradation === "function"
-        ? report.degradation(cell)
-        : cell.degradation_ratio ?? (report.ap_clean && cell.ap != null ? (report.ap_clean - cell.ap) / report.ap_clean : null);
+      const attackedPrimary = primaryMetricForCell(report, cell, decision.taskId, decision.primary.key);
+      const degRatio = cell.degradation_ratio
+        ?? (typeof cell.degradation_percent === "number" ? cell.degradation_percent / 100 : null)
+        ?? (decision.primary.clean && attackedPrimary != null
+          ? (decision.primary.clean - attackedPrimary) / decision.primary.clean
+          : null);
 
       rows.push([
         "advertest-export-v1",
@@ -83,15 +98,20 @@ export function exportReportAsCsv(report, filename = null) {
         report.model_version || "—",
         report.dataset || "—",
         report.n_samples ?? "—",
-        report.ap_clean != null ? report.ap_clean : "No data",
+        decision.taskId,
+        decision.primary.key,
+        decision.primary.label,
+        decision.primary.clean ?? "No data",
         cell.attack || cell.attack_name || "—",
         cell.severity ?? "—",
-        cell.ap != null ? cell.ap : "No data",
+        attackedPrimary ?? "No data",
         degRatio != null ? degRatio.toFixed(6) : "No data",
         degRatio != null ? (degRatio * 100).toFixed(4) : "No data",
         evidenceState,
         report.simulation_only ?? true,
         seed,
+        decision.protocol.benchmarkProtocolId ?? "—",
+        decision.protocol.datasetVersionId ?? "—",
       ]);
     });
   }
@@ -118,6 +138,7 @@ export function exportReportAsCsv(report, filename = null) {
  */
 export function printReportAsPdf(report) {
   if (!report) return;
+  const decision = buildRunDecisionView(report);
 
   const evidenceState = getEvidenceState(report.provenance, report.simulation_only);
   const printWindow = window.open("", "_blank");
@@ -127,14 +148,17 @@ export function printReportAsPdf(report) {
   const cellsHtml = cells.length > 0
     ? cells
         .map((c) => {
-          const deg = typeof report.degradation === "function"
-            ? report.degradation(c)
-            : c.degradation_ratio ?? (report.ap_clean && c.ap != null ? (report.ap_clean - c.ap) / report.ap_clean : null);
+          const attackedPrimary = primaryMetricForCell(report, c, decision.taskId, decision.primary.key);
+          const deg = c.degradation_ratio
+            ?? (typeof c.degradation_percent === "number" ? c.degradation_percent / 100 : null)
+            ?? (decision.primary.clean && attackedPrimary != null
+              ? (decision.primary.clean - attackedPrimary) / decision.primary.clean
+              : null);
           return `
           <tr>
             <td style="padding: 8px; border: 1px solid #ddd;">${c.attack || c.attack_name || "—"}</td>
             <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${c.severity ?? "—"}</td>
-            <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${c.ap != null ? c.ap.toFixed(4) : "No data"}</td>
+            <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${attackedPrimary != null ? attackedPrimary.toFixed(4) : "No data"}</td>
             <td style="padding: 8px; border: 1px solid #ddd; text-align: right; color: ${deg && deg > 0.2 ? '#dc2626' : '#16a34a'};">
               ${deg != null ? (deg * 100).toFixed(2) + "%" : "No data"}
             </td>
@@ -179,10 +203,10 @@ export function printReportAsPdf(report) {
         <div class="meta-grid">
           <div class="meta-item"><strong>Mô hình:</strong> ${report.model || "—"} (v${report.model_version || "1.0"})</div>
           <div class="meta-item"><strong>Tập dữ liệu:</strong> ${report.dataset || "—"} (${report.n_samples ?? "—"} mẫu)</div>
-          <div class="meta-item"><strong>AP Clean Baseline:</strong> ${report.ap_clean != null ? report.ap_clean.toFixed(4) : "No data"}</div>
+          <div class="meta-item"><strong>${decision.primary.label} Clean:</strong> ${decision.primary.clean != null ? decision.primary.clean.toFixed(4) : "No data"}</div>
           <div class="meta-item"><strong>Chế độ mô phỏng:</strong> ${report.simulation_only ? "Mô phỏng (Simulation)" : "Thực nghiệm (Real Dataset)"}</div>
-          <div class="meta-item"><strong>Seed kiểm thử:</strong> ${report.provenance?.seed ?? "—"}</div>
-          <div class="meta-item"><strong>Protocol ID:</strong> ${report.provenance?.benchmark_protocol_id || "—"}</div>
+          <div class="meta-item"><strong>Seed kiểm thử:</strong> ${decision.protocol.seed ?? "—"}</div>
+          <div class="meta-item"><strong>Protocol ID:</strong> ${decision.protocol.benchmarkProtocolId || "—"}</div>
         </div>
 
         <h3>Chi tiết Ma trận Tấn công & Độ suy giảm (Degradation)</h3>
@@ -191,7 +215,7 @@ export function printReportAsPdf(report) {
             <tr>
               <th>Phương pháp tấn công</th>
               <th style="text-align: center;">Mức độ (Severity)</th>
-              <th style="text-align: right;">AP Sau tấn công</th>
+              <th style="text-align: right;">${decision.primary.label} Sau tấn công</th>
               <th style="text-align: right;">Độ suy giảm (% Degradation)</th>
             </tr>
           </thead>

@@ -97,7 +97,7 @@ function rowLabelFromCell(cell, report) {
  * }}
  */
 function buildPivotTable(report) {
-  const apClean = report?.ap_clean ?? 0;
+  const apClean = typeof report?.ap_clean === "number" ? report.ap_clean : null;
   const rawCells = report?.cells ?? [];
 
   if (rawCells.length === 0) {
@@ -188,8 +188,8 @@ function AttackCell({ cell, apClean, is3D }) {
     );
   }
 
-  const ap = cell.ap ?? 0;
-  const degradationPct = apClean > 0 ? Math.max(0, ((apClean - ap) / apClean) * 100) : 0;
+  const ap = typeof cell.ap === "number" ? cell.ap : null;
+  const degradationPct = apClean > 0 && ap != null ? Math.max(0, ((apClean - ap) / apClean) * 100) : null;
   const tokens = degradationTokens(degradationPct);
 
   return (
@@ -204,12 +204,12 @@ function AttackCell({ cell, apClean, is3D }) {
         padding: "8px 12px",
         whiteSpace: "nowrap",
       }}
-      title={`${is3D ? "BEV AP" : "AP"}: ${ap.toFixed(4)} | Degradation: ${degradationPct.toFixed(1)}%`}
+      title={ap == null ? "Không có metric đo được" : `${is3D ? "3D AP" : "AP"}: ${ap.toFixed(4)}${degradationPct == null ? "" : ` | Degradation: ${degradationPct.toFixed(1)}%`}`}
     >
-      <span style={{ display: "block" }}>{ap.toFixed(3)}</span>
-      <span style={{ display: "block", fontSize: "0.65rem", opacity: 0.8, marginTop: "1px" }}>
+      <span style={{ display: "block" }}>{ap == null ? "—" : ap.toFixed(3)}</span>
+      {degradationPct != null && <span style={{ display: "block", fontSize: "0.65rem", opacity: 0.8, marginTop: "1px" }}>
         ↓{degradationPct.toFixed(1)}%
-      </span>
+      </span>}
     </td>
   );
 }

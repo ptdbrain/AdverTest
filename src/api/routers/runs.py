@@ -207,6 +207,33 @@ async def download_run_artifacts_zip(
     )
 
 
+@router.get("/{run_id}/download-pdf")
+@router.get("/{run_id}/pdf")
+async def download_run_report_pdf(
+    run_id: str,
+    store: SqliteRunStore = Depends(get_store),
+):
+    """Generate and stream a professional PDF evaluation report for the run."""
+    from fastapi.responses import Response
+
+    from src.evaluation.pdf_export import generate_run_report_pdf
+
+    record = store.get(run_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    report = record.get("report")
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not ready")
+
+    pdf_bytes = generate_run_report_pdf(report, run_id=run_id)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=advertest_report_{run_id}.pdf"},
+    )
+
+
 @router.post("/{run_id}/cancel", response_model=RunJobOut)
 async def cancel_run(
     run_id: str,
