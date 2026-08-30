@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import DefensePage from "@/app/defense/page.jsx";
 import {
+  createModelComparison,
   createDefenceRun,
   getCheckpoint,
   getRun,
@@ -13,6 +14,7 @@ import {
 } from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({
+  createModelComparison: vi.fn(),
   createDefenceRun: vi.fn(),
   getCheckpoint: vi.fn(),
   getRun: vi.fn(),
@@ -144,6 +146,13 @@ beforeEach(() => {
     validation_reason: null,
   });
   createDefenceRun.mockResolvedValue({ run_id: "defence-job-1", status: "QUEUED", progress: 0 });
+  createModelComparison.mockResolvedValue({
+    comparison_id: "comparison-1",
+    eligibility: { status: "NOT_ELIGIBLE", reasons: ["GROUND_TRUTH_HASH_MISSING"] },
+    metric_deltas: [],
+    recovery: { reason: "NOT_ELIGIBLE" },
+    decision: { next_action: "Rerun the locked benchmark." },
+  });
 });
 
 describe("DefensePage session and run targeting", () => {
@@ -151,6 +160,7 @@ describe("DefensePage session and run targeting", () => {
     const user = userEvent.setup();
     render(<DefensePage />);
 
+    expect(screen.getByText("— / No verified data")).toBeInTheDocument();
     const sessionSelect = await screen.findByRole("combobox", { name: /phiên thử nghiệm/i });
     const runSelect = screen.getByRole("combobox", { name: /attack run/i });
     expect(runSelect).toBeDisabled();
@@ -225,5 +235,26 @@ describe("DefensePage session and run targeting", () => {
     });
     expect(candidateSelect).toHaveTextContent("YOLO11s Defended");
     expect(candidateSelect).not.toHaveTextContent("SAM2 Defended");
+  });
+
+  it("renders the canonical backend decision instead of a client-calculated recovery score", async () => {
+    createDefenceRun.mockResolvedValue({ run_id: "defence-job-1", status: "COMPLETED", progress: 1 });
+    getRunDefenceCandidates.mockResolvedValue([
+      { id: "yolo-defended", model_name: "YOLO11s Defended", model_family_id: "yolo11", runnable: true },
+    ]);
+    const user = userEvent.setup();
+    render(<DefensePage />);
+
+    await user.selectOptions(await screen.findByRole("combobox", { name: /phiên thử nghiệm/i }), "session-a");
+    await user.selectOptions(screen.getByRole("combobox", { name: /attack run/i }), "display-run-a");
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: /checkpoint phòng thủ đã xác thực/i }),
+      "yolo-defended"
+    );
+    await user.click(screen.getByRole("button", { name: /chạy đánh giá đối chiếu/i }));
+
+    expect(await screen.findByText(/không đủ điều kiện kết luận benchmark/i)).toBeInTheDocument();
+    expect(screen.getByText("GROUND_TRUTH_HASH_MISSING")).toBeInTheDocument();
+    expect(createModelComparison).toHaveBeenCalledWith("backend-run-a", "defence-job-1");
   });
 });

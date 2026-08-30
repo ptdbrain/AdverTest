@@ -2,6 +2,7 @@
 
 import React, { useRef, useState } from "react";
 import { getCheckpoint, uploadCheckpoint } from "@/lib/api";
+import { normalizeDefenseReport } from "@/lib/defenseReport";
 import DefenceVisualComparison from "@/components/DefenceVisualComparison";
 import { useLanguage } from "@/context/LanguageContext";
 
@@ -29,6 +30,7 @@ export default function DefencePanel({
   const [parentId, setParentId] = useState("");
   const [uploadState, setUploadState] = useState("");
   const fileInputRef = useRef(null);
+  const canonicalReport = normalizeDefenseReport(comparison);
 
   const uploadCandidate = async (event) => {
     const file = event.target.files?.[0];
@@ -244,9 +246,9 @@ export default function DefencePanel({
                 </span>
               </div>
 
-              {!comparison.paired ? (
+              {!canonicalReport.isEligible ? (
                 <div style={{ color: "var(--danger)", fontSize: "0.78rem", padding: "8px 12px", background: "rgba(239, 68, 68, 0.1)", borderRadius: "6px" }}>
-                  {t("defence.notPaired", { reason: comparison.incompatibilities?.join(", ") })}
+                  Không đủ điều kiện kết luận benchmark: {canonicalReport.eligibility.reasons?.join(", ") || "REPORT_MISSING"}. {canonicalReport.nextAction}
                 </div>
               ) : (
                 <>
@@ -255,42 +257,40 @@ export default function DefencePanel({
                     <div style={{ padding: "12px", background: "var(--bg-elevated)", borderRadius: "6px", border: "1px solid var(--border-subtle)" }}>
                       <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: 600 }}>{t("defence.baseCleanAP")}</span>
                       <p style={{ fontSize: "1.1rem", fontWeight: 800, fontFamily: "var(--font-mono)", margin: "4px 0 0", color: "var(--text-primary)" }}>
-                        {comparison.recovery_report?.baseline_clean?.toFixed?.(3) ?? "—"}
+                        {canonicalReport.displayMetric(canonicalReport.metricDeltas[0]?.baseline_clean)}
                       </p>
                     </div>
 
                     <div style={{ padding: "12px", background: "var(--bg-elevated)", borderRadius: "6px", border: "1px solid var(--border-subtle)" }}>
                       <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: 600 }}>{t("defence.finetunedCleanAP")}</span>
                       <p style={{ fontSize: "1.1rem", fontWeight: 800, fontFamily: "var(--font-mono)", margin: "4px 0 0", color: "var(--accent)" }}>
-                        {comparison.recovery_report?.candidate_clean?.toFixed?.(3) ?? "—"}
+                        {canonicalReport.displayMetric(canonicalReport.metricDeltas[0]?.candidate_clean)}
                       </p>
                     </div>
 
                     <div style={{ padding: "12px", background: "rgba(16, 185, 129, 0.1)", borderRadius: "6px", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
                       <span style={{ fontSize: "0.68rem", color: "#10B981", fontWeight: 700 }}>{t("defence.recovery")}</span>
                       <p style={{ fontSize: "1.1rem", fontWeight: 800, fontFamily: "var(--font-mono)", margin: "4px 0 0", color: "#10B981" }}>
-                        {comparison.recovery_report?.recovery_rate?.percent_value == null
+                        {canonicalReport.recovery?.percent_value == null
                           ? "—"
-                          : `${Number(comparison.recovery_report.recovery_rate.percent_value).toFixed(1)}%`}
+                          : `${Number(canonicalReport.recovery.percent_value).toFixed(1)}%`}
                       </p>
                     </div>
                   </div>
 
                   {/* Detailed Metric Deltas */}
-                  {comparison.metric_deltas && Object.keys(comparison.metric_deltas).length > 0 && (
+                  {canonicalReport.metricDeltas.length > 0 && (
                     <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "12px" }}>
                       <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-secondary)", marginBottom: "8px" }}>
                         {t("defence.metricDeltas")}
                       </div>
                       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                        {Object.entries(comparison.metric_deltas)
-                          .filter(([name]) => name !== "clean_detection_score")
-                          .map(([name, metric]) => {
-                            const val = Number(metric?.value ?? 0);
+                        {canonicalReport.metricDeltas.map((metric) => {
+                            const val = Number(metric?.attacked_delta);
                             const isPositive = val >= 0;
                             return (
                               <span
-                                key={name}
+                                key={metric.key}
                                 style={{
                                   padding: "4px 10px",
                                   borderRadius: "4px",
@@ -302,7 +302,7 @@ export default function DefencePanel({
                                   fontFamily: "var(--font-mono)",
                                 }}
                               >
-                                {name.replaceAll("_", " ")}: {isPositive ? "+" : ""}{val.toFixed(3)}
+                                {metric.label || metric.key}: {Number.isFinite(val) ? `${isPositive ? "+" : ""}${val.toFixed(3)}` : "—"}
                               </span>
                             );
                           })}

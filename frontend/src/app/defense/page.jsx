@@ -20,6 +20,7 @@ import Card from "@/components/common/Card";
 import DefenseTargetSelector from "@/components/DefenseTargetSelector";
 import PageHeader from "@/components/layout/PageHeader";
 import {
+  createModelComparison,
   createDefenceRun,
   getCheckpoint,
   getRun,
@@ -27,6 +28,7 @@ import {
   listSessions,
   uploadCheckpoint,
 } from "@/lib/api";
+import { normalizeDefenseReport } from "@/lib/defenseReport";
 import { cn } from "@/lib/utils";
 
 const strategies = [
@@ -54,7 +56,7 @@ export default function DefensePage() {
   const [epochs, setEpochs] = useState(10);
   const [batchSize, setBatchSize] = useState(16);
   const [learningRate, setLearningRate] = useState(0.001);
-  const [device, setDevice] = useState("cuda:0");
+  const [device, setDevice] = useState("auto");
   const [isCopied, setIsCopied] = useState(false);
 
   const [candidateId, setCandidateId] = useState("");
@@ -64,6 +66,9 @@ export default function DefensePage() {
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [evaluationJob, setEvaluationJob] = useState(null);
   const [evaluationError, setEvaluationError] = useState("");
+  const [comparison, setComparison] = useState(null);
+  const [comparisonError, setComparisonError] = useState("");
+  const [comparisonLoading, setComparisonLoading] = useState(false);
 
   const selectedSession = useMemo(
     () => sessions.find((item) => item.id === selectedSessionId) ?? null,
@@ -81,6 +86,7 @@ export default function DefensePage() {
     if (!familyId) return [];
     return candidates.filter((candidate) => candidate.model_family_id === familyId);
   }, [baselineConfig, candidates]);
+  const canonicalReport = useMemo(() => normalizeDefenseReport(comparison), [comparison]);
 
   const backendBaselineId = selectedRun?.backend_run_id?.trim() ?? "";
   const lockedModelName = selectedSession?.model_name ?? "";
@@ -172,6 +178,8 @@ export default function DefensePage() {
     setUploadMessage("");
     setEvaluationJob(null);
     setEvaluationError("");
+    setComparison(null);
+    setComparisonError("");
   };
 
   const handleSessionChange = (sessionId) => {
@@ -268,12 +276,41 @@ export default function DefensePage() {
     setIsEvaluating(true);
     setEvaluationJob(null);
     setEvaluationError("");
+    setComparison(null);
+    setComparisonError("");
     try {
-      setEvaluationJob(await createDefenceRun(backendBaselineId, candidateId));
+      const job = await createDefenceRun(backendBaselineId, candidateId);
+      setEvaluationJob(job);
+      if (job.status === "COMPLETED") {
+        setComparisonLoading(true);
+        try {
+          setComparison(await createModelComparison(backendBaselineId, job.run_id));
+        } finally {
+          setComparisonLoading(false);
+        }
+      }
     } catch (error) {
       setEvaluationError(messageOf(error, "Không thể bắt đầu đánh giá phòng thủ."));
     } finally {
       setIsEvaluating(false);
+    }
+  };
+
+  const refreshCanonicalComparison = async () => {
+    if (!evaluationJob?.run_id) return;
+    setComparisonError("");
+    setComparisonLoading(true);
+    try {
+      const job = await getRun(evaluationJob.run_id);
+      if (job.status !== "COMPLETED") {
+        setComparisonError("Candidate benchmark chưa hoàn tất; chưa có kết luận để hiển thị.");
+        return;
+      }
+      setComparison(await createModelComparison(backendBaselineId, job.run_id));
+    } catch (error) {
+      setComparisonError(messageOf(error, "Không thể tải báo cáo evidence phòng thủ."));
+    } finally {
+      setComparisonLoading(false);
     }
   };
 
@@ -372,6 +409,7 @@ export default function DefensePage() {
                 <label className="font-medium text-slate-600">
                   Thiết bị
                   <select value={device} onChange={(event) => setDevice(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 font-mono text-xs text-slate-800">
+                    <option value="auto">auto (backend quyết định)</option>
                     <option value="cuda:0">cuda:0 (NVIDIA GPU)</option>
                     <option value="cpu">cpu</option>
                   </select>
@@ -472,9 +510,45 @@ export default function DefensePage() {
                     <div><dt className="text-[11px] text-emerald-700">Job ID</dt><dd className="mt-0.5 break-all font-mono font-semibold">{evaluationJob.run_id}</dd></div>
                     <div><dt className="text-[11px] text-emerald-700">Trạng thái</dt><dd className="mt-0.5 font-mono font-semibold">{evaluationJob.status}</dd></div>
                   </dl>
+                  <Button variant="secondary" size="sm" className="mt-3" onClick={refreshCanonicalComparison} disabled={comparisonLoading} icon={comparisonLoading ? RefreshCw : ShieldCheck}>
+                    {comparisonLoading ? "Đang tải evidence..." : "Làm mới kết luận evidence"}
+                  </Button>
                 </div>
               ) : (
-                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-center text-slate-600">Chưa có dữ liệu đánh giá phòng thủ.</div>
+                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-center text-slate-600">
+                  <p className="font-semibold text-slate-800">— / No verified data</p>
+                  <p className="mt-1 text-xs leading-5">Chạy benchmark paired có ground truth và provenance đầy đủ để xem kết luận phòng thủ.</p>
+                </div>
+              )}
+              {comparisonError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800">{comparisonError}</p>}
+              {comparison && (
+                <section aria-labelledby="defense-evidence-title" className="rounded-xl border border-slate-200 bg-white p-4" aria-live="polite">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Báo cáo before / after</p>
+                      <h3 id="defense-evidence-title" className="mt-1 text-sm font-bold text-slate-900">
+                        {canonicalReport.isEligible ? "Evidence paired, sẵn sàng review" : "Không đủ điều kiện kết luận benchmark"}
+                      </h3>
+                    </div>
+                    <Badge variant={canonicalReport.isEligible ? "success" : "warning"}>{canonicalReport.eligibility.status}</Badge>
+                  </div>
+                  {!canonicalReport.isEligible ? (
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+                      <p className="font-semibold">Evidence còn thiếu hoặc không paired</p>
+                      <ul className="mt-2 flex flex-wrap gap-2" aria-label="Lý do báo cáo không đủ điều kiện">
+                        {canonicalReport.eligibility.reasons.map((reason) => <li key={reason} className="rounded bg-white px-2 py-1 font-mono text-[12px]">{reason}</li>)}
+                      </ul>
+                      <p className="mt-2 leading-5">{canonicalReport.nextAction}</p>
+                    </div>
+                  ) : (
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="min-w-full text-left text-xs">
+                        <thead className="border-b border-slate-200 text-slate-500"><tr><th className="px-2 py-2">Metric</th><th className="px-2 py-2">Clean Δ</th><th className="px-2 py-2">Attacked Δ</th></tr></thead>
+                        <tbody>{canonicalReport.metricDeltas.map((metric) => <tr key={metric.key} className="border-b border-slate-100"><td className="px-2 py-2 font-semibold text-slate-800">{metric.label || metric.key}</td><td className="px-2 py-2 font-mono">{canonicalReport.displayMetric(metric.clean_delta)}</td><td className="px-2 py-2 font-mono">{canonicalReport.displayMetric(metric.attacked_delta)}</td></tr>)}</tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
               )}
             </div>
           </Card>
