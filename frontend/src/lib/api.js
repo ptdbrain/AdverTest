@@ -39,6 +39,7 @@ export async function apiFetch(path, options = {}) {
           : `API error ${res.status}`;
     throw new Error(detail);
   }
+  if (res.status === 204) return undefined;
   return res.json();
 }
 
@@ -70,6 +71,29 @@ export function getCurrentUser() {
 
 export function logoutUser() {
   return apiFetch("/api/v1/auth/logout", { method: "POST" });
+}
+
+/** Upload a project artifact using the server's resumable-session contract. */
+export async function uploadProjectArtifact(projectId, file, kind) {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const basePath = `/api/v1/projects/${encodeURIComponent(projectId)}`;
+  const session = await apiFetch(`${basePath}/artifact-upload-sessions`, { method: "POST", body: JSON.stringify({ kind, original_filename: file.name, mime_type: file.type || "application/octet-stream", expected_size_bytes: file.size }) });
+  await apiFetch(`${basePath}/artifact-upload-sessions/${encodeURIComponent(session.upload_session_id)}/content`, { method: "PUT", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+  return apiFetch(`${basePath}/artifact-upload-sessions/${encodeURIComponent(session.upload_session_id)}/complete`, { method: "POST", body: JSON.stringify({ sha256, size_bytes: file.size }) });
+}
+
+export function registerProjectCheckpoint(projectId, artifactId, taskId, modelFamilyId) {
+  return apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/checkpoints`, { method: "POST", body: JSON.stringify({ artifact_id: artifactId, task_id: taskId, model_family_id: modelFamilyId }) });
+}
+
+export function registerProjectDataset(projectId, artifactId, displayName, taskId) {
+  return apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/dataset-versions`, { method: "POST", body: JSON.stringify({ artifact_id: artifactId, display_name: displayName, task_id: taskId }) });
+}
+
+export async function downloadProjectArtifact(projectId, artifactId) {
+  const { url } = await apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/download-url`, { method: "POST" });
+  window.location.assign(artifactUrl(url));
 }
 
 export function getCatalogAttacks(params = {}) {
