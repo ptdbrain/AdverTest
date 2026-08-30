@@ -298,6 +298,52 @@ export default function DashboardView() {
         </Card>
       </div>
 
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <Card
+          title="Mô hình đang khả dụng"
+          subtitle="Catalog adapter đã được nạp trên hệ thống"
+          headerAction={<Link href="/experiments/new" className="text-xs font-semibold text-blue-600 hover:text-blue-800">Cấu hình test →</Link>}
+        >
+          {models.length === 0 ? (
+            <p className="py-5 text-center text-xs text-slate-500">{isLoading ? "Đang tải mô hình..." : "Chưa có mô hình khả dụng"}</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {models.map((model) => (
+                <div key={model.name} className="flex items-center justify-between gap-2 rounded-lg border border-slate-150 bg-slate-50/70 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-slate-800">{model.name}</p>
+                    <p className="text-[10px] text-slate-500">{model.version} · {model.modality}</p>
+                  </div>
+                  <Badge variant={model.runnable ? "success" : "secondary"}>{model.task}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card
+          title="Dataset đang khả dụng"
+          subtitle="Các tập dữ liệu đã qua gate anonymization"
+          headerAction={<Link href="/experiments/new" className="text-xs font-semibold text-blue-600 hover:text-blue-800">Chọn dataset →</Link>}
+        >
+          {datasets.length === 0 ? (
+            <p className="py-5 text-center text-xs text-slate-500">{isLoading ? "Đang tải dataset..." : "Chưa có dataset khả dụng"}</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {datasets.map((dataset) => (
+                <div key={dataset.name} className="flex items-center justify-between gap-2 rounded-lg border border-slate-150 bg-slate-50/70 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-slate-800">{dataset.title || dataset.name}</p>
+                    <p className="text-[10px] text-slate-500">{dataset.task_id} · {dataset.modality}</p>
+                  </div>
+                  <Badge variant={dataset.anonymized ? "success" : "secondary"}>{dataset.anonymized ? "Anonymized" : "Pending"}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
       {/* 4. Modular Navigation Architecture + System Alerts */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Modules Grid (2 Columns) */}
