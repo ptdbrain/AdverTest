@@ -23,8 +23,8 @@ async def _completed_run(client) -> str:
 
 
 @pytest.mark.asyncio
-async def test_paired_comparison_exposes_deltas_recovery_and_real_exports(client) -> None:
-    """Catch routes that return the raw comparison instead of report resources."""
+async def test_simulation_comparison_is_diagnostic_only_and_cannot_export_a_conclusion(client) -> None:
+    """Simulation outputs must never become a benchmark report or conclusion export."""
     baseline_run_id = await _completed_run(client)
     candidate_run_id = await _completed_run(client)
     created = await client.post(
@@ -32,18 +32,18 @@ async def test_paired_comparison_exposes_deltas_recovery_and_real_exports(client
         json={"baseline_run_id": baseline_run_id, "candidate_run_id": candidate_run_id},
     )
     assert created.status_code == 201
-    comparison_id = created.json()["comparison_id"]
+    comparison = created.json()
+    comparison_id = comparison["comparison_id"]
+    assert comparison["eligibility"]["status"] == "NOT_ELIGIBLE"
+    assert "SIMULATION_ONLY" in comparison["eligibility"]["reasons"]
 
     deltas = await client.get(f"/api/v1/model-comparisons/{comparison_id}/metric-deltas")
     recovery = await client.get(f"/api/v1/model-comparisons/{comparison_id}/recovery-report")
     csv_export = await client.get(f"/api/v1/model-comparisons/{comparison_id}/export?format=csv")
-    html_export = await client.get(f"/api/v1/model-comparisons/{comparison_id}/export?format=html")
 
     assert deltas.status_code == 200
-    assert deltas.json()["clean_detection_score"]["unit"] == "ratio"
+    assert deltas.json() == []
     assert recovery.status_code == 200
-    assert recovery.json()["recovery_rate"]["unit"] == "percent"
-    assert csv_export.headers["content-type"].startswith("text/csv")
-    assert "clean_detection_score" in csv_export.text
-    assert html_export.headers["content-type"].startswith("text/html")
-    assert "AdverTest comparison" in html_export.text
+    assert recovery.json()["reason"] == "NOT_ELIGIBLE"
+    assert csv_export.status_code == 409
+    assert csv_export.json()["detail"]["code"] == "NOT_ELIGIBLE_FOR_CONCLUSION_EXPORT"

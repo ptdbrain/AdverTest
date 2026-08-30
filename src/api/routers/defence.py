@@ -19,11 +19,8 @@ from src.api.dependencies import (
 from src.api.defense_scope import require_scoped_record, require_scoped_run
 from src.api.platform_dependencies import require_project_member
 from src.api.helpers import (
-    comparison_metric_deltas,
-    comparison_signature,
     is_failure_case,
     job_out,
-    mean_attack_score,
     registered_model_versions,
     require_run,
     resolve_run_config,
@@ -48,6 +45,7 @@ from src.api.workflow_store import WorkflowJobStore
 from src.config import get_settings
 from src.core.hashing import stable_digest
 from src.evaluation.export import export_comparison
+from src.evaluation.defense_report import build_defense_report
 from src.models import scan_model_artifacts
 from src.pipeline.runner import RunConfig, TestRunner
 from src.training.contracts import DefenseProfile, TrainingRunConfig
@@ -280,41 +278,11 @@ async def create_model_comparison(
     if baseline.get("report") is None or candidate.get("report") is None:
         raise HTTPException(status_code=409, detail="both runs must complete before comparison")
 
-    left, right = baseline["report"], candidate["report"]
-    baseline_sig = comparison_signature(left)
-    candidate_sig = comparison_signature(right)
-    paired = baseline_sig == candidate_sig
-    comparison_id = f"comparison-{stable_digest({'project_id': project_id, **body.model_dump(mode='json')}, length=20)}"
-
-    deltas = comparison_metric_deltas(left, right) if paired else {}
-    base_attack_score = mean_attack_score(left)
-    cand_attack_score = mean_attack_score(right)
-    lost_score = left.get("ap_clean", 0.0) - base_attack_score
-    recovered_score = cand_attack_score - base_attack_score
-    recovery_ratio = None if not paired or lost_score <= 0 else recovered_score / lost_score
-
-    payload = {
-        "comparison_id": comparison_id,
-        "project_id": project_id,
-        **body.model_dump(mode="json"),
-        "paired": paired,
-        "baseline_signature": baseline_sig,
-        "candidate_signature": candidate_sig,
-        "incompatibilities": []
-        if paired
-        else [key for key in baseline_sig if baseline_sig.get(key) != candidate_sig.get(key)],
-        "metric_deltas": deltas,
-        "recovery_report": {
-            "baseline_clean": left.get("ap_clean", 0.0),
-            "candidate_clean": right.get("ap_clean", 0.0),
-            "recovery_rate": {
-                "ratio_value": recovery_ratio,
-                "percent_value": None if recovery_ratio is None else recovery_ratio * 100.0,
-                "unit": "percent",
-            },
-        },
-    }
-    return store.put_record("model_comparison", comparison_id, payload)
+    report = build_defense_report(project_id=project_id, baseline_run=baseline, candidate_run=candidate)
+    payload = report.model_dump(mode="json")
+    payload.update(body.model_dump(mode="json"))
+    payload["paired"] = not bool(report.incompatibilities)
+    return store.put_record("model_comparison", report.comparison_id, payload)
 
 
 @router.post("/comparisons")
@@ -361,6 +329,15 @@ async def export_model_comparison(
         record_id=comparison_id,
         project_id=project_id,
     )
+    eligibility = comparison.get("eligibility") or {}
+    if eligibility.get("status") != "ELIGIBLE":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "NOT_ELIGIBLE_FOR_CONCLUSION_EXPORT",
+                "reasons": eligibility.get("reasons", ["CANONICAL_EVIDENCE_MISSING"]),
+            },
+        )
     try:
         artifact = export_comparison(comparison, format)  # type: ignore[arg-type]
     except ValueError as exc:
@@ -381,11 +358,11 @@ async def get_model_comparison_metric_deltas(
     project_id: str = Query(..., min_length=1),
     actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
-) -> dict[str, Any]:
+) -> list[dict[str, Any]]:
     """Retrieve metric deltas for comparison."""
     del actor_id
     comp = require_scoped_record(store, record_type="model_comparison", record_id=comparison_id, project_id=project_id)
-    return comp.get("metric_deltas", {})
+    return comp.get("metric_deltas", [])
 
 
 @router.get("/model-comparisons/{comparison_id}/recovery-report")
@@ -398,7 +375,7 @@ async def get_model_comparison_recovery_report(
     """Retrieve recovery report for comparison."""
     del actor_id
     comp = require_scoped_record(store, record_type="model_comparison", record_id=comparison_id, project_id=project_id)
-    return comp.get("recovery_report", {})
+    return comp.get("recovery", {"reason": "REPORT_MISSING"})
 
 
 @router.get("/model-comparisons/{comparison_id}/failures")
@@ -411,18 +388,7 @@ async def get_model_comparison_failures(
     """Return failure deltas between baseline and candidate runs."""
     del actor_id
     comp = require_scoped_record(store, record_type="model_comparison", record_id=comparison_id, project_id=project_id)
-    baseline_id = comp.get("baseline_run_id")
-    candidate_id = comp.get("candidate_run_id")
-    base_run = require_scoped_run(store, run_id=baseline_id, project_id=project_id) if baseline_id else None
-    cand_run = require_scoped_run(store, run_id=candidate_id, project_id=project_id) if candidate_id else None
-    base_failures = (base_run.get("report") or {}).get("worst_cases", []) if base_run else []
-    cand_failures = (cand_run.get("report") or {}).get("worst_cases", []) if cand_run else []
-    return {
-        "comparison_id": comparison_id,
-        "baseline_failures": base_failures,
-        "candidate_failures": cand_failures,
-        "recovered_count": max(0, len(base_failures) - len(cand_failures)),
-    }
+    return {"comparison_id": comparison_id, **(comp.get("failures") or {})}
 
 
 # ---- Defence Runs & Candidates ----
