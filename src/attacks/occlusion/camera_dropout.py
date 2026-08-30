@@ -42,7 +42,7 @@ class CameraDropout(BaseAttack):
         views = list(sample.camera_views)
         candidates = [i for i, view in enumerate(views) if view.name in params.camera_names]
         count = min(len(candidates) - 1, int(self.level(severity, params.cameras_dropped_per_severity)))
-        dropped = set(ctx.rng.permutation(candidates)[:max(0, count)].tolist())
+        dropped = set(ctx.rng.permutation(candidates)[: max(0, count)].tolist())
         updated = []
         for index, view in enumerate(views):
             if index not in dropped:
@@ -54,5 +54,7 @@ class CameraDropout(BaseAttack):
                 image = view.previous_image
             else:
                 image = np.full_like(view.image, params.black_value, dtype=np.float32)
-            updated.append(CameraView(view.name, image, view.depth, view.intrinsic, view.sensor_to_ego, view.previous_image))
+            updated.append(
+                CameraView(view.name, image, view.depth, view.intrinsic, view.sensor_to_ego, view.previous_image)
+            )
         return sample.with_camera_views(updated)

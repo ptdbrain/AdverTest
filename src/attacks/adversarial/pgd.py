@@ -58,4 +58,3 @@ class Pgd(BaseAttack):
             if loss > best_loss:
                 best, best_loss = candidate, loss
         return best
-

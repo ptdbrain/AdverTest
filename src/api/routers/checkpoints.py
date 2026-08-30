@@ -26,8 +26,11 @@ async def register_checkpoint(
 ) -> dict:
     try:
         checkpoint, job = checkpoints.register_uploaded(
-            project_id=project_id, actor_id=actor_id, artifact_id=str(body.artifact_id),
-            task_id=body.task_id, model_family_id=body.model_family_id,
+            project_id=project_id,
+            actor_id=actor_id,
+            artifact_id=str(body.artifact_id),
+            task_id=body.task_id,
+            model_family_id=body.model_family_id,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

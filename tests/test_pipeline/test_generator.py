@@ -55,10 +55,7 @@ def test_generate_pgd_dataset_round_trips_and_resumes(tmp_path: Path) -> None:
     assert inspected["manifest_records"] == 4
     assert inspected["source_fingerprint"]
     assert inspected["estimate"]["variants"] == 4
-    manifest = [
-        json.loads(line)
-        for line in (first.root / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
-    ]
+    manifest = [json.loads(line) for line in (first.root / "manifest.jsonl").read_text(encoding="utf-8").splitlines()]
     assert all(record["attack_version"] == "1.0.0" for record in manifest)
     assert all(record["source_sample_hash"] for record in manifest)
     assert all(record["label_hash"] for record in manifest)
@@ -123,19 +120,14 @@ def test_generator_keeps_source_and_labels_unchanged(tmp_path: Path) -> None:
     assert generated.boxes == source.boxes
     assert np.array_equal(generated.mask, source.mask)
     assert not np.array_equal(generated.image, source.image)
-    record = json.loads(
-        (report.root / "manifest.jsonl").read_text(encoding="utf-8").strip()
-    )
+    record = json.loads((report.root / "manifest.jsonl").read_text(encoding="utf-8").strip())
     assert record["patch_artifact_hash"]
     assert (report.root / record["patch_artifact_path"]).is_file()
 
 
 def test_incomplete_or_tampered_generation_is_rejected(tmp_path: Path) -> None:
     report = AttackDatasetGenerator().generate(_pgd_config(tmp_path))
-    manifest = [
-        json.loads(line)
-        for line in (report.root / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
-    ]
+    manifest = [json.loads(line) for line in (report.root / "manifest.jsonl").read_text(encoding="utf-8").splitlines()]
     image_path = report.root / manifest[0]["image_path"]
     np.save(image_path, np.zeros((2, 2, 3), dtype=np.float32), allow_pickle=False)
     inspected = inspect_generated_dataset(report.root)
@@ -162,9 +154,7 @@ def test_severity_zero_exports_identity_variant(tmp_path: Path) -> None:
 
 def test_tampered_label_invalidates_generation(tmp_path: Path) -> None:
     report = AttackDatasetGenerator().generate(_pgd_config(tmp_path))
-    record = json.loads(
-        (report.root / "manifest.jsonl").read_text(encoding="utf-8").splitlines()[0]
-    )
+    record = json.loads((report.root / "manifest.jsonl").read_text(encoding="utf-8").splitlines()[0])
     (report.root / record["label_path"]).write_text(
         '{"boxes": []}\n',
         encoding="utf-8",

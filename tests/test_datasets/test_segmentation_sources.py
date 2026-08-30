@@ -35,7 +35,9 @@ def test_bdd_loader_is_explicitly_semantic_and_nonpaired(tmp_path) -> None:
     semantic = np.zeros((6, 7), dtype=np.uint8)
     semantic[1:4, 2:5] = 13
     _image(root / "labels/val/frame_val_id.png", semantic)
-    sample = get_dataset("bdd100k_semantic", root=str(root), split="val", anonymization_manifest="approved.json").load()[0]
+    sample = get_dataset(
+        "bdd100k_semantic", root=str(root), split="val", anonymization_manifest="approved.json"
+    ).load()[0]
     assert sample.mask is None
     assert sample.meta["comparison_scope"] == "external_semantic_nonpaired"
     assert sample.meta["semantic_mask"].sum() == 9

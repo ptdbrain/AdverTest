@@ -12,7 +12,8 @@ from src.core.types import Sample
 
 
 def test_perturbation_stays_within_epsilon_ball(
-    adapter: ModelAdapter, sample: Sample,
+    adapter: ModelAdapter,
+    sample: Sample,
 ) -> None:
     """Every pixel must lie within [-ε, ε] of the original."""
     # Use small query budget for speed in tests.
@@ -34,7 +35,8 @@ def test_running_without_a_model_fails_clearly(sample: Sample) -> None:
 
 
 def test_detection_score_decreases_or_stays(
-    adapter: ModelAdapter, sample: Sample,
+    adapter: ModelAdapter,
+    sample: Sample,
 ) -> None:
     """After optimisation the detection score should be <= the initial score."""
     attack = get_attack("square_attack", queries_per_severity=(20, 20, 20))
@@ -46,21 +48,24 @@ def test_detection_score_decreases_or_stays(
 
     clean_conf = sum(b.score for b in clean_preds[0].boxes) if clean_preds[0].boxes else 0
     atk_conf = sum(b.score for b in atk_preds[0].boxes) if atk_preds[0].boxes else 0
-    assert atk_conf <= clean_conf + 1e-6, (
-        "attack should not increase total detection confidence"
-    )
+    assert atk_conf <= clean_conf + 1e-6, "attack should not increase total detection confidence"
 
 
 def test_reproducible_with_same_seed(
-    adapter: ModelAdapter, sample: Sample,
+    adapter: ModelAdapter,
+    sample: Sample,
 ) -> None:
     """Same seed + same queries must produce identical pixels."""
     attack = get_attack("square_attack", queries_per_severity=(10, 10, 10))
     img1 = attack.run(
-        sample, 3, AttackContext(rng=np.random.default_rng(99), model=adapter),
+        sample,
+        3,
+        AttackContext(rng=np.random.default_rng(99), model=adapter),
     ).image
     img2 = attack.run(
-        sample, 3, AttackContext(rng=np.random.default_rng(99), model=adapter),
+        sample,
+        3,
+        AttackContext(rng=np.random.default_rng(99), model=adapter),
     ).image
     np.testing.assert_array_equal(img1, img2)
 

@@ -15,11 +15,13 @@ from typing import Any
 
 import numpy as np
 
+from src.adapters import MODELS
 from src.adapters.base import ModelAdapter
 from src.core.hashing import file_digest
 from src.core.types import Box3D, DetectionPrediction, ModelInfo, Sample
 
 
+@MODELS.register
 class PointPillarsAdapter(ModelAdapter):
     """Reserved MMDetection3D PointPillars integration slot.
 
@@ -41,12 +43,15 @@ class PointPillarsAdapter(ModelAdapter):
         device: str = "cuda:0",
         score_threshold: float = 0.25,
         max_detections: int = 500,
+        runnable: bool | None = None,
     ) -> None:
         super().__init__(score_threshold=score_threshold, max_detections=max_detections)
         self.config_path = str(Path(config).expanduser())
         self.weights_path = str(Path(weights).expanduser())
         self.device = device
         self.checkpoint_hash = file_digest(self.weights_path)
+        if runnable is not None:
+            self.runnable = runnable
         init_model, self._inference_detector = _load_mmdet3d_backend()
         self.model = init_model(self.config_path, self.weights_path, device=self.device)
         self.classes = _model_classes(self.model)
@@ -90,7 +95,7 @@ class PointPillarsAdapter(ModelAdapter):
             supports_gradients=False,
             classes=tuple(self._classes),
             checkpoint_hash=self._checkpoint_hash,
-            runnable=False,
+            runnable=self.runnable,
         )
 
     def _boxes_from_result(self, result: Any) -> list[Box3D]:
@@ -135,9 +140,9 @@ def _load_mmdet3d_backend() -> tuple[Any, Any]:
     """Import MMDetection3D only when the optional adapter is instantiated."""
     try:
         from mmdet3d.apis import inference_detector, init_model
-    except ImportError as exc:
+    except (ImportError, OSError) as exc:
         raise RuntimeError(
-            "PointPillars requires MMDetection3D 1.4.0; install the 3D runtime before inference"
+            "PointPillars requires MMDetection3D 1.4.0 with CUDA native extensions; install the 3D runtime before inference (WAITING_FOR_GPU_VALIDATION)"
         ) from exc
     return init_model, inference_detector
 

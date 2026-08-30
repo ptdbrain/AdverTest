@@ -58,11 +58,7 @@ class PatchTrainingConfig(BaseModel):
     def validate_source(self) -> PatchTrainingConfig:
         if (self.dataset_name is None) == (self.input_dir is None):
             raise ValueError("provide exactly one of dataset_name or input_dir")
-        if (
-            self.surrogate.objective == "targeted"
-            and self.target_label is None
-            and self.surrogate.target_label is None
-        ):
+        if self.surrogate.objective == "targeted" and self.target_label is None and self.surrogate.target_label is None:
             raise ValueError("targeted patch training requires target_label")
         if self.sample_ids is not None:
             if not self.sample_ids:
@@ -109,40 +105,21 @@ class PatchTrainer:
             samples = [by_id[sample_id] for sample_id in config.sample_ids]
         if not samples:
             raise ValueError("patch training source returned no samples")
-        placement_label = (
-            "Pedestrian"
-            if config.algorithm == "thys_patch"
-            else config.source_label
-        )
+        placement_label = "Pedestrian" if config.algorithm == "thys_patch" else config.source_label
         objective_target = (
-            "Pedestrian"
-            if config.algorithm == "thys_patch"
-            else config.target_label or config.surrogate.target_label
+            "Pedestrian" if config.algorithm == "thys_patch" else config.target_label or config.surrogate.target_label
         )
         if placement_label is not None:
-            samples = [
-                sample
-                for sample in samples
-                if any(box.label == placement_label for box in sample.boxes)
-            ]
+            samples = [sample for sample in samples if any(box.label == placement_label for box in sample.boxes)]
             if not samples:
-                raise ValueError(
-                    f"patch training source has no boxes for {placement_label!r}"
-                )
-        if (
-            config.surrogate.name in {"yolo11", "faster_rcnn", "sam2_surrogate"}
-            and config.surrogate.checkpoint is None
-        ):
-            raise ValueError(
-                f"surrogate {config.surrogate.name!r} requires an explicit checkpoint path"
-            )
+                raise ValueError(f"patch training source has no boxes for {placement_label!r}")
+        if config.surrogate.name in {"yolo11", "faster_rcnn", "sam2_surrogate"} and config.surrogate.checkpoint is None:
+            raise ValueError(f"surrogate {config.surrogate.name!r} requires an explicit checkpoint path")
         checkpoint_hash: str | None = None
         if config.surrogate.checkpoint is not None:
             checkpoint = Path(config.surrogate.checkpoint).expanduser().resolve()
             if not checkpoint.is_file():
-                raise FileNotFoundError(
-                    f"surrogate checkpoint does not exist: {checkpoint}"
-                )
+                raise FileNotFoundError(f"surrogate checkpoint does not exist: {checkpoint}")
             checkpoint_hash = file_digest(checkpoint)
         model_params = dict(config.surrogate.params)
         if config.surrogate.checkpoint is not None:
@@ -155,9 +132,7 @@ class PatchTrainer:
             model = get_adapter(config.surrogate.name, **model_params)
         for capability in ("input_gradient", "detection_loss"):
             if not model.supports(capability):  # type: ignore[arg-type]
-                raise ValueError(
-                    f"patch training requires surrogate capability {capability!r}"
-                )
+                raise ValueError(f"patch training requires surrogate capability {capability!r}")
 
         rng = np.random.default_rng(config.seed)
         patch = rng.random((config.patch_size, config.patch_size, 3), dtype=np.float32)
@@ -211,9 +186,7 @@ class PatchTrainer:
             tv = total_variation(patch)
             nps = nps_loss(patch)
             regularizer = _regularizer_gradient(patch, config.tv_weight, config.nps_weight)
-            patch = clip01(
-                patch + config.learning_rate * np.sign(patch_gradient - regularizer)
-            )
+            patch = clip01(patch + config.learning_rate * np.sign(patch_gradient - regularizer))
             if iteration == 0 or (iteration + 1) % max(1, config.iterations // 20) == 0:
                 history.append(
                     {
@@ -230,15 +203,8 @@ class PatchTrainer:
                 {
                     "sample_id": sample.sample_id,
                     "image_hash": array_digest(sample.image, length=32),
-                    "mask_hash": (
-                        array_digest(sample.mask, length=32)
-                        if sample.mask is not None
-                        else None
-                    ),
-                    "boxes": [
-                        (*box.as_tuple(), box.label)
-                        for box in sample.boxes
-                    ],
+                    "mask_hash": (array_digest(sample.mask, length=32) if sample.mask is not None else None),
+                    "boxes": [(*box.as_tuple(), box.label) for box in sample.boxes],
                 }
                 for sample in samples
             ],

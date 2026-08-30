@@ -157,6 +157,6 @@ class RunReport:
             "metrics": self.metrics,
             "provenance": self.provenance,
             "seconds": round(self.seconds, 3),
-            "simulation_only": True,
+            "simulation_only": bool(self.simulation_only),
             "benchmark_metrics_available": self.benchmark_metrics_available,
         }

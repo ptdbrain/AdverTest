@@ -30,15 +30,18 @@ from src.datasets.versioning import DatasetIngestor, IngestConfig
 
 router = APIRouter(tags=["Datasets"])
 
+
 def _upload_root() -> Path:
     root = Path(get_settings().data_root).expanduser().resolve() / "uploads"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
+
 def _dataset_root() -> Path:
     root = Path(get_settings().data_root).expanduser().resolve() / "datasets"
     root.mkdir(parents=True, exist_ok=True)
     return root
+
 
 class _DatasetImportError(Exception):
     def __init__(self, code: str, message: str) -> None:
@@ -46,11 +49,9 @@ class _DatasetImportError(Exception):
         self.code = code
         self.message = message
 
+
 def _perform_dataset_import(
-    body: DatasetImportIn,
-    store: SqliteRunStore,
-    workflow_store: WorkflowJobStore,
-    job_id: str | None = None
+    body: DatasetImportIn, store: SqliteRunStore, workflow_store: WorkflowJobStore, job_id: str | None = None
 ) -> dict[str, Any]:
     root = Path(body.root).expanduser().resolve()
     if body.task_id != "detection2d":
@@ -58,8 +59,10 @@ def _perform_dataset_import(
     if not root.is_dir():
         raise _DatasetImportError("DATASET_ROOT_MISSING", "dataset root does not exist")
     source = FolderDataset(
-        root=str(root), input_format=body.input_format,
-        anonymization_manifest=body.anonymization_manifest, max_samples=body.max_samples,
+        root=str(root),
+        input_format=body.input_format,
+        anonymization_manifest=body.anonymization_manifest,
+        max_samples=body.max_samples,
     )
     try:
         source.require_anonymized()
@@ -69,10 +72,16 @@ def _perform_dataset_import(
         if workflow_store.cancel_requested(job_id):
             workflow_store.fail_job(job_id, "CANCELLED_BY_USER", cancelled=True)
             raise _DatasetImportError("CANCELLED_BY_USER", "dataset import cancelled")
-        workflow_store.append_event(job_id, "IMPORTING", {"progress_ratio": 0.45, "detail": "Creating immutable dataset manifest"})
+        workflow_store.append_event(
+            job_id, "IMPORTING", {"progress_ratio": 0.45, "detail": "Creating immutable dataset manifest"}
+        )
     version = DatasetIngestor(_dataset_root() / "versions").ingest(
-        source, IngestConfig(name=body.name, logical_source_id=body.logical_source_id,
-                             metadata={"input_format": body.input_format, "task_id": body.task_id}),
+        source,
+        IngestConfig(
+            name=body.name,
+            logical_source_id=body.logical_source_id,
+            metadata={"input_format": body.input_format, "task_id": body.task_id},
+        ),
     )
     payload = version.model_dump(mode="json")
     payload["generation_source"] = {
@@ -98,14 +107,14 @@ def _perform_dataset_import(
         "benchmark_ready": True,
     }
     if job_id:
-        workflow_store.append_event(job_id, "FINALIZING", {"progress_ratio": 0.9, "detail": "Registering dataset version"})
+        workflow_store.append_event(
+            job_id, "FINALIZING", {"progress_ratio": 0.9, "detail": "Registering dataset version"}
+        )
     return result
 
+
 def _run_dataset_import_job(
-    job_id: str,
-    body: DatasetImportIn,
-    store: SqliteRunStore,
-    workflow_store: WorkflowJobStore
+    job_id: str, body: DatasetImportIn, store: SqliteRunStore, workflow_store: WorkflowJobStore
 ) -> None:
     if workflow_store.cancel_requested(job_id):
         workflow_store.fail_job(job_id, "CANCELLED_BY_USER", cancelled=True)
@@ -120,6 +129,7 @@ def _run_dataset_import_job(
         workflow_store.fail_job(job_id, f"DATASET_IMPORT_FAILED:{type(exc).__name__}")
         return
     workflow_store.complete_job(job_id, dataset)
+
 
 def _workflow_job_out(job_id: str, workflow_store: WorkflowJobStore) -> dict[str, Any]:
     job = workflow_store.get_job(job_id)
@@ -138,11 +148,13 @@ def _workflow_job_out(job_id: str, workflow_store: WorkflowJobStore) -> dict[str
         "result": job["result"],
     }
 
+
 def _require_generated_job(job_id: str, workflow_store: WorkflowJobStore) -> dict[str, Any]:
     item = workflow_store.get_job(job_id)
     if item is None or item["job_type"] != "generated_dataset":
         raise HTTPException(status_code=404, detail=f"unknown generated dataset job {job_id!r}")
     return item
+
 
 def _generated_job_out(item: dict[str, Any] | None) -> GeneratedDatasetJobOut:
     if item is None:
@@ -158,33 +170,33 @@ def _generated_job_out(item: dict[str, Any] | None) -> GeneratedDatasetJobOut:
         artifact_root=result.get("artifact_root"),
     )
 
+
 def _write_annotation_export(batch: dict[str, Any], sample_id: str, document: AnnotationDocument) -> None:
     root = _upload_root() / str(batch["batch_id"])
     labels = root / "labels"
     labels.mkdir(parents=True, exist_ok=True)
     if document.task_id == "detection2d":
         class_map = dict(batch.get("class_map", {}))
-        payload = {"boxes": [
-            {
-                "x1": annotation["bbox_xyxy"][0],
-                "y1": annotation["bbox_xyxy"][1],
-                "x2": annotation["bbox_xyxy"][2],
-                "y2": annotation["bbox_xyxy"][3],
-                "label": class_map[annotation["class_id"]],
-                "score": 1.0,
-            }
-            for annotation in document.annotations
-        ]}
+        payload = {
+            "boxes": [
+                {
+                    "x1": annotation["bbox_xyxy"][0],
+                    "y1": annotation["bbox_xyxy"][1],
+                    "x2": annotation["bbox_xyxy"][2],
+                    "y2": annotation["bbox_xyxy"][3],
+                    "label": class_map[annotation["class_id"]],
+                    "score": 1.0,
+                }
+                for annotation in document.annotations
+            ]
+        }
     else:
         payload = document.model_dump(mode="json")
     (labels / f"{sample_id}.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
 @router.post("/uploads/batches", status_code=201)
-async def create_upload_batch(
-    body: UploadBatchCreateIn,
-    store: SqliteRunStore = Depends(get_store)
-) -> dict[str, Any]:
+async def create_upload_batch(body: UploadBatchCreateIn, store: SqliteRunStore = Depends(get_store)) -> dict[str, Any]:
     batch_id = f"batch-{uuid.uuid4().hex[:12]}"
     payload: dict[str, Any] = {
         "batch_id": batch_id,
@@ -200,22 +212,18 @@ async def create_upload_batch(
     payload["validation"] = summarize_batch(payload).model_dump(mode="json")
     return store.put_record("upload_batch", batch_id, payload)
 
+
 @router.get("/uploads/batches/{batch_id}")
-async def get_upload_batch(
-    batch_id: str,
-    store: SqliteRunStore = Depends(get_store)
-) -> dict[str, Any]:
+async def get_upload_batch(batch_id: str, store: SqliteRunStore = Depends(get_store)) -> dict[str, Any]:
     batch = store.get_record("upload_batch", batch_id)
     if batch is None:
         raise HTTPException(status_code=404, detail="UPLOAD_BATCH_UNKNOWN")
     return batch
 
+
 @router.put("/uploads/batches/{batch_id}/annotations/{sample_id}")
 async def save_annotation(
-    batch_id: str,
-    sample_id: str,
-    body: AnnotationDocument,
-    store: SqliteRunStore = Depends(get_store)
+    batch_id: str, sample_id: str, body: AnnotationDocument, store: SqliteRunStore = Depends(get_store)
 ) -> dict[str, Any]:
     batch = store.get_record("upload_batch", batch_id)
     if batch is None:
@@ -228,7 +236,10 @@ async def save_annotation(
         raise HTTPException(status_code=422, detail={"code": "TASK_ANNOTATION_MISMATCH"})
     issues = validate_annotation(body, sample_id=sample_id, sample=sample, class_map=dict(batch.get("class_map", {})))
     if issues:
-        raise HTTPException(status_code=422, detail={"code": "ANNOTATION_INVALID", "issues": [issue.model_dump(mode="json") for issue in issues]})
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "ANNOTATION_INVALID", "issues": [issue.model_dump(mode="json") for issue in issues]},
+        )
     sample["annotation"] = body.model_dump(mode="json")
     sample["annotation_status"] = "VALID"
     samples[sample_id] = sample
@@ -237,11 +248,9 @@ async def save_annotation(
     batch["validation"] = summarize_batch(batch).model_dump(mode="json")
     return store.update_record("upload_batch", batch_id, batch)
 
+
 @router.post("/uploads/batches/{batch_id}/finalize", status_code=201)
-async def finalize_upload_batch(
-    batch_id: str,
-    store: SqliteRunStore = Depends(get_store)
-) -> dict[str, Any]:
+async def finalize_upload_batch(batch_id: str, store: SqliteRunStore = Depends(get_store)) -> dict[str, Any]:
     batch = store.get_record("upload_batch", batch_id)
     if batch is None:
         raise HTTPException(status_code=404, detail="UPLOAD_BATCH_UNKNOWN")
@@ -249,34 +258,42 @@ async def finalize_upload_batch(
     batch["validation"] = validation.model_dump(mode="json")
     if not validation.benchmark_ready:
         store.update_record("upload_batch", batch_id, batch)
-        raise HTTPException(status_code=422, detail={"code": "DATASET_NOT_BENCHMARK_READY", "validation": batch["validation"]})
+        raise HTTPException(
+            status_code=422, detail={"code": "DATASET_NOT_BENCHMARK_READY", "validation": batch["validation"]}
+        )
     batch["status"] = "FINALIZED"
     stored = store.update_record("upload_batch", batch_id, batch)
     identity = {"batch_id": batch_id, "samples": batch["samples"]}
     version_id = f"dataset-{stable_digest(identity, length=32)}"
-    dataset_record = store.put_record("dataset_version", version_id, {
-        "version_id": version_id,
-        "source_batch_id": batch_id,
-        "name": batch["display_name"],
-        "title": batch["display_name"],
-        "dataset": "folder_dataset",
-        "dataset_params": {"root": str(_upload_root() / batch_id), "input_format": "advertest"},
-        "task_id": batch["task_id"],
-        "dataset_kind": batch["dataset_kind"],
-        "anonymized": batch["anonymized"],
-        "validation": batch["validation"],
-        "attacked_manifest": batch.get("attacked_manifest"),
-        "input_schema": validation.input_schema,
-        "annotation_schema": validation.annotation_schema,
-        "benchmark_ready": True,
-        "paired_comparison_ready": batch["dataset_kind"] == "attacked_paired",
-    })
+    dataset_record = store.put_record(
+        "dataset_version",
+        version_id,
+        {
+            "version_id": version_id,
+            "source_batch_id": batch_id,
+            "name": batch["display_name"],
+            "title": batch["display_name"],
+            "dataset": "folder_dataset",
+            "dataset_params": {"root": str(_upload_root() / batch_id), "input_format": "advertest"},
+            "task_id": batch["task_id"],
+            "dataset_kind": batch["dataset_kind"],
+            "anonymized": batch["anonymized"],
+            "validation": batch["validation"],
+            "attacked_manifest": batch.get("attacked_manifest"),
+            "input_schema": validation.input_schema,
+            "annotation_schema": validation.annotation_schema,
+            "benchmark_ready": True,
+            "paired_comparison_ready": batch["dataset_kind"] == "attacked_paired",
+        },
+    )
     return {**stored, "dataset_version": dataset_record, "benchmark_ready": True}
+
 
 def _validate_uploaded_image(payload: bytes) -> tuple[str, tuple[int, int]]:
     from io import BytesIO
 
     from PIL import Image, UnidentifiedImageError
+
     try:
         with Image.open(BytesIO(payload)) as image:
             image.verify()
@@ -291,18 +308,23 @@ def _validate_uploaded_image(payload: bytes) -> tuple[str, tuple[int, int]]:
             },
         ) from exc
 
+
 @router.post("/uploads/images", status_code=201)
-async def upload_image(
-    request: Request,
-    store: SqliteRunStore = Depends(get_store)
-) -> dict[str, Any]:
+async def upload_image(request: Request, store: SqliteRunStore = Depends(get_store)) -> dict[str, Any]:
     task_id = request.headers.get("x-task-id", "detection2d")
     batch_id = request.headers.get("x-upload-batch-id")
     batch = store.get_record("upload_batch", batch_id) if batch_id else None
     if task_id not in {"detection2d", "segmentation", "detection3d"}:
         raise HTTPException(status_code=422, detail={"code": "TASK_UNKNOWN", "task_id": task_id})
     if task_id != "detection2d" and batch is None:
-        raise HTTPException(status_code=422, detail={"code": "ANNOTATIONS_REQUIRED", "task_id": task_id, "message": "Create a task-bound batch before uploading data that requires annotations."})
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "ANNOTATIONS_REQUIRED",
+                "task_id": task_id,
+                "message": "Create a task-bound batch before uploading data that requires annotations.",
+            },
+        )
     filename = request.headers.get("x-filename", "upload.bin")
     filename = Path(filename).name
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", filename):
@@ -359,6 +381,7 @@ async def upload_image(
 
     samples = dict(batch.get("samples", {}))
     import hashlib
+
     samples[sample_id] = {
         "sample_id": sample_id,
         "filename": filename,
@@ -396,42 +419,44 @@ async def upload_image(
         "task_id": task_id,
     }
 
+
 @router.post("/datasets/import", status_code=201)
 async def import_dataset(
     body: DatasetImportIn,
     store: SqliteRunStore = Depends(get_store),
-    workflow_store: WorkflowJobStore = Depends(get_workflow_store)
+    workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> dict[str, Any]:
     try:
         return _perform_dataset_import(body, store=store, workflow_store=workflow_store)
     except _DatasetImportError as exc:
         raise HTTPException(status_code=422, detail={"code": exc.code, "message": exc.message}) from exc
 
+
 @router.post("/datasets/import-jobs", status_code=202)
 async def create_dataset_import_job(
     body: DatasetImportIn,
     store: SqliteRunStore = Depends(get_store),
     workflow_store: WorkflowJobStore = Depends(get_workflow_store),
-    workers: ThreadPoolExecutor = Depends(get_dataset_import_workers)
+    workers: ThreadPoolExecutor = Depends(get_dataset_import_workers),
 ) -> dict[str, Any]:
     job_id = workflow_store.create_job("dataset_import", body.model_dump(mode="json"))
     workers.submit(_run_dataset_import_job, job_id, body, store, workflow_store)
     return _workflow_job_out(job_id, workflow_store)
 
+
 @router.get("/datasets/import-jobs/{job_id}")
 async def get_dataset_import_job(
-    job_id: str,
-    workflow_store: WorkflowJobStore = Depends(get_workflow_store)
+    job_id: str, workflow_store: WorkflowJobStore = Depends(get_workflow_store)
 ) -> dict[str, Any]:
     job = workflow_store.get_job(job_id)
     if job is None or job["job_type"] != "dataset_import":
         raise HTTPException(status_code=404, detail="DATASET_IMPORT_JOB_UNKNOWN")
     return _workflow_job_out(job_id, workflow_store)
 
+
 @router.post("/datasets/import-jobs/{job_id}/cancel")
 async def cancel_dataset_import_job(
-    job_id: str,
-    workflow_store: WorkflowJobStore = Depends(get_workflow_store)
+    job_id: str, workflow_store: WorkflowJobStore = Depends(get_workflow_store)
 ) -> dict[str, Any]:
     job = workflow_store.get_job(job_id)
     if job is None or job["job_type"] != "dataset_import":
@@ -442,34 +467,35 @@ async def cancel_dataset_import_job(
 
 @router.post("/generated-datasets", status_code=202, response_model=GeneratedDatasetJobOut)
 async def create_generated_dataset(
-    body: GeneratedDatasetCreateIn,
-    generated_datasets: GeneratedDatasetService = Depends(get_generated_datasets)
+    body: GeneratedDatasetCreateIn, generated_datasets: GeneratedDatasetService = Depends(get_generated_datasets)
 ) -> GeneratedDatasetJobOut:
     job_id = generated_datasets.enqueue(body)
     return _generated_job_out(generated_datasets.get(job_id))
 
+
 @router.get("/generated-datasets/{job_id}", response_model=GeneratedDatasetJobOut)
 async def get_generated_dataset(
-    job_id: str,
-    generated_datasets: GeneratedDatasetService = Depends(get_generated_datasets)
+    job_id: str, generated_datasets: GeneratedDatasetService = Depends(get_generated_datasets)
 ) -> GeneratedDatasetJobOut:
     return _generated_job_out(generated_datasets.get(job_id))
+
 
 @router.post("/generated-datasets/{job_id}/cancel", response_model=GeneratedDatasetJobOut)
 async def cancel_generated_dataset(
     job_id: str,
     generated_datasets: GeneratedDatasetService = Depends(get_generated_datasets),
-    workflow_store: WorkflowJobStore = Depends(get_workflow_store)
+    workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> GeneratedDatasetJobOut:
     if not workflow_store.request_cancel(job_id):
         raise HTTPException(status_code=404, detail=f"unknown generated dataset job {job_id!r}")
     return _generated_job_out(generated_datasets.get(job_id))
 
+
 @router.get("/generated-datasets/{job_id}/manifest", response_model=GeneratedDatasetManifestOut)
 async def get_generated_dataset_manifest(
     job_id: str,
     generated_datasets: GeneratedDatasetService = Depends(get_generated_datasets),
-    workflow_store: WorkflowJobStore = Depends(get_workflow_store)
+    workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> GeneratedDatasetManifestOut:
     payload = generated_datasets.manifest(job_id)
     if payload is None:
@@ -477,11 +503,12 @@ async def get_generated_dataset_manifest(
         raise HTTPException(status_code=409, detail="manifest is not available until generation completes")
     return GeneratedDatasetManifestOut(**payload)
 
+
 @router.get("/generated-datasets/{job_id}/variants", response_model=GeneratedDatasetVariantsOut)
 async def get_generated_dataset_variants(
     job_id: str,
     generated_datasets: GeneratedDatasetService = Depends(get_generated_datasets),
-    workflow_store: WorkflowJobStore = Depends(get_workflow_store)
+    workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> GeneratedDatasetVariantsOut:
     payload = generated_datasets.variants(job_id)
     if payload is None:
@@ -489,19 +516,20 @@ async def get_generated_dataset_variants(
         raise HTTPException(status_code=409, detail="variants are not available until generation completes")
     return GeneratedDatasetVariantsOut(**payload)
 
+
 @router.get("/generated-datasets/{job_id}/events", response_model=GeneratedDatasetEventsOut)
 async def get_generated_dataset_events(
-    job_id: str,
-    workflow_store: WorkflowJobStore = Depends(get_workflow_store)
+    job_id: str, workflow_store: WorkflowJobStore = Depends(get_workflow_store)
 ) -> GeneratedDatasetEventsOut:
     _require_generated_job(job_id, workflow_store)
     return GeneratedDatasetEventsOut(id=job_id, events=workflow_store.events(job_id))
+
 
 @router.post("/generated-datasets/{job_id}/validate", response_model=GeneratedDatasetValidationOut)
 async def get_generated_dataset_validation(
     job_id: str,
     generated_datasets: GeneratedDatasetService = Depends(get_generated_datasets),
-    workflow_store: WorkflowJobStore = Depends(get_workflow_store)
+    workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> GeneratedDatasetValidationOut:
     payload = generated_datasets.validation(job_id)
     if payload is None:

@@ -66,9 +66,7 @@ async def test_closed_loop_start_is_durable_and_retrievable(client) -> None:
 
     routes = importlib.reload(routes)
     main_module = importlib.reload(main_module)
-    async with AsyncClient(
-        transport=ASGITransport(app=main_module.app), base_url="http://reopened"
-    ) as reopened_client:
+    async with AsyncClient(transport=ASGITransport(app=main_module.app), base_url="http://reopened") as reopened_client:
         fetched = await reopened_client.get(f"/api/v1/closed-loop/{payload['loop_id']}")
     assert fetched.status_code == 200
     assert fetched.json() == payload
@@ -107,16 +105,12 @@ async def test_closed_loop_rejects_unknown_or_failure_free_source(client) -> Non
     assert failure_free.status_code == 409
     assert failure_free.json()["detail"]["code"] == "NO_FAILURE_CASES"
 
-    zero_run_id = routes._store.create(
-        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1)
-    )
+    zero_run_id = routes._store.create(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1))
     zero_report = _completed_report(zero_run_id)
     zero_report["worst_cases"][0]["degradation_hint"] = 0.0
     routes._store.complete(zero_run_id, zero_report)
 
-    zero_degradation = await client.post(
-        "/api/v1/closed-loop/start", json={"run_id": zero_run_id}
-    )
+    zero_degradation = await client.post("/api/v1/closed-loop/start", json={"run_id": zero_run_id})
     assert zero_degradation.status_code == 409
     assert zero_degradation.json()["detail"]["code"] == "NO_FAILURE_CASES"
 

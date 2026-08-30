@@ -39,7 +39,9 @@ class DepthRain(BaseAttack):
         for view in views(sample):
             height, width = view.image.shape[:2]
             count = int(height * width / 1_000_000 * rate * params.streaks_per_megapixel_per_mmh)
-            layer = streak_layer(ctx.rng, height, width, max(1, count), int(self.level(severity, params.streak_length_per_severity)))
+            layer = streak_layer(
+                ctx.rng, height, width, max(1, count), int(self.level(severity, params.streak_length_per_severity))
+            )
             depth = depth_for(view.image, view.depth, policy=params.depth_policy)
             visibility = np.exp(-params.contrast_loss_per_mmh * rate * depth / max(float(depth.mean()), 1.0))
             base = 0.5 + (view.image - 0.5) * visibility[..., None]

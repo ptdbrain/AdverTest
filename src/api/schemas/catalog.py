@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 class AttackCatalogItem(BaseModel):
     """One entry of the attack catalog (mirrors ``BaseAttack.describe``)."""
+
     name: str
     version: str = "1.0.0"
     group: str
@@ -47,8 +48,10 @@ class AttackCatalogItem(BaseModel):
     available: bool = True
     reason: str | None = None
 
+
 class ModelCatalogItem(BaseModel):
     """One entry of the model-adapter catalog."""
+
     name: str
     task: str
     version: str
@@ -60,8 +63,10 @@ class ModelCatalogItem(BaseModel):
     docstring: str = ""
     is_local: bool = True
 
+
 class DatasetCatalogItem(BaseModel):
     """One entry of the dataset catalog; ``anonymized`` gates test runs."""
+
     name: str
     title: str = ""
     anonymized: bool

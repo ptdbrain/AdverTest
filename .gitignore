@@ -31,21 +31,25 @@ Thumbs.db
 *:Zone.Identifier
 
 # Data (never commit large data)
-data/
-checkpoints/
+/data/
+/checkpoints/
 *.ckpt
 *.pt
 *.pth
 *.safetensors
 *.db
 *.sqlite3
+*.tgz
+*.tar.gz
+*.zip
+*.bin
 
 # Model weights + training runs (ultralytics downloads yolo11s.pt into the CWD)
 *.pt
-runs/
+/runs/
 
 # Logs
-logs/
+/logs/
 *.log
 
 # Test coverage
@@ -54,6 +58,7 @@ htmlcov/
 coverage.xml
 .pytest-tmp-final/
 .pytest-tmp-*/
+.audit-pytest-*/
 .pytest-*/
 .pytest-*.log
 .pytest-*.err
@@ -80,7 +85,12 @@ advertest-plan.md
 /models/
 
 # Results
-results/
+/results/
+
+# Local test scratch
+.pytest_temp/
+/scratch/
+.superpowers/
 
 # Kaggle downloads and generated notebook artifacts.
 kaggle/

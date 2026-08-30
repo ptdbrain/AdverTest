@@ -96,19 +96,9 @@ class TrainingDatasetBuilder:
             for label in record.class_labels
         )
         recipes = Counter(record.recipe_hash for record, _ in generated)
-        severities = Counter(
-            step.severity
-            for record, _ in generated
-            for step in record.ordered_steps
-        )
-        violations = (
-            ("storage_budget_exceeded",)
-            if estimated_bytes > config.storage_budget_bytes
-            else ()
-        )
-        warnings = (
-            ("no_generated_variants",) if not generated else ()
-        )
+        severities = Counter(step.severity for record, _ in generated for step in record.ordered_steps)
+        violations = ("storage_budget_exceeded",) if estimated_bytes > config.storage_budget_bytes else ()
+        warnings = ("no_generated_variants",) if not generated else ()
         return TrainingDatasetEstimate(
             clean_count=len(clean_ids),
             generated_count=len(generated),
@@ -126,15 +116,11 @@ class TrainingDatasetBuilder:
     def build(self, config: TrainingDatasetConfig) -> TrainingDatasetManifest:
         estimate = self.estimate(config)
         if estimate.hard_cap_violations:
-            raise ValueError(
-                f"storage hard cap violated: {estimate.hard_cap_violations}"
-            )
+            raise ValueError(f"storage hard cap violated: {estimate.hard_cap_violations}")
         validated = self._validated(config)
         generated = validated["generated"]
         clean_ids = self._select_clean_ids(config, len(generated))
-        records_by_id = {
-            record.sample_id: record for record in config.base_version.records
-        }
+        records_by_id = {record.sample_id: record for record in config.base_version.records}
         entries: list[TrainingManifestEntry] = [
             TrainingManifestEntry(
                 entry_id=f"clean:{sample_id}",
@@ -193,7 +179,11 @@ class TrainingDatasetBuilder:
             entries=ordered_entries,
             distribution_report=estimate,
             leakage_report_hash=leakage_report_hash,
-            **{key: value for key, value in payload.items() if key not in {"entries", "distribution_report", "leakage_report_hash"}},
+            **{
+                key: value
+                for key, value in payload.items()
+                if key not in {"entries", "distribution_report", "leakage_report_hash"}
+            },
         )
         output = Path(config.output_dir).expanduser().resolve()
         output.mkdir(parents=True, exist_ok=True)
@@ -234,10 +224,7 @@ class TrainingDatasetBuilder:
                     raise ValueError("generated variant is not validated and complete")
                 if not record.ordered_steps or not record.intermediate_hashes:
                     raise ValueError("generated variant is missing transform execution logs")
-                if (
-                    config.defense_profile.recipe_ids
-                    and record.recipe_hash not in config.defense_profile.recipe_ids
-                ):
+                if config.defense_profile.recipe_ids and record.recipe_hash not in config.defense_profile.recipe_ids:
                     raise ValueError("generated recipe is not allowed by defense profile")
                 source_record = base.get(record.source_sample_id)
                 if source_record is None:
@@ -287,9 +274,7 @@ class TrainingDatasetBuilder:
         if generated_count == 0 or config.defense_profile.generated_ratio == 0:
             return candidates
         desired = round(
-            generated_count
-            * config.defense_profile.clean_replay_ratio
-            / config.defense_profile.generated_ratio
+            generated_count * config.defense_profile.clean_replay_ratio / config.defense_profile.generated_ratio
         )
         desired = max(1, min(len(candidates), desired))
         return candidates[:desired]

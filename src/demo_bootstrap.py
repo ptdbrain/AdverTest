@@ -33,9 +33,7 @@ def ensure_demo_checkpoint(
     return target
 
 
-def ensure_demo_kitti(
-    *, enabled: bool, storage: ArtifactStorage, storage_prefix: str, data_root: str
-) -> Path | None:
+def ensure_demo_kitti(*, enabled: bool, storage: ArtifactStorage, storage_prefix: str, data_root: str) -> Path | None:
     """Materialize the reviewed KITTI demo export without weakening its gate."""
     if not enabled:
         return None

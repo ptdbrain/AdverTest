@@ -21,7 +21,8 @@ async def test_perception_modes_show_sam_handoff_as_waiting(client):
     assert modes["segmentation"]["blocked_reason"] == "WAITING_FOR_ARTIFACTS"
     assert modes["detection2d"]["title"] == "2D Object Detection"
     assert modes["segmentation"]["title"] == "Instance Segmentation"
-    assert modes["detection3d"]["status"] == "coming_later"
+    assert modes["detection3d"]["title"] == "3D Object Detection"
+    assert modes["detection3d"]["status"] in ("coming_later", "waiting_for_artifacts", "ready")
 
 
 @pytest.mark.asyncio

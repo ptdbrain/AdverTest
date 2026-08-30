@@ -20,15 +20,25 @@ from pydantic import ValidationError
 from src.adapters import load_adapters
 from src.api.platform_dependencies import get_platform_storage
 from src.api.routers import (
+    admin,
+    advisor,
     analytics,
     artifacts,
+    auth,
     catalog,
     checkpoints,
     datasets,
     exports,
     jobs,
+    live_inference,
     platform_datasets,
+    risk_rubric,
     runs,
+    sessions,
+    system,
+)
+from src.api.routers import (
+    settings as settings_router,
 )
 from src.api.routes import router
 from src.attacks import load_attacks
@@ -45,6 +55,8 @@ SIMULATION_BANNER = "SIMULATION ONLY — chưa validate, không dùng để quy�
 async def lifespan(app: FastAPI):
     """Load every plugin once at start-up so the catalog is ready to serve."""
     settings = get_settings()
+    if settings.app_env == "production":
+        settings.validate_production_environment()
     storage = None
     if settings.bootstrap_demo_model:
         storage = get_platform_storage()
@@ -79,6 +91,9 @@ async def lifespan(app: FastAPI):
         )
         print(f"Demo catalog ready: {catalog_root}")
     attacks, models, datasets = load_attacks(), load_adapters(), load_datasets()
+    from src.auth.dependencies import get_auth_service
+
+    get_auth_service().ensure_default_accounts()
     print(
         f"Starting {settings.app_name} in {settings.app_env} mode — "
         f"{len(attacks)} attacks, {len(models)} adapters, {len(datasets)} datasets"
@@ -106,6 +121,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1")
 app.include_router(catalog.router, prefix="/api/v1")
 app.include_router(runs.router, prefix="/api/v1")
 app.include_router(datasets.router, prefix="/api/v1")
@@ -118,6 +135,12 @@ app.include_router(platform_datasets.router, prefix="/api/v1")
 # routers registers identical paths twice, which makes route resolution depend
 # on registration order and produces duplicate OpenAPI operation IDs.
 app.include_router(analytics.router, prefix="/api/v1")
+app.include_router(advisor.router, prefix="/api/v1")
+app.include_router(system.router, prefix="/api/v1")
+app.include_router(live_inference.router, prefix="/api/v1")
+app.include_router(sessions.router, prefix="/api/v1")
+app.include_router(settings_router.router, prefix="/api/v1")
+app.include_router(risk_rubric.router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")
 app.mount("/data", StaticFiles(directory=str(data_root)), name="data")
 

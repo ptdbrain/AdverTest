@@ -19,7 +19,7 @@ class DagParams(AttackParams):
         8 / 255,
         16 / 255,
     )
-    iterations: int = 150
+    iterations: int = 20
 
 
 @ATTACKS.register
@@ -47,4 +47,3 @@ class Dag(BaseAttack):
             step_size=epsilon / max(1, self.params.iterations),
             objective=replace(ctx.objective, kind="dag"),
         )
-

@@ -27,10 +27,7 @@ def _run(severity: int, sample: Sample, seed: int = 2, **params: object) -> Samp
 def test_perturbation_grows_at_every_step() -> None:
     """More stale frames means more accumulated ego motion (sanity check #2)."""
     sample = _structured_sample()
-    distances = [
-        float(np.linalg.norm(_run(severity, sample).image - sample.image))
-        for severity in SEVERITIES
-    ]
+    distances = [float(np.linalg.norm(_run(severity, sample).image - sample.image)) for severity in SEVERITIES]
     assert distances == sorted(distances)
 
 

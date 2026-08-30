@@ -16,9 +16,9 @@ from src.core.types import AttackGroup, CostClass, Sample
 
 class CwL2Params(AttackParams):
     radius_per_severity: tuple[float, ...] = (0.25, 0.5, 1.0, 2.0, 4.0)
-    iterations: int = Field(default=100, ge=1)
-    binary_search_steps: int = Field(default=5, ge=1)
-    learning_rate: float = Field(default=0.01, gt=0.0)
+    iterations: int = Field(default=10, ge=1)
+    binary_search_steps: int = Field(default=2, ge=1)
+    learning_rate: float = Field(default=0.03, gt=0.0)
     initial_const: float = Field(default=0.1, gt=0.0)
     confidence: float = Field(default=0.0, ge=0.0)
     adam_beta1: float = Field(default=0.9, ge=0.0, lt=1.0)
@@ -75,8 +75,7 @@ class CwL2(BaseAttack):
                 delta = current - sample.image
                 l2_norm = float(np.linalg.norm(delta))
                 if margin > best_fallback_margin or (
-                    np.isclose(margin, best_fallback_margin)
-                    and l2_norm < best_fallback_norm
+                    np.isclose(margin, best_fallback_margin) and l2_norm < best_fallback_norm
                 ):
                     best_fallback = candidate
                     best_fallback_margin = margin
@@ -93,23 +92,13 @@ class CwL2(BaseAttack):
                     pixel_gradient -= constant * margin_gradient
                 chain = 2.0 * current * (1.0 - current)
                 w_gradient = pixel_gradient * chain
-                first_moment = (
-                    self.params.adam_beta1 * first_moment
-                    + (1.0 - self.params.adam_beta1) * w_gradient
+                first_moment = self.params.adam_beta1 * first_moment + (1.0 - self.params.adam_beta1) * w_gradient
+                second_moment = self.params.adam_beta2 * second_moment + (1.0 - self.params.adam_beta2) * np.square(
+                    w_gradient
                 )
-                second_moment = (
-                    self.params.adam_beta2 * second_moment
-                    + (1.0 - self.params.adam_beta2) * np.square(w_gradient)
-                )
-                corrected_first = first_moment / (
-                    1.0 - self.params.adam_beta1**iteration
-                )
-                corrected_second = second_moment / (
-                    1.0 - self.params.adam_beta2**iteration
-                )
-                w -= self.params.learning_rate * corrected_first / (
-                    np.sqrt(corrected_second) + 1e-8
-                )
+                corrected_first = first_moment / (1.0 - self.params.adam_beta1**iteration)
+                corrected_second = second_moment / (1.0 - self.params.adam_beta2**iteration)
+                w -= self.params.learning_rate * corrected_first / (np.sqrt(corrected_second) + 1e-8)
 
             if search_succeeded:
                 upper_bound = min(upper_bound, constant)

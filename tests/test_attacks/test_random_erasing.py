@@ -46,9 +46,7 @@ def test_masks_are_nested_across_severities() -> None:
 
 def test_perturbation_grows_at_every_step() -> None:
     sample = _flat_sample()
-    distances = [
-        float(np.linalg.norm(_run(severity)[1].image - sample.image)) for severity in SEVERITIES
-    ]
+    distances = [float(np.linalg.norm(_run(severity)[1].image - sample.image)) for severity in SEVERITIES]
     assert distances == sorted(distances)
 
 

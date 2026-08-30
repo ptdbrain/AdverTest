@@ -116,9 +116,7 @@ class DatasetAnonymizer:
         if not images_root.is_dir():
             raise FileNotFoundError(f"KITTI image_2 directory does not exist: {images_root}")
 
-        available_paths = {
-            path.stem: path for path in sorted(images_root.glob("*.png"))
-        }
+        available_paths = {path.stem: path for path in sorted(images_root.glob("*.png"))}
         if config.sample_ids is not None:
             missing = sorted(set(config.sample_ids) - available_paths.keys())
             if missing:
@@ -141,9 +139,7 @@ class DatasetAnonymizer:
         manifest_path = output_root / "manifest.jsonl"
         records = _read_manifest(manifest_path)
         by_sample = {str(record["sample_id"]): record for record in records}
-        detector_hashes = {
-            kind: detector.checkpoint_hash for kind, detector in detectors.items()
-        }
+        detector_hashes = {kind: detector.checkpoint_hash for kind, detector in detectors.items()}
         descriptor = {
             "format": "kitti",
             "status": "in_progress",
@@ -178,18 +174,12 @@ class DatasetAnonymizer:
                     continue
 
                 image = load_image(image_path)
-                detections = tuple(
-                    detection
-                    for detector in detectors.values()
-                    for detection in detector.detect(image)
-                )
+                detections = tuple(detection for detector in detectors.values() for detection in detector.detect(image))
                 expanded = tuple(
                     _expand_detection(
                         detection,
                         image.shape,
-                        config.face_detector.expansion
-                        if detection.kind == "face"
-                        else config.plate_detector.expansion,
+                        config.face_detector.expansion if detection.kind == "face" else config.plate_detector.expansion,
                     )
                     for detection in detections
                 )
@@ -210,20 +200,12 @@ class DatasetAnonymizer:
                     "output_path": str(output_image.relative_to(output_root)),
                     "source_hash": source_hash,
                     "output_hash": file_digest(output_image, length=64),
-                    "label_path": (
-                        str(output_label.relative_to(output_root))
-                        if source_label.is_file()
-                        else None
-                    ),
+                    "label_path": (str(output_label.relative_to(output_root)) if source_label.is_file() else None),
                     "label_hash": label_hash,
                     "face_count": sum(item.kind == "face" for item in expanded),
-                    "plate_count": sum(
-                        item.kind == "license_plate" for item in expanded
-                    ),
+                    "plate_count": sum(item.kind == "license_plate" for item in expanded),
                     "detections": [_detection_payload(item) for item in expanded],
-                    "detector_hashes": {
-                        kind: detector_hashes[kind] for kind in detectors
-                    },
+                    "detector_hashes": {kind: detector_hashes[kind] for kind in detectors},
                 }
                 by_sample[sample_id] = record
                 _write_manifest(manifest_path, list(by_sample.values()))
@@ -248,10 +230,7 @@ class DatasetAnonymizer:
                 "face_detections": face_count,
                 "plate_detections": plate_count,
                 "source_fingerprint": stable_digest(
-                    [
-                        (record["sample_id"], record["source_hash"])
-                        for record in selected_records
-                    ],
+                    [(record["sample_id"], record["source_hash"]) for record in selected_records],
                     length=32,
                 ),
                 "manifest_hash": stable_digest(selected_records, length=32),
@@ -299,7 +278,10 @@ class DatasetAnonymizer:
             "source_root": str(source_root),
             "selected_samples": len(selections),
             "method": config.method,
-            "detectors": {kind: {"name": detector.name, "checkpoint_hash": detector.checkpoint_hash} for kind, detector in detectors.items()},
+            "detectors": {
+                kind: {"name": detector.name, "checkpoint_hash": detector.checkpoint_hash}
+                for kind, detector in detectors.items()
+            },
             "annotation_policy": "copied_byte_for_byte",
         }
         _write_json(output_root / "dataset.json", descriptor)
@@ -308,14 +290,23 @@ class DatasetAnonymizer:
             for item in selections:
                 source_hash = file_digest(item.image, length=64)
                 existing = by_sample.get(item.sample_id)
-                if existing is not None and _record_is_valid(source_root, output_root, existing, source_hash, detector_hashes):
+                if existing is not None and _record_is_valid(
+                    source_root, output_root, existing, source_hash, detector_hashes
+                ):
                     resumed += 1
                     face_count += int(existing.get("face_count", 0))
                     plate_count += int(existing.get("plate_count", 0))
                     continue
                 image = load_image(item.image)
                 detections = tuple(detection for detector in detectors.values() for detection in detector.detect(image))
-                expanded = tuple(_expand_detection(detection, image.shape, config.face_detector.expansion if detection.kind == "face" else config.plate_detector.expansion) for detection in detections)
+                expanded = tuple(
+                    _expand_detection(
+                        detection,
+                        image.shape,
+                        config.face_detector.expansion if detection.kind == "face" else config.plate_detector.expansion,
+                    )
+                    for detection in detections
+                )
                 output_image = output_root / item.image.relative_to(source_root)
                 _write_png(output_image, _anonymize_regions(image, expanded, config))
                 annotation_records = _copy_annotations(source_root, output_root, item.annotations)
@@ -336,16 +327,28 @@ class DatasetAnonymizer:
                 plate_count += int(record["plate_count"])
                 _write_manifest(manifest_path, list(by_sample.values()))
         except Exception as exc:
-            descriptor.update({"status": "incomplete", "error": f"{type(exc).__name__}: {exc}", "processed_samples": len(by_sample)})
+            descriptor.update(
+                {"status": "incomplete", "error": f"{type(exc).__name__}: {exc}", "processed_samples": len(by_sample)}
+            )
             _write_json(output_root / "dataset.json", descriptor)
             raise
-        selected_records = sorted((by_sample[item.sample_id] for item in selections), key=lambda record: str(record["sample_id"]))
-        descriptor.update({
-            "status": "complete", "anonymized": True, "processed_samples": len(selected_records),
-            "face_detections": face_count, "plate_detections": plate_count,
-            "source_fingerprint": stable_digest([(record["sample_id"], record["source_hash"]) for record in selected_records], length=32),
-            "manifest_hash": stable_digest(selected_records, length=32), "review_status": "pending_spot_check",
-        })
+        selected_records = sorted(
+            (by_sample[item.sample_id] for item in selections), key=lambda record: str(record["sample_id"])
+        )
+        descriptor.update(
+            {
+                "status": "complete",
+                "anonymized": True,
+                "processed_samples": len(selected_records),
+                "face_detections": face_count,
+                "plate_detections": plate_count,
+                "source_fingerprint": stable_digest(
+                    [(record["sample_id"], record["source_hash"]) for record in selected_records], length=32
+                ),
+                "manifest_hash": stable_digest(selected_records, length=32),
+                "review_status": "pending_spot_check",
+            }
+        )
         _write_json(output_root / "dataset.json", descriptor)
         return AnonymizationReport(output_root, len(selected_records), resumed, face_count, plate_count)
 
@@ -380,11 +383,7 @@ def inspect_anonymized_dataset(path: str | Path) -> dict[str, Any]:
         return {"valid": False, "root": str(root), "error": "missing descriptor or manifest"}
     descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
     records = _read_manifest(manifest_path)
-    invalid_samples = [
-        str(record.get("sample_id"))
-        for record in records
-        if not _output_record_is_valid(root, record)
-    ]
+    invalid_samples = [str(record.get("sample_id")) for record in records if not _output_record_is_valid(root, record)]
     count_matches = descriptor.get("processed_samples") == len(records)
     manifest_hash_matches = descriptor.get("manifest_hash") == stable_digest(
         records,
@@ -558,25 +557,33 @@ def _segmentation_selections(
                 annotations = tuple(sorted(annotation_dir.glob(f"{stem}_gtFine_*")))
                 instance = annotation_dir / f"{stem}_gtFine_instanceIds.png"
                 if instance.is_file():
-                    selections.append(_SegmentationSelection(
-                        sample_id=f"{split}/{image.parent.name}/{stem}",
-                        image=image,
-                        annotations=annotations,
-                    ))
+                    selections.append(
+                        _SegmentationSelection(
+                            sample_id=f"{split}/{image.parent.name}/{stem}",
+                            image=image,
+                            annotations=annotations,
+                        )
+                    )
         elif config.input_format == "bdd100k":
             image_root = root / "10k" / split
             for image in sorted(image_root.glob("*.jpg")):
                 key = image.stem
                 annotations = tuple(
-                    path for path in (
+                    path
+                    for path in (
                         root / "labels" / split / f"{key}_{split}_id.png",
                         root / "color_labels" / split / f"{key}_{split}_color.png",
-                    ) if path.is_file()
+                    )
+                    if path.is_file()
                 )
                 if annotations:
-                    selections.append(_SegmentationSelection(
-                        sample_id=f"{split}/{key}", image=image, annotations=annotations,
-                    ))
+                    selections.append(
+                        _SegmentationSelection(
+                            sample_id=f"{split}/{key}",
+                            image=image,
+                            annotations=annotations,
+                        )
+                    )
     return selections
 
 
@@ -589,31 +596,26 @@ def _copy_annotations(
     for source in annotations:
         destination = output_root / source.relative_to(source_root)
         _copy_atomic(source, destination)
-        records.append({
-            "source_path": str(source.relative_to(source_root)),
-            "output_path": str(destination.relative_to(output_root)),
-            "source_hash": file_digest(source, length=64),
-            "output_hash": file_digest(destination, length=64),
-        })
+        records.append(
+            {
+                "source_path": str(source.relative_to(source_root)),
+                "output_path": str(destination.relative_to(output_root)),
+                "source_hash": file_digest(source, length=64),
+                "output_hash": file_digest(destination, length=64),
+            }
+        )
     return records
 
 
 def _read_manifest(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
-    return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def _write_manifest(path: Path, records: list[dict[str, Any]]) -> None:
     ordered = sorted(records, key=lambda record: str(record["sample_id"]))
-    content = "".join(
-        json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n"
-        for record in ordered
-    )
+    content = "".join(json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n" for record in ordered)
     _write_text_atomic(path, content)
 
 

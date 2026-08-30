@@ -52,20 +52,35 @@ class TestModelVersionLineage:
     def test_r2_lineage_chain(self):
         """R2.parent = R1, R1.parent = B0."""
         b0 = ModelVersion(
-            id="yolo-b0", model_name="yolo11s", task="detection2d",
-            checkpoint_path=None, checkpoint_hash=None,
-            parent_id=None, training_metadata={}, runnable=True,
+            id="yolo-b0",
+            model_name="yolo11s",
+            task="detection2d",
+            checkpoint_path=None,
+            checkpoint_hash=None,
+            parent_id=None,
+            training_metadata={},
+            runnable=True,
         )
         r1 = ModelVersion(
-            id="yolo-r1", model_name="yolo11s", task="detection2d",
-            checkpoint_path=None, checkpoint_hash=None,
-            parent_id="yolo-b0", training_metadata={}, runnable=True,
+            id="yolo-r1",
+            model_name="yolo11s",
+            task="detection2d",
+            checkpoint_path=None,
+            checkpoint_hash=None,
+            parent_id="yolo-b0",
+            training_metadata={},
+            runnable=True,
             parent_lineage=("yolo-b0",),
         )
         r2 = ModelVersion(
-            id="yolo-r2-fog", model_name="yolo11s", task="detection2d",
-            checkpoint_path=None, checkpoint_hash=None,
-            parent_id="yolo-r1", training_metadata={}, runnable=True,
+            id="yolo-r2-fog",
+            model_name="yolo11s",
+            task="detection2d",
+            checkpoint_path=None,
+            checkpoint_hash=None,
+            parent_id="yolo-r1",
+            training_metadata={},
+            runnable=True,
             parent_lineage=("yolo-r1", "yolo-b0"),
         )
         assert r1.parent_id == b0.id
@@ -76,9 +91,13 @@ class TestModelVersionLineage:
 
     def test_not_runnable_without_checkpoint(self):
         v = ModelVersion(
-            id="yolo-r1", model_name="yolo11s", task="detection2d",
-            checkpoint_path=None, checkpoint_hash=None,
-            parent_id="yolo-b0", training_metadata={},
+            id="yolo-r1",
+            model_name="yolo11s",
+            task="detection2d",
+            checkpoint_path=None,
+            checkpoint_hash=None,
+            parent_id="yolo-b0",
+            training_metadata={},
             runnable=False,
             blocked_reason="CHECKPOINT_MISSING",
         )
@@ -87,9 +106,13 @@ class TestModelVersionLineage:
 
     def test_sam_waiting_for_artifacts(self):
         v = ModelVersion(
-            id="sam2-base", model_name="sam2", task="segmentation",
-            checkpoint_path="/path/sam2.pt", checkpoint_hash="sha256xyz",
-            parent_id=None, training_metadata={},
+            id="sam2-base",
+            model_name="sam2",
+            task="segmentation",
+            checkpoint_path="/path/sam2.pt",
+            checkpoint_hash="sha256xyz",
+            parent_id=None,
+            training_metadata={},
             runnable=False,
             blocked_reason="WAITING_FOR_ARTIFACTS",
             evidence_tier=None,

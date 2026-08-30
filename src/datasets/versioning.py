@@ -115,9 +115,7 @@ def _sample_record(
         )
     )
     split = sample.meta.get("split")
-    official_split: SplitName | None = (
-        split if split in {"train", "val", "test"} else None
-    )
+    official_split: SplitName | None = split if split in {"train", "val", "test"} else None
     provenance_keys = (
         "source_format",
         "image_id",
@@ -127,9 +125,7 @@ def _sample_record(
         "anonymization_manifest_hash",
     )
     provenance = {
-        key: sample.meta[key]
-        for key in provenance_keys
-        if key in sample.meta and sample.meta[key] is not None
+        key: sample.meta[key] for key in provenance_keys if key in sample.meta and sample.meta[key] is not None
     }
     provenance["logical_source_id"] = logical_source_id
     provenance["loader_version"] = loader_version
@@ -170,16 +166,10 @@ def _sanitize_identity_metadata(value: Any) -> Any:
     """Drop absolute host paths before hashing or persisting identity metadata."""
     if isinstance(value, dict):
         return {
-            str(key): _sanitize_identity_metadata(item)
-            for key, item in value.items()
-            if not _is_absolute_path(item)
+            str(key): _sanitize_identity_metadata(item) for key, item in value.items() if not _is_absolute_path(item)
         }
     if isinstance(value, (list, tuple)):
-        return [
-            _sanitize_identity_metadata(item)
-            for item in value
-            if not _is_absolute_path(item)
-        ]
+        return [_sanitize_identity_metadata(item) for item in value if not _is_absolute_path(item)]
     return value
 
 

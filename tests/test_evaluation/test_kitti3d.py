@@ -11,14 +11,18 @@ from src.pipeline.protocol import BenchmarkProtocol
 @pytest.fixture
 def protocol():
     """Locked protocol with one sample and correct metric versions."""
-    return BenchmarkProtocol(
-        name="test-3d",
-        dataset_version_id="kitti3d-test",
-        sample_ids=("test-001",),
-        sample_hashes={"test-001": "hash-1"},
-        ground_truth_hashes={"test-001": "gt-1"},
-        metric_versions={"kitti_3d_ap": "advertest-bev-v1", "bev_iou": "1.0.0"},
-    ).transition("VALIDATED").transition("LOCKED")
+    return (
+        BenchmarkProtocol(
+            name="test-3d",
+            dataset_version_id="kitti3d-test",
+            sample_ids=("test-001",),
+            sample_hashes={"test-001": "hash-1"},
+            ground_truth_hashes={"test-001": "gt-1"},
+            metric_versions={"kitti_3d_ap": "advertest-bev-v1", "bev_iou": "1.0.0"},
+        )
+        .transition("VALIDATED")
+        .transition("LOCKED")
+    )
 
 
 @pytest.fixture
@@ -29,9 +33,15 @@ def sample():
         image=np.zeros((4, 4, 3), dtype=np.float32),
         boxes3d=(
             Box3D(
-                x=10, y=0, z=1,
-                length=4, width=2, height=1.5,
-                yaw=0, label="Car", score=1.0,
+                x=10,
+                y=0,
+                z=1,
+                length=4,
+                width=2,
+                height=1.5,
+                yaw=0,
+                label="Car",
+                score=1.0,
             ),
         ),
     )
@@ -43,9 +53,15 @@ def test_perfect_prediction_no_failure(protocol, sample):
         sample_id="test-001",
         boxes3d=(
             Box3D(
-                x=10, y=0, z=1,
-                length=4, width=2, height=1.5,
-                yaw=0, label="Car", score=0.9,
+                x=10,
+                y=0,
+                z=1,
+                length=4,
+                width=2,
+                height=1.5,
+                yaw=0,
+                label="Car",
+                score=0.9,
             ),
         ),
     )
@@ -73,9 +89,15 @@ def test_wrong_class_mismatch(protocol, sample):
         sample_id="test-001",
         boxes3d=(
             Box3D(
-                x=10, y=0, z=1,
-                length=4, width=2, height=1.5,
-                yaw=0, label="Pedestrian", score=0.9,
+                x=10,
+                y=0,
+                z=1,
+                length=4,
+                width=2,
+                height=1.5,
+                yaw=0,
+                label="Pedestrian",
+                score=0.9,
             ),
         ),
     )
@@ -93,9 +115,15 @@ def test_far_away_prediction_localization_failure(protocol, sample):
         sample_id="test-001",
         boxes3d=(
             Box3D(
-                x=12.0, y=0.5, z=1,
-                length=4, width=2, height=1.5,
-                yaw=0, label="Car", score=0.9,
+                x=12.0,
+                y=0.5,
+                z=1,
+                length=4,
+                width=2,
+                height=1.5,
+                yaw=0,
+                label="Car",
+                score=0.9,
             ),
         ),
     )
@@ -112,14 +140,26 @@ def test_extra_prediction_false_positive(protocol, sample):
         sample_id="test-001",
         boxes3d=(
             Box3D(
-                x=10, y=0, z=1,
-                length=4, width=2, height=1.5,
-                yaw=0, label="Car", score=0.9,
+                x=10,
+                y=0,
+                z=1,
+                length=4,
+                width=2,
+                height=1.5,
+                yaw=0,
+                label="Car",
+                score=0.9,
             ),
             Box3D(
-                x=100, y=100, z=1,
-                length=4, width=2, height=1.5,
-                yaw=0, label="Car", score=0.8,
+                x=100,
+                y=100,
+                z=1,
+                length=4,
+                width=2,
+                height=1.5,
+                yaw=0,
+                label="Car",
+                score=0.8,
             ),
         ),
     )
@@ -135,9 +175,15 @@ def test_per_sample_metrics_have_required_keys(protocol, sample):
         sample_id="test-001",
         boxes3d=(
             Box3D(
-                x=10, y=0, z=1,
-                length=4, width=2, height=1.5,
-                yaw=0, label="Car", score=0.9,
+                x=10,
+                y=0,
+                z=1,
+                length=4,
+                width=2,
+                height=1.5,
+                yaw=0,
+                label="Car",
+                score=0.9,
             ),
         ),
     )
@@ -162,14 +208,26 @@ def test_multi_class_ap_is_macro_averaged(protocol):
         image=np.zeros((4, 4, 3), dtype=np.float32),
         boxes3d=(
             Box3D(
-                x=10, y=0, z=1,
-                length=4, width=2, height=1.5,
-                yaw=0, label="Car", score=1.0,
+                x=10,
+                y=0,
+                z=1,
+                length=4,
+                width=2,
+                height=1.5,
+                yaw=0,
+                label="Car",
+                score=1.0,
             ),
             Box3D(
-                x=20, y=0, z=1,
-                length=1, width=1, height=1.5,
-                yaw=0, label="Pedestrian", score=1.0,
+                x=20,
+                y=0,
+                z=1,
+                length=1,
+                width=1,
+                height=1.5,
+                yaw=0,
+                label="Pedestrian",
+                score=1.0,
             ),
         ),
     )
@@ -177,9 +235,15 @@ def test_multi_class_ap_is_macro_averaged(protocol):
         sample_id="test-001",
         boxes3d=(
             Box3D(
-                x=10, y=0, z=1,
-                length=4, width=2, height=1.5,
-                yaw=0, label="Car", score=0.9,
+                x=10,
+                y=0,
+                z=1,
+                length=4,
+                width=2,
+                height=1.5,
+                yaw=0,
+                label="Car",
+                score=0.9,
             ),
         ),
     )

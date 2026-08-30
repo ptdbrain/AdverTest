@@ -8,8 +8,10 @@ from src.pipeline.generator import SurrogateConfig
 
 DatasetKind = Literal["clean", "attacked_standalone", "attacked_paired"]
 
+
 class AttackedDatasetManifest(BaseModel):
     """Provenance required before a clean-versus-attacked comparison is allowed."""
+
     model_config = ConfigDict(extra="forbid")
 
     clean_dataset_version_id: str | None = None
@@ -21,6 +23,7 @@ class AttackedDatasetManifest(BaseModel):
     source_hash: str | None = None
     ground_truth_hash: str | None = None
 
+
 class UploadBatchCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -30,6 +33,7 @@ class UploadBatchCreateIn(BaseModel):
     anonymized: bool = False
     dataset_kind: DatasetKind = "clean"
     attacked_manifest: AttackedDatasetManifest | None = None
+
 
 class UploadBatchOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -43,8 +47,10 @@ class UploadBatchOut(BaseModel):
     samples: dict[str, dict[str, Any]] = Field(default_factory=dict)
     validation: ValidationSummary
 
+
 class GeneratedDatasetCreateIn(BaseModel):
     """An immutable request referencing durable source and recipe records."""
+
     model_config = ConfigDict(extra="forbid")
 
     dataset_version_id: str = Field(min_length=1, max_length=128)
@@ -57,6 +63,7 @@ class GeneratedDatasetCreateIn(BaseModel):
     preview: bool = True
     limit: int | None = Field(default=None, ge=1)
 
+
 class GeneratedDatasetJobOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -68,6 +75,7 @@ class GeneratedDatasetJobOut(BaseModel):
     descriptor: dict[str, Any] | None = None
     artifact_root: str | None = None
 
+
 class GeneratedDatasetEventOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -76,11 +84,13 @@ class GeneratedDatasetEventOut(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     created_at: str
 
+
 class GeneratedDatasetEventsOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
     events: list[GeneratedDatasetEventOut] = Field(default_factory=list)
+
 
 class GeneratedDatasetManifestOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -88,17 +98,20 @@ class GeneratedDatasetManifestOut(BaseModel):
     id: str
     manifest: list[dict[str, Any]] = Field(default_factory=list)
 
+
 class GeneratedDatasetVariantsOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
     variants: list[dict[str, Any]] = Field(default_factory=list)
 
+
 class GeneratedDatasetValidationOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
     validation: dict[str, Any] = Field(default_factory=dict)
+
 
 class DatasetImportIn(BaseModel):
     model_config = ConfigDict(extra="forbid")

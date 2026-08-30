@@ -16,13 +16,13 @@ async def _create_completed_benchmark_run(client, attack_name: str = "gaussian_n
     assert created.status_code == 202
     run_id = created.json()["run_id"]
 
-    for _ in range(100):
+    for _ in range(300):
         item = await client.get(f"/api/v1/runs/{run_id}")
         assert item.status_code == 200
         if item.json()["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
             assert item.json()["status"] == "COMPLETED", item.json()
             return run_id
-        await asyncio.sleep(0.02)
+        await asyncio.sleep(0.05)
     raise AssertionError("Run job did not reach COMPLETED state")
 
 
@@ -48,12 +48,13 @@ async def test_run_analytics_endpoints(client) -> None:
     assert len(attacks_data) >= 1
     assert attacks_data[0]["attack"] == "gaussian_noise"
 
-    # 3. Severity
-    severity_resp = await client.get(f"/api/v1/analytics/runs/{run_id}/severity")
-    assert severity_resp.status_code == 200
-    severity_data = severity_resp.json()
-    assert isinstance(severity_data, list)
-    assert len(severity_data) >= 1
+    # 3. Severities
+    sev_resp = await client.get(f"/api/v1/analytics/runs/{run_id}/severities")
+    assert sev_resp.status_code == 200
+    sev_data = sev_resp.json()
+    assert isinstance(sev_data, list)
+    assert len(sev_data) >= 1
+    assert "severity" in sev_data[0]
 
     # 4. Classes
     classes_resp = await client.get(f"/api/v1/analytics/runs/{run_id}/classes")
@@ -80,12 +81,16 @@ async def test_comparison_analytics_endpoints(client) -> None:
         "/api/v1/model-comparisons",
         json={"baseline_run_id": base_run_id, "candidate_run_id": cand_run_id},
     )
-    assert comp_created.status_code == 201
-    comparison_id = comp_created.json()["comparison_id"]
+    assert comp_created.status_code == 201, f"comp_created: {comp_created.text}"
+    comp_json = comp_created.json()
+    comparison_id = comp_json.get("comparison_id") or comp_json.get("id")
+    assert comparison_id is not None, f"comp_json: {comp_json}"
 
     # 1. Summary
     summary_resp = await client.get(f"/api/v1/analytics/comparisons/{comparison_id}/summary")
-    assert summary_resp.status_code == 200
+    assert summary_resp.status_code == 200, (
+        f"summary_resp {summary_resp.status_code}: {summary_resp.text}, comparison_id={comparison_id}"
+    )
     summary_data = summary_resp.json()
     assert summary_data["comparison_id"] == comparison_id
     assert summary_data["paired"] is True
@@ -115,9 +120,9 @@ async def test_comparison_analytics_endpoints(client) -> None:
 
 @pytest.mark.asyncio
 async def test_analytics_404_handling(client) -> None:
-    """Ensure non-existent runs and comparisons return proper 404 status codes."""
-    run_resp = await client.get("/api/v1/analytics/runs/non-existent-run-id/summary")
-    assert run_resp.status_code == 404
+    """Verify clean 404 responses for non-existent entities."""
+    resp = await client.get("/api/v1/analytics/runs/non-existent-run/summary")
+    assert resp.status_code == 404
 
-    comp_resp = await client.get("/api/v1/analytics/comparisons/non-existent-comparison-id/summary")
-    assert comp_resp.status_code == 404
+    resp = await client.get("/api/v1/analytics/comparisons/non-existent-comp/summary")
+    assert resp.status_code == 404

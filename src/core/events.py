@@ -51,4 +51,3 @@ class EventEnvelope(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     created_at: str  # ISO 8601
     contract_version: Literal["1.0.0"] = "1.0.0"
-

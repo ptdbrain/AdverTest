@@ -5,8 +5,9 @@ import {
   createRetrainingBacklog, addRetrainingBacklogItem,
   estimateRun, preflightRun, randomizeRecipe as randomizeRecipeRequest,
   sweepRecipe as sweepRecipeRequest, previewRecipe as previewRecipeRequest, getRecipePresets, createModelComparison,
-  getApiBase,
+  getApiBase, artifactUrl,
 } from "@/lib/api";
+import { getCanonicalAttackKey, getDescriptiveAttackName, normalizeDatasetKey } from "@/lib/attackNaming";
 
 const TERMINAL_STATES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
 
@@ -14,23 +15,26 @@ const TERMINAL_STATES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
 const FALLBACK_MODES = [
   { id: "detection2d", title: "2D Object Detection", status: "available" },
   { id: "segmentation", title: "Instance Segmentation", status: "coming_later" },
-  { id: "detection3d", title: "3D Object Detection", status: "coming_later" },
+  { id: "detection3d", title: "3D Object Detection", status: "ready" },
 ];
 
 const FALLBACK_FAMILIES = [
   { id: "yolo11", display_name: "YOLO11", runnable: true },
+  { id: "pointpillars", display_name: "PointPillars", runnable: true },
 ];
 
 const FALLBACK_CHECKPOINTS = [
   { id: "yolo11s-base", model_name: "yolo11s", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "checkpoints/surrogates/yolo11s.pt" },
   { id: "yolo11n", model_name: "YOLO11n", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11n.pt" },
   { id: "yolo11s", model_name: "YOLO11s", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11s.pt" },
+  { id: "pointpillars-kitti", model_name: "PointPillars (KITTI)", task: "detection3d", model_family_id: "pointpillars", runnable: true, checkpoint_path: "hv_pointpillars_secfpn_6x8_160e_kitti-3d-3class.pth" },
 ];
 
 const FALLBACK_DATASETS = [
   { id: "kitti_val", name: "kitti", title: "KITTI Validation", annotation_schema: ["2d_bbox"], benchmark_ready: true, anonymized: true },
   { id: "coco_val", name: "coco", title: "COCO Validation", annotation_schema: ["2d_bbox"], benchmark_ready: true, anonymized: true },
   { id: "synthetic_shapes", name: "synthetic_shapes", title: "Synthetic Shapes", annotation_schema: ["2d_bbox"], benchmark_ready: true, anonymized: true },
+  { id: "kitti3d", name: "kitti3d", title: "KITTI 3D Validation", annotation_schema: ["3d_bbox", "lidar"], benchmark_ready: true, anonymized: true },
 ];
 
 const FALLBACK_ATTACKS = [
@@ -48,34 +52,47 @@ const FALLBACK_ATTACKS = [
   { name: "motion_blur", threat_model: "black_box", attack_type: "corruption", scenario_kind: "digital", available: true, version: "1.0.0" },
   { name: "defocus_blur", threat_model: "black_box", attack_type: "corruption", scenario_kind: "digital", available: true, version: "1.0.0" },
   { name: "square_attack", threat_model: "black_box", attack_type: "query", scenario_kind: "digital", available: true, version: "1.0.0" },
+  { name: "lidar_fog", threat_model: "gray_box", attack_type: "weather", scenario_kind: "physical", available: true, version: "1.0.0" },
+  { name: "lidar_snow", threat_model: "gray_box", attack_type: "weather", scenario_kind: "physical", available: true, version: "1.0.0" },
+  { name: "lidar_sector_drop", threat_model: "gray_box", attack_type: "occlusion", scenario_kind: "physical", available: true, version: "1.0.0" },
+  { name: "lidar_point_dropout", threat_model: "gray_box", attack_type: "sensor", scenario_kind: "digital", available: true, version: "1.0.0" },
 ];
 
-const FALLBACK_SAMPLES = [
-  { attack: "fgsm", severity: 3, degradation: 25, artifacts: { clean_prediction_url: "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/bus.jpg", attacked_prediction_url: "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg" } }
-];
-
-const FALLBACK_REPORT = {
-  model: "YOLO11", model_version: "yolo11n", dataset: "Synthetic Shapes", ap_clean: 0.854, seconds: 12.5, benchmark_metrics_available: true,
-  cells: [
-    { attack: "fgsm", severity: 1, degradation: 5, group: "A", ap: 0.811 },
-    { attack: "fgsm", severity: 3, degradation: 25, group: "A", ap: 0.640 },
-    { attack: "fgsm", severity: 5, degradation: 60, group: "A", ap: 0.341 }
-  ],
-  heatmap: {}
-};
-
-function artifactUrl(value) {
-  if (!value) return null;
-  if (/^https?:\/\//i.test(value)) return value;
-  const apiBase = getApiBase();
-  return new URL(value, `${apiBase.replace(/\/$/, "")}/`).href;
+function pathToArtifactUri(pathValue) {
+  if (!pathValue) return null;
+  if (/^https?:\/\//i.test(pathValue)) return pathValue;
+  if (typeof pathValue === "string") {
+    const dataIdx = pathValue.indexOf("/data/");
+    if (dataIdx !== -1) {
+      return artifactUrl(pathValue.slice(dataIdx));
+    }
+  }
+  return artifactUrl(pathValue);
 }
 
 function normalizeSamples(rawSamples) {
-  return rawSamples.map((sample) => ({
-    ...sample,
-    artifacts: Object.fromEntries(Object.entries(sample.artifacts ?? {}).map(([key, value]) => [key, artifactUrl(value)])),
-  }));
+  const items = Array.isArray(rawSamples)
+    ? rawSamples
+    : Array.isArray(rawSamples?.items)
+      ? rawSamples.items
+      : [];
+  return items.map((sample) => {
+    const rawArtifacts = sample.artifacts || {};
+    const clean_input = artifactUrl(rawArtifacts.clean_input_url) || pathToArtifactUri(sample.clean_image_path);
+    const attacked_input = artifactUrl(rawArtifacts.attacked_input_url) || pathToArtifactUri(sample.attacked_image_path);
+    const clean_pred = artifactUrl(rawArtifacts.clean_prediction_url) || pathToArtifactUri(sample.clean_prediction_path);
+    const attacked_pred = artifactUrl(rawArtifacts.attacked_prediction_url) || pathToArtifactUri(sample.attacked_prediction_path);
+
+    return {
+      ...sample,
+      artifacts: {
+        clean_input_url: clean_input,
+        attacked_input_url: attacked_input,
+        clean_prediction_url: clean_pred,
+        attacked_prediction_url: attacked_pred,
+      },
+    };
+  });
 }
 
 export function useAdverTest() {
@@ -113,7 +130,7 @@ export function useAdverTest() {
   const [backlog, setBacklog] = useState(null);
   const [backlogError, setBacklogError] = useState("");
   const [isCreatingBacklog, setIsCreatingBacklog] = useState(false);
-  const [activeTab, setActiveTab] = useState("evidence");
+  const [activeTab, setActiveTabState] = useState("evidence");
   const [defenceBaselineRunId, setDefenceBaselineRunId] = useState(null);
   const [defenceComparison, setDefenceComparison] = useState(null);
   const [recipe, setRecipe] = useState({ name: "manual", steps: [] });
@@ -122,6 +139,49 @@ export function useAdverTest() {
   const pollRef = useRef(null);
   const finalizedRef = useRef(false);
   const defenceBaselineRef = useRef(null);
+  const datasetReportsMapRef = useRef({});
+
+  // Restore previous attack run session from localStorage on initial load
+  useEffect(() => {
+    try {
+      const savedMap = localStorage.getItem("advertest_dataset_reports_map");
+      if (savedMap) {
+        datasetReportsMapRef.current = JSON.parse(savedMap) || {};
+      }
+      const saved = localStorage.getItem("advertest_last_session");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.runId) setRunId(parsed.runId);
+        if (parsed.recipe) setRecipe(parsed.recipe);
+        if (parsed.selectedAttacks) setSelectedAttacks(parsed.selectedAttacks);
+        if (parsed.selectedDataset) setSelectedDataset(parsed.selectedDataset);
+        if (parsed.selectedModelFamily) setSelectedModelFamily(parsed.selectedModelFamily);
+        if (parsed.selectedModelVersion) setSelectedModelVersion(parsed.selectedModelVersion);
+        if (parsed.activeTab) setActiveTabState(parsed.activeTab);
+        if (parsed.runStatus) setRunStatus(parsed.runStatus);
+
+        const currentKey = normalizeDatasetKey(parsed.selectedDataset || parsed.report?.dataset);
+        const currentReport = datasetReportsMapRef.current[currentKey] || parsed.report;
+        if (currentReport) {
+          setReport(currentReport);
+          datasetReportsMapRef.current[currentKey] = currentReport;
+        }
+        if (parsed.samples && Array.isArray(parsed.samples)) {
+          setSamples(currentReport?.samples || parsed.samples);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not restore last session:", e);
+    }
+  }, []);
+
+  const setActiveTab = useCallback((tab) => {
+    setActiveTabState(tab);
+    try {
+      const saved = JSON.parse(localStorage.getItem("advertest_last_session") || "{}");
+      localStorage.setItem("advertest_last_session", JSON.stringify({ ...saved, activeTab: tab }));
+    } catch {}
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -146,14 +206,17 @@ export function useAdverTest() {
         }
         if (families) {
           setModelFamilies(families);
-          setSelectedModelFamily(families[0]?.id || "");
+          setSelectedModelFamily((prev) => prev || families[0]?.id || "");
         }
-        if (checkpoints) { setBaseCheckpoints(checkpoints); setSelectedModelVersion(checkpoints[0]?.id || ""); }
+        if (checkpoints) {
+          setBaseCheckpoints(checkpoints);
+          setSelectedModelVersion((prev) => prev || checkpoints[0]?.id || "");
+        }
         if (availableModes) setModes(availableModes);
         if (presets) setRecipePresets(presets);
         if (d?.length) {
           const defaultDataset = d.find((item) => item.name === "synthetic_shapes") || d.find((item) => item.anonymized) || d[0];
-          setSelectedDataset(defaultDataset.id || defaultDataset.name);
+          setSelectedDataset((prev) => prev || defaultDataset.id || defaultDataset.name);
         }
         if (results.some((result) => result.status === "fulfilled")) {
           if (results.some((result) => result.status === "rejected")) console.warn("Some AdverTest catalogs failed to load; retrying only failed data on refresh.");
@@ -166,11 +229,11 @@ export function useAdverTest() {
         console.warn("Backend unavailable — loading fallback catalog data for UI preview.");
         setModes(FALLBACK_MODES);
         setModelFamilies(FALLBACK_FAMILIES);
-        setSelectedModelFamily(FALLBACK_FAMILIES[0].id);
+        setSelectedModelFamily((prev) => prev || FALLBACK_FAMILIES[0].id);
         setBaseCheckpoints(FALLBACK_CHECKPOINTS);
-        setSelectedModelVersion(FALLBACK_CHECKPOINTS[0].id);
+        setSelectedModelVersion((prev) => prev || FALLBACK_CHECKPOINTS[0].id);
         setDatasets(FALLBACK_DATASETS);
-        setSelectedDataset(FALLBACK_DATASETS[2].id);
+        setSelectedDataset((prev) => prev || FALLBACK_DATASETS[2].id);
         setAttacks(FALLBACK_ATTACKS);
         setLoading(false);
       }
@@ -179,28 +242,31 @@ export function useAdverTest() {
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([getCatalogDatasets({ task_id: mode }), getModelFamilies(mode)])
-      .then(([taskDatasets, families]) => {
-        if (cancelled) return;
-        setDatasets(taskDatasets); setModelFamilies(families);
-        setSelectedModelFamily((current) => families.some((item) => item.id === current) ? current : (families[0]?.id || ""));
-        setSelectedDataset(taskDatasets[0] ? (taskDatasets[0].id || taskDatasets[0].name) : "");
-        setSelectedAttacks([]); setRecipe({ name: "manual", steps: [] });
-      })
-      .catch((error) => console.warn("Task catalog unavailable:", error));
-    return () => { cancelled = true; };
-  }, [mode]);
+  const setRunOptions = useCallback((options) => {
+    setRunOptionsState((current) => ({ ...current, ...options }));
+  }, []);
+
+  const toggleAttack = useCallback((name) => {
+    const isSelected = selectedAttacks.includes(name);
+    const updated = isSelected ? selectedAttacks.filter((a) => a !== name) : [...selectedAttacks, name];
+    setSelectedAttacks(updated);
+    setRecipe((current) => {
+      const metadata = attacks.find((item) => item.name === name);
+      const steps = isSelected
+        ? current.steps.filter((step) => step.attack_name !== name)
+        : [...current.steps, { position: current.steps.length, attack_name: name, implementation_version: metadata?.version || "1.0.0", severity: 3, parameters: {}, seed: runOptions.seed, expected_cost: 1 }];
+      return { ...current, steps: steps.map((step, position) => ({ ...step, position })) };
+    });
+  }, [attacks, runOptions.seed, selectedAttacks]);
 
   useEffect(() => {
     let cancelled = false;
-    if (!selectedModelFamily) return undefined;
+    if (!selectedModelFamily) return;
     getBaseCheckpoints(mode, selectedModelFamily)
       .then((checkpoints) => {
         if (cancelled) return;
         setBaseCheckpoints(checkpoints);
-        setSelectedModelVersion(checkpoints[0]?.id || "");
+        setSelectedModelVersion((prev) => checkpoints.some((c) => c.id === prev) ? prev : (checkpoints[0]?.id || ""));
       })
       .catch((error) => { if (!cancelled) { console.warn("Base checkpoints unavailable:", error); setBaseCheckpoints([]); setSelectedModelVersion(""); } });
     return () => { cancelled = true; };
@@ -258,45 +324,7 @@ export function useAdverTest() {
   const refreshDefenceCheckpoints = useCallback(async () => {
     setDefenceCheckpoints(await getDefenceCheckpoints(mode));
   }, [mode]);
-  const setRunOptions = useCallback((changes) => setRunOptionsState((current) => ({ ...current, ...changes })), []);
-  const toggleAttack = useCallback((name) => {
-    const metadata = attacks.find((item) => item.name === name);
-    if (metadata?.available === false) return;
-    const isWhiteBox = metadata?.group === "D" || metadata?.threat_model === "white_box" || ["fgsm", "pgd", "cw_l2", "dag", "bim", "deepfool", "apgd"].includes(name);
 
-    setRecipe((current) => {
-      const isAlreadySelected = current.steps.some((step) => step.attack_name === name);
-      let remaining = current.steps.filter((step) => step.attack_name !== name);
-
-      // If selecting a white-box attack, replace any existing white-box attack to comply with max_white_box_steps=1
-      if (!isAlreadySelected && isWhiteBox) {
-        remaining = remaining.filter((step) => {
-          const stepMeta = attacks.find((item) => item.name === step.attack_name);
-          const stepIsWhiteBox = stepMeta?.group === "D" || stepMeta?.threat_model === "white_box" || ["fgsm", "pgd", "cw_l2", "dag", "bim", "deepfool", "apgd"].includes(step.attack_name);
-          return !stepIsWhiteBox;
-        });
-      }
-
-      const steps = !isAlreadySelected
-        ? [...remaining, { position: remaining.length, attack_name: name, implementation_version: metadata?.version || "1.0.0", severity: 3, parameters: {}, seed: runOptions.seed, expected_cost: 1 }]
-        : remaining;
-      return { ...current, steps: steps.map((step, position) => ({ ...step, position })) };
-    });
-
-    setSelectedAttacks((current) => {
-      if (current.includes(name)) {
-        return current.filter((item) => item !== name);
-      }
-      if (isWhiteBox) {
-        const filtered = current.filter((item) => {
-          const itemMeta = attacks.find((a) => a.name === item);
-          return !(itemMeta?.group === "D" || itemMeta?.threat_model === "white_box" || ["fgsm", "pgd", "cw_l2", "dag", "bim", "deepfool", "apgd"].includes(item));
-        });
-        return [...filtered, name];
-      }
-      return [...current, name];
-    });
-  }, [attacks, runOptions.seed]);
   const addDataset = useCallback((dataset) => {
     if (!dataset) return;
     setDatasets((current) => {
@@ -310,26 +338,17 @@ export function useAdverTest() {
 
   const buildRunConfig = useCallback(() => {
     const dataset = datasets.find((item) => (item.id || item.name) === selectedDataset) || { name: selectedDataset };
-    const datasetName = dataset.dataset || dataset.name || selectedDataset;
-    const datasetParams = { ...(dataset.dataset_params || {}) };
-
-    // Only override controls that the selected dataset advertises.  In
-    // particular, ``merge_van_truck`` and ``difficulty`` are KITTI-specific;
-    // sending them to BDD100K violates its strict parameter schema.
-    if (runOptions.split && Object.hasOwn(datasetParams, "split")) {
-      datasetParams.split = runOptions.split;
-    }
-    if (datasetName === "kitti") {
-      datasetParams.merge_van_truck = true;
-    }
-    if (["kitti", "kitti3d"].includes(datasetName) && runOptions.difficulty) {
-      datasetParams.difficulty = runOptions.difficulty;
-    }
+    const datasetParams = {
+      merge_van_truck: true,
+      ...(dataset.dataset_params || {}),
+      ...(runOptions.split ? { split: runOptions.split } : {}),
+      ...(runOptions.difficulty ? { difficulty: runOptions.difficulty } : {}),
+    };
     return {
       model_family_id: selectedModelFamily,
       checkpoint_id: selectedModelVersion,
       task_id: mode,
-      dataset: datasetName,
+      dataset: dataset.dataset || dataset.name || selectedDataset,
       dataset_params: datasetParams,
       recipe,
       limit: runOptions.limit === "all" || runOptions.limit === null || runOptions.limit === 0 || runOptions.limit === "" ? null : Number(runOptions.limit),
@@ -339,15 +358,107 @@ export function useAdverTest() {
     };
   }, [datasets, mode, recipe, runOptions, selectedDataset, selectedModelFamily, selectedModelVersion]);
 
+  const handleSetSelectedDataset = useCallback((newDataset) => {
+    setSelectedDataset(newDataset);
+    const key = normalizeDatasetKey(newDataset);
+    const cached = datasetReportsMapRef.current?.[key];
+    if (cached) {
+      setReport(cached);
+      setSamples(cached.samples || []);
+    } else {
+      setReport(null);
+      setSamples([]);
+    }
+  }, []);
+
   const finalizeRun = useCallback(async (id, job = null) => {
     if (finalizedRef.current) return;
     finalizedRef.current = true;
     setResultLoadStatus("loading");
     setResultLoadError(null);
     try {
-      const [completedReport, rawSamples] = await Promise.all([getRunReport(id), getRunSamples(id)]);
-      setReport(completedReport);
-      setSamples(normalizeSamples(rawSamples));
+      const [completedReport, rawSamples] = await Promise.all([
+        getRunReport(id),
+        getRunSamples(id).catch(() => []),
+      ]);
+      const initialSamples = (Array.isArray(rawSamples) && rawSamples.length > 0)
+        ? rawSamples
+        : (completedReport?.worst_cases?.length ? completedReport.worst_cases : completedReport?.sample_results || []);
+      const normSamples = normalizeSamples(initialSamples);
+
+      const datasetKey = normalizeDatasetKey(completedReport?.dataset || selectedDataset);
+      const existing = datasetReportsMapRef.current?.[datasetKey] || null;
+
+      let finalReport;
+      if (!existing) {
+        finalReport = {
+          ...completedReport,
+          samples: normSamples,
+          accumulated_runs: [id],
+          accumulated_attacks: Array.from(
+            new Set((completedReport.cells || []).map((c) => getDescriptiveAttackName(c, c.severity, completedReport)))
+          ),
+        };
+      } else {
+        // Accumulate cells from existing and completedReport on same dataset with canonical deduplication
+        const cellMap = new Map();
+        (existing.cells || []).forEach((c) => {
+          const key = getCanonicalAttackKey(c, c.severity, existing);
+          cellMap.set(key, c);
+        });
+        (completedReport.cells || []).forEach((c) => {
+          const key = getCanonicalAttackKey(c, c.severity, completedReport);
+          cellMap.set(key, c);
+        });
+        const mergedCells = Array.from(cellMap.values());
+
+        // Accumulate worst_cases
+        const sampleMap = new Map();
+        (existing.worst_cases || []).forEach((s) => {
+          const key = `${s.sample_id}::${getCanonicalAttackKey(s, s.severity, existing)}`;
+          sampleMap.set(key, s);
+        });
+        (completedReport.worst_cases || []).forEach((s) => {
+          const key = `${s.sample_id}::${getCanonicalAttackKey(s, s.severity, completedReport)}`;
+          sampleMap.set(key, s);
+        });
+        const mergedWorstCases = Array.from(sampleMap.values());
+
+        // Accumulate samples
+        const existingSamples = existing.samples || [];
+        const fullSamplesMap = new Map();
+        existingSamples.forEach((s) => {
+          const key = `${s.sample_id}::${getCanonicalAttackKey(s, s.severity, existing)}`;
+          fullSamplesMap.set(key, s);
+        });
+        normSamples.forEach((s) => {
+          const key = `${s.sample_id}::${getCanonicalAttackKey(s, s.severity, completedReport)}`;
+          fullSamplesMap.set(key, s);
+        });
+        const mergedSamples = Array.from(fullSamplesMap.values());
+
+        const prevRuns = existing.accumulated_runs || (existing.run_id ? [existing.run_id] : []);
+        const allRuns = Array.from(new Set([...prevRuns, id]));
+        const allAttacks = Array.from(
+          new Set(mergedCells.map((c) => getDescriptiveAttackName(c, c.severity, completedReport)))
+        );
+
+        finalReport = {
+          ...completedReport,
+          cells: mergedCells,
+          worst_cases: mergedWorstCases,
+          samples: mergedSamples,
+          accumulated_runs: allRuns,
+          accumulated_attacks: allAttacks,
+          ap_clean: completedReport.ap_clean ?? existing.ap_clean,
+        };
+      }
+
+      if (!datasetReportsMapRef.current) datasetReportsMapRef.current = {};
+      datasetReportsMapRef.current[datasetKey] = finalReport;
+      setReport(finalReport);
+      setSamples(finalReport.samples || normSamples);
+
       if (defenceBaselineRef.current && defenceBaselineRef.current !== id) {
         try { setDefenceComparison(await createModelComparison(defenceBaselineRef.current, id)); }
         catch (error) { console.warn("Defence comparison is unavailable:", error); }
@@ -355,6 +466,25 @@ export function useAdverTest() {
       setProgressDetail("Done!");
       setResultLoadStatus("ready");
       triggerAutoFlag(id, 30).catch(console.warn);
+
+      // Save session to localStorage
+      try {
+        localStorage.setItem("advertest_dataset_reports_map", JSON.stringify(datasetReportsMapRef.current));
+        localStorage.setItem("advertest_last_session", JSON.stringify({
+          runId: id,
+          report: finalReport,
+          samples: finalReport.samples || normSamples,
+          recipe,
+          selectedAttacks,
+          selectedDataset,
+          selectedModelFamily,
+          selectedModelVersion,
+          activeTab,
+          runStatus: "COMPLETED",
+        }));
+      } catch (e) {
+        console.warn("Could not cache session in localStorage:", e);
+      }
     } catch (error) {
       const message = error.message || "Run completed but evidence could not be loaded.";
       setProgressDetail(message);
@@ -366,19 +496,20 @@ export function useAdverTest() {
       setRunStatus(job?.status || "COMPLETED");
       setIsRunning(false);
     }
-  }, []);
+  }, [activeTab, recipe, selectedAttacks, selectedDataset, selectedModelFamily, selectedModelVersion]);
 
   const monitorRun = useCallback((id) => {
     const applyStatus = (job) => {
-      setRunStatus(job.status || job.state);
+      if (!job) return;
+      const status = job.status || job.state;
+      setRunStatus(status);
       if (job.progress != null) setProgress(Math.round(job.progress * 100));
-      if (job.status === "GPU_STARTING") setProgressDetail("GPU đang khởi động, job sẽ tự chạy sau khi worker sẵn sàng (thường 1–3 phút)...");
-      if (job.status === "PREPARING") setProgressDetail("Loading model & dataset...");
-      if (job.status === "GENERATING") setProgressDetail("Generating attack variants...");
-      if (job.status === "INFERENCING") setProgressDetail("Running inference...");
-      if (job.status === "EVALUATING") setProgressDetail("Computing metrics...");
-      if (job.status === "COMPLETED") finalizeRun(id, job);
-      if (job.status && job.status !== "COMPLETED" && TERMINAL_STATES.has(job.status)) {
+      if (status === "PREPARING") setProgressDetail("Loading model & dataset...");
+      if (status === "GENERATING") setProgressDetail("Generating attack variants...");
+      if (status === "INFERENCING") setProgressDetail("Running inference...");
+      if (status === "EVALUATING") setProgressDetail("Computing metrics...");
+      if (status === "COMPLETED") finalizeRun(id, job);
+      if (status && status !== "COMPLETED" && TERMINAL_STATES.has(status)) {
         if (pollRef.current) clearInterval(pollRef.current);
         wsRef.current?.close();
         setProgressDetail(job.error || "Run did not complete.");
@@ -386,10 +517,14 @@ export function useAdverTest() {
       }
     };
     wsRef.current = connectRunWebSocket(id, (event) => applyStatus({ status: event.state, progress: event.payload?.progress, error: event.payload?.error }));
+    // Immediate first check in case job completed rapidly
+    getRun(id).then(applyStatus).catch(() => {});
     pollRef.current = setInterval(async () => {
       try { applyStatus(await getRun(id)); } catch (error) { console.warn("Run status polling failed:", error); }
-    }, 1500);
+    }, 1200);
   }, [finalizeRun]);
+
+  const [activeRunMeta, setActiveRunMeta] = useState(null);
 
   const handleRun = useCallback(async () => {
     const version = baseCheckpoints.find((item) => item.id === selectedModelVersion);
@@ -404,7 +539,23 @@ export function useAdverTest() {
     const dataset = datasets.find((item) => (item.id || item.name) === selectedDataset);
     const isQuickInference = dataset?.benchmark_ready === false && dataset?.status === "RAW";
     const config = buildRunConfig();
-    setIsRunning(true); setRunStatus("PREFLIGHT"); setProgress(0); setReport(null); setSamples([]); setBacklog(null); setBacklogError(""); setActiveTab("evidence"); setProgressDetail("Checking dataset, model and recipe..."); setResultLoadStatus("idle"); setResultLoadError(null); finalizedRef.current = false;
+
+    // If a run is currently running, cancel it cleanly before launching the new one
+    if (runId && (isRunning || !TERMINAL_STATES.has(runStatus))) {
+      try { cancelRun(runId); } catch {}
+      if (pollRef.current) clearInterval(pollRef.current);
+      wsRef.current?.close();
+    }
+
+    setIsRunning(true);
+    setRunStatus("PREFLIGHT");
+    setProgress(0);
+    setBacklog(null);
+    setBacklogError("");
+    setProgressDetail("Checking dataset, model and recipe...");
+    setResultLoadStatus("idle");
+    setResultLoadError(null);
+    finalizedRef.current = false;
     try {
       let job;
       if (isQuickInference) {
@@ -435,7 +586,20 @@ export function useAdverTest() {
         }
         job = await createRun(config);
       }
-      setRunId(job.run_id); setRunStatus(job.status); setProgressDetail("Queueing..."); monitorRun(job.run_id);
+      setRunId(job.run_id);
+      setRunStatus(job.status);
+      setActiveRunMeta({
+        runId: job.run_id,
+        task: mode,
+        modelFamily: selectedModelFamily,
+        modelVersion: version?.model_name || selectedModelVersion,
+        dataset: dataset?.title || dataset?.name || selectedDataset,
+        attacks: selectedAttacks,
+        severity: recipe.steps?.[0]?.severity || 3,
+        startedAt: new Date().toLocaleTimeString(),
+      });
+      setProgressDetail(`Đang chạy phiên #${job.run_id.slice(0, 8)} (${selectedAttacks.join(", ") || "Attack"})...`);
+      monitorRun(job.run_id);
     } catch (error) {
       setRunStatus("FAILED");
       const raw = error.message || "";
@@ -445,11 +609,12 @@ export function useAdverTest() {
       setProgressDetail(friendly);
       setIsRunning(false);
     }
-  }, [baseCheckpoints, buildRunConfig, datasets, mode, monitorRun, recipe, runOptions, selectedDataset, selectedModelFamily, selectedModelVersion]);
+  }, [baseCheckpoints, buildRunConfig, datasets, isRunning, mode, monitorRun, recipe, runId, runOptions, runStatus, selectedAttacks, selectedDataset, selectedModelFamily, selectedModelVersion]);
 
   const runDefence = useCallback(async (checkpointId) => {
     if (!runId || !checkpointId) return;
     setDefenceBaselineRunId(runId); defenceBaselineRef.current = runId; setDefenceComparison(null);
+    finalizedRef.current = false;
     setIsRunning(true); setRunStatus("PREFLIGHT"); setProgress(0); setProgressDetail("Locking the base-run protocol for Defence...");
     try {
       const job = await createDefenceRun(runId, checkpointId);
@@ -467,8 +632,6 @@ export function useAdverTest() {
       const created = await createRetrainingBacklog(`Measured failures from ${runId}`);
       let updated = created;
       for (const cell of failures) updated = await addRetrainingBacklogItem(created.id, `${runId}:${cell.attack}:severity-${cell.severity}`);
-      // Draft is intentionally preserved.  A reviewer must approve it through
-      // the Defence workflow before any training request can be submitted.
       setBacklog(updated);
     } catch (error) { setBacklogError(error.message || "Could not create the retraining backlog."); }
     finally { setIsCreatingBacklog(false); }
@@ -486,17 +649,22 @@ export function useAdverTest() {
     setRecipe({ name: source.name || "recipe", steps });
     setSelectedAttacks(steps.map((step) => step.attack_name));
   }, [attacks, runOptions.seed]);
+
   const loadPreset = useCallback((presetId) => {
     const preset = recipePresets.find((item) => item.preset_id === presetId);
     if (preset) setCanonicalRecipe(preset);
   }, [recipePresets, setCanonicalRecipe]);
+
   const randomizeRecipe = useCallback(async (nSteps = 3) => {
     setCanonicalRecipe(await randomizeRecipeRequest(nSteps, null, runOptions.seed));
   }, [runOptions.seed, setCanonicalRecipe]);
+
   const sweepRecipe = useCallback(async (attack) => {
     setCanonicalRecipe(await sweepRecipeRequest(attack));
   }, [setCanonicalRecipe]);
+
   const previewRecipe = useCallback(async (payload) => previewRecipeRequest(payload || { recipe }), [recipe]);
+
   const cancelRunAction = useCallback(async () => {
     if (!runId) return;
     setRunStatus("CANCEL_REQUESTED");
@@ -517,9 +685,43 @@ export function useAdverTest() {
       setIsRunning(false);
     }
   }, [runId]);
+
   const retryEvidence = useCallback(() => { if (!runId) return; finalizedRef.current = false; finalizeRun(runId, { status: "COMPLETED" }); }, [finalizeRun, runId]);
 
+  const resetSession = useCallback(() => {
+    const key = normalizeDatasetKey(selectedDataset);
+    if (datasetReportsMapRef.current) {
+      delete datasetReportsMapRef.current[key];
+    }
+    try {
+      localStorage.setItem("advertest_dataset_reports_map", JSON.stringify(datasetReportsMapRef.current || {}));
+      localStorage.removeItem("advertest_last_session");
+    } catch {}
+    setReport(null);
+    setSamples([]);
+    setRunId(null);
+    setRunStatus(null);
+    setProgress(0);
+    setProgressDetail("");
+    setActiveTabState("evidence");
+  }, [selectedDataset]);
+
   useEffect(() => () => { wsRef.current?.close(); if (pollRef.current) clearInterval(pollRef.current); }, []);
+
   const version = baseCheckpoints.find((item) => item.id === selectedModelVersion);
-  return { state: { attacks, models, datasets, modelVersions, modelFamilies, baseCheckpoints, defenceCheckpoints, modes, recipePresets, recipe, loading, selectedDataset, selectedAttacks, mode, selectedModelFamily, selectedModelVersion, runOptions, runId, runStatus, progress, progressDetail, resultLoadStatus, resultLoadError, report, samples, isRunning, backlog, backlogError, isCreatingBacklog, trainingBlockedReason: version?.runnable ? "" : "WAITING_FOR_ARTIFACTS", activeTab, defenceBaselineRunId, defenceComparison }, actions: { setSelectedDataset, addDataset, setMode, setModelFamily, setSelectedModelVersion, setRunOptions, refreshBaseCheckpoints, refreshDefenceCheckpoints, toggleAttack, updateAttackSeverity, handleRun, runDefence, createBacklog, setActiveTab, loadPreset, randomizeRecipe, sweepRecipe, previewRecipe, retryEvidence, cancelRun: cancelRunAction } };
+
+  return {
+    state: {
+      attacks, models, datasets, modelVersions, modelFamilies, baseCheckpoints, defenceCheckpoints, modes, recipePresets, recipe, loading,
+      selectedDataset, selectedAttacks, mode, selectedModelFamily, selectedModelVersion, runOptions,
+      runId, runStatus, progress, progressDetail, resultLoadStatus, resultLoadError, report, samples, isRunning,
+      backlog, backlogError, isCreatingBacklog, trainingBlockedReason: version?.runnable ? "" : "WAITING_FOR_ARTIFACTS",
+      activeTab, defenceBaselineRunId, defenceComparison, activeRunMeta,
+    },
+    actions: {
+      setSelectedDataset: handleSetSelectedDataset, addDataset, setMode, setModelFamily, setSelectedModelVersion, setRunOptions, refreshBaseCheckpoints, refreshDefenceCheckpoints,
+      toggleAttack, updateAttackSeverity, handleRun, runDefence, createBacklog, setActiveTab, loadPreset, randomizeRecipe, sweepRecipe, previewRecipe,
+      retryEvidence, cancelRun: cancelRunAction, resetSession, clearReportHistory: resetSession,
+    },
+  };
 }

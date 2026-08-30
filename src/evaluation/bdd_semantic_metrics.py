@@ -19,7 +19,9 @@ class BDD100KSemanticEvaluator:
     task = "segmentation"
     metric_versions = {"bdd_semantic_iou": METRIC_VERSION}
 
-    def evaluate(self, predictions: Sequence[ModelPrediction], samples: Sequence[Sample], protocol: BenchmarkProtocol) -> EvaluationResult:
+    def evaluate(
+        self, predictions: Sequence[ModelPrediction], samples: Sequence[Sample], protocol: BenchmarkProtocol
+    ) -> EvaluationResult:
         by_id = {item.sample_id: item for item in predictions if isinstance(item, SegmentationPrediction)}
         values: dict[str, float] = {}
         for sample in samples:
@@ -34,5 +36,34 @@ class BDD100KSemanticEvaluator:
                 union |= instance.mask
             values[sample.sample_id] = binary_iou(union, target)
         score = float(np.mean(list(values.values()))) if values else 0.0
-        metric = MetricEnvelope(name="bdd_semantic_iou", value=score, unit="ratio", percent_value=score * 100, version=METRIC_VERSION, higher_is_better=True, metadata={"comparison_scope": "external_semantic_nonpaired"})
-        return EvaluationResult(task="segmentation", protocol_id=protocol.protocol_id, headline=metric, per_sample_metrics={sample_id: (MetricEnvelope(name="bdd_semantic_iou", value=value, unit="ratio", percent_value=value * 100, version=METRIC_VERSION, higher_is_better=True, metadata={"comparison_scope": "external_semantic_nonpaired"}),) for sample_id, value in values.items()}, validation_warnings=("BDD100K semantic evaluation is external and non-paired; do not use it for checkpoint selection or Recovery.",))
+        metric = MetricEnvelope(
+            name="bdd_semantic_iou",
+            value=score,
+            unit="ratio",
+            percent_value=score * 100,
+            version=METRIC_VERSION,
+            higher_is_better=True,
+            metadata={"comparison_scope": "external_semantic_nonpaired"},
+        )
+        return EvaluationResult(
+            task="segmentation",
+            protocol_id=protocol.protocol_id,
+            headline=metric,
+            per_sample_metrics={
+                sample_id: (
+                    MetricEnvelope(
+                        name="bdd_semantic_iou",
+                        value=value,
+                        unit="ratio",
+                        percent_value=value * 100,
+                        version=METRIC_VERSION,
+                        higher_is_better=True,
+                        metadata={"comparison_scope": "external_semantic_nonpaired"},
+                    ),
+                )
+                for sample_id, value in values.items()
+            },
+            validation_warnings=(
+                "BDD100K semantic evaluation is external and non-paired; do not use it for checkpoint selection or Recovery.",
+            ),
+        )

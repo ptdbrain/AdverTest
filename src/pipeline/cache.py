@@ -198,8 +198,7 @@ class GenerationCache:
             check_same_thread=False,
         )
         self._connection.execute(
-            "CREATE TABLE IF NOT EXISTS generation_cache "
-            "(cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL)"
+            "CREATE TABLE IF NOT EXISTS generation_cache (cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL)"
         )
         self.hits = 0
         self.misses = 0

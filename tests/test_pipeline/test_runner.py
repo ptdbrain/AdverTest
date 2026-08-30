@@ -46,13 +46,16 @@ def test_ordered_recipe_produces_one_final_evidence_result() -> None:
         ),
     )
 
-    report = TestRunner().run(
-        RunConfig(recipe=recipe, limit=2, bootstrap_repetitions=0)
-    )
+    report = TestRunner().run(RunConfig(recipe=recipe, limit=2, bootstrap_repetitions=0))
 
     assert len(report.cells) == 1
-    assert report.cells[0].attack == recipe.recipe_id
+    # cell.attack is the human-readable recipe name, not the raw hash
+    assert report.cells[0].attack == recipe.name
+    # recipe provenance still tracks the canonical hash
     assert report.provenance["recipe"]["recipe_hash"] == recipe.recipe_hash
+    # recipe_steps and recipe_id are preserved in cell metrics for canonical key resolution
+    assert report.cells[0].metrics["recipe_id"] == recipe.recipe_id
+    assert len(report.cells[0].metrics["recipe_steps"]) == 2
     assert all(item.recipe_hash == recipe.recipe_hash for item in report.sample_results)
     assert all(len(item.recipe_steps) == 2 for item in report.sample_results)
 
@@ -69,9 +72,7 @@ def test_evidence_includes_structured_ground_truth_boxes() -> None:
 
 
 def test_report_bootstrap_resamples_samples_not_aggregate_cells() -> None:
-    report = TestRunner().run(
-        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=2, bootstrap_repetitions=20)
-    )
+    report = TestRunner().run(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=2, bootstrap_repetitions=20))
     assert report.metrics["clean"]["ap50_ci95"] is not None
     assert report.cells[0].metrics["ap50_ci95"] is not None
 

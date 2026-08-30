@@ -5,6 +5,9 @@ from __future__ import annotations
 import functools
 from concurrent.futures import ThreadPoolExecutor
 
+from fastapi import Depends
+
+from src.agents.advisor_service import AIAdvisorService
 from src.api.checkpoint_service import CheckpointValidationService
 from src.api.generated_dataset_service import GeneratedDatasetService
 from src.api.jobs import LocalRunWorker, SqliteRunStore
@@ -61,13 +64,21 @@ def get_generated_datasets() -> GeneratedDatasetService:
 
 
 @functools.lru_cache
-def get_checkpoint_validations() -> CheckpointValidationService:
-    """Singleton CheckpointValidationService for uploaded model checkpoints."""
+def get_checkpoint_validator() -> CheckpointValidationService:
+    """Singleton CheckpointValidationService for secure artifact quarantine scanning."""
     return CheckpointValidationService(
-        get_store(),
-        get_workflow_store(),
-        max_workers=get_settings().worker_max_concurrency,
+        records=get_store(),
+        jobs=get_workflow_store(),
+        max_workers=2,
     )
+
+
+get_checkpoint_validations = get_checkpoint_validator
+
+
+def get_advisor_service(store: SqliteRunStore = Depends(get_store)) -> AIAdvisorService:
+    """Instantiate AIAdvisorService with the active injected store."""
+    return AIAdvisorService(store)
 
 
 @functools.lru_cache

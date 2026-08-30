@@ -6,6 +6,9 @@ from collections import defaultdict
 
 from src.core.hashing import stable_digest
 from src.evaluation.contracts import FailureCase, FailureCluster
+from src.evaluation.smart_clustering import SmartCluster, SmartFailureClusterer
+
+__all__ = ["FailureGrouper", "SmartFailureClusterer", "SmartCluster"]
 
 
 class FailureGrouper:
@@ -30,15 +33,8 @@ class FailureGrouper:
         clusters: list[FailureCluster] = []
         for key, members in sorted(grouped.items()):
             member_ids = tuple(sorted(case.case_id for case in members))
-            allowed_sets = [
-                set(case.metadata.get("allowed_uses", ("review",)))
-                for case in members
-            ]
-            allowed = (
-                set.intersection(*allowed_sets)
-                if allowed_sets
-                else {"review"}
-            )
+            allowed_sets = [set(case.metadata.get("allowed_uses", ("review",))) for case in members]
+            allowed = set.intersection(*allowed_sets) if allowed_sets else {"review"}
             cluster_id = f"failure-cluster-{stable_digest({'key': key, 'members': member_ids}, length=20)}"
             selection_allowed = "training" in allowed
             clusters.append(

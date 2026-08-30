@@ -17,22 +17,24 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 try:
     import torch
+
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
 
 try:
-    from ultralytics import YOLO  # type: ignore[import-untyped]
+    from ultralytics import YOLO  # noqa: F401 # type: ignore[import-untyped]
+
     HAS_ULTRALYTICS = True
 except ImportError:
     HAS_ULTRALYTICS = False
@@ -44,8 +46,6 @@ from src.training.yolo_dataset_formatter import (
     ensure_kitti_dataset,
 )
 from src.training.yolo_trainer import YoloTrainer
-
-
 
 
 def check_environment() -> dict[str, Any]:
@@ -70,9 +70,7 @@ def check_environment() -> dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Train & Fine-tune YOLO11 models (B0, R1, R2) on Local / Colab GPU."
-    )
+    parser = argparse.ArgumentParser(description="Train & Fine-tune YOLO11 models (B0, R1, R2) on Local / Colab GPU.")
     parser.add_argument(
         "--mode",
         type=str,
@@ -320,7 +318,9 @@ def main() -> int:
         print("      >>> Executing Real Ultralytics PyTorch Training Engine on GPU/CPU <<<")
     else:
         print("      >>> Notice: Ultralytics not installed in local env. Executing simulation/validation mode. <<<")
-        print("      >>> On Google Colab with `uv pip install -e \".[models-gpu]\"`, this will run full GPU training. <<<")
+        print(
+            '      >>> On Google Colab with `uv pip install -e ".[models-gpu]"`, this will run full GPU training. <<<'
+        )
 
     start_time = time.perf_counter()
 

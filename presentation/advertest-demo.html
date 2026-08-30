@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AdverTest — Adversarial Robustness Testing Platform</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&family=Montserrat:ital,wght@0,400;0,500;0,600;0,700;0,800;1,700&display=swap" rel="stylesheet">
+<style>
+/* ============================================
+   AdverTest Pitch Deck v7 — Ultra Premium Tech
+   Clean Animated Gradient, Removed Scanlines
+   ============================================ */
+
+:root {
+  --bg-deep: #090c15;       /* Even deeper space blue */
+  --bg-slide: transparent; 
+  --bg-surface: rgba(15, 23, 42, 0.6); 
+  
+  --text-white: #ffffff;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  /* Vibrant Accents */
+  --accent: #10b981;          /* Emerald */
+  --accent-glow: rgba(16,185,129,0.5);
+  --accent-2: #38bdf8;        /* Sky Blue */
+  --accent-3: #f59e0b;        /* Amber */
+  --accent-4: #f43f5e;        /* Rose */
+  --accent-5: #a855f7;        /* Purple */
+  --accent-gradient: linear-gradient(135deg, #38bdf8, #a855f7);
+  --accent-gradient-2: linear-gradient(135deg, #10b981, #f59e0b);
+
+  --border: rgba(255,255,255,0.08);
+
+  --font-display: 'Montserrat', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --slide-w: 1920;
+  --slide-h: 1080;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: var(--font-body); color: var(--text-primary); -webkit-font-smoothing: antialiased; }
+
+/* ---- Viewport & Stage ---- */
+.viewport { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; }
+.stage { width: calc(var(--slide-w) * 1px); height: calc(var(--slide-h) * 1px); position: relative; transform-origin: center center; overflow: hidden; }
+
+/* ---- Slide ---- */
+.slide { position: absolute; inset: 0; width: 100%; height: 100%; visibility: hidden; opacity: 0; pointer-events: none; transition: opacity 0.6s var(--ease), visibility 0s 0.6s; display: flex; flex-direction: column; z-index: 10; }
+.slide.active { visibility: visible; opacity: 1; pointer-events: auto; transition: opacity 0.6s var(--ease), visibility 0s 0s; z-index: 20; }
+
+/* ---- Global Animated Background (Clean) ---- */
+.global-bg {
+  position: absolute; inset: 0; z-index: 0;
+  background: linear-gradient(-45deg, #090c15, #0f172a, #082f49, #022c22);
+  background-size: 400% 400%;
+  animation: gradientBG 24s ease infinite;
+}
+@keyframes gradientBG {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ---- Ambient Glows ---- */
+.ambient-glow { position: absolute; border-radius: 50%; filter: blur(150px); opacity: 0.3; pointer-events: none; z-index: 1; }
+.glow-1 { width: 900px; height: 900px; background: #38bdf8; top: -300px; left: -200px; animation: float1 18s ease-in-out infinite alternate; }
+.glow-2 { width: 700px; height: 700px; background: #a855f7; bottom: -200px; right: -100px; animation: float2 22s ease-in-out infinite alternate; }
+@keyframes float1 { 0% { transform: translate(0, 0) scale(1); } 100% { transform: translate(150px, 80px) scale(1.1); } }
+@keyframes float2 { 0% { transform: translate(0, 0) scale(1); } 100% { transform: translate(-100px, -120px) scale(1.2); } }
+
+/* ---- Content ---- */
+.content { position: relative; z-index: 5; padding: 72px 120px; flex: 1; display: flex; flex-direction: column; }
+
+/* ---- Typography ---- */
+.h-xl { font-family: var(--font-display); font-size: 96px; font-weight: 800; line-height: 1.1; letter-spacing: 0px; color: var(--text-white); text-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+.h-lg { font-family: var(--font-display); font-size: 72px; font-weight: 800; line-height: 1.2; letter-spacing: 0px; color: var(--text-white); text-shadow: 0 6px 24px rgba(0,0,0,0.4); }
+.h-md { font-family: var(--font-display); font-size: 32px; font-weight: 700; line-height: 1.3; color: var(--text-white); }
+.h-sm { font-family: var(--font-display); font-size: 24px; font-weight: 600; line-height: 1.3; color: var(--text-white); }
+
+.body-xl { font-family: var(--font-body); font-size: 24px; font-weight: 400; line-height: 1.6; color: var(--text-primary); }
+.body-lg { font-family: var(--font-body); font-size: 20px; font-weight: 400; line-height: 1.6; color: var(--text-secondary); }
+.body-md { font-family: var(--font-body); font-size: 16px; font-weight: 400; line-height: 1.6; color: var(--text-secondary); }
+
+.label { font-family: var(--font-mono); font-size: 20px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; }
+.mono { font-family: var(--font-mono); }
+.font-bold { font-weight: 700; }
+
+/* ---- Colors ---- */
+.grad { background: var(--accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.grad-2 { background: var(--accent-gradient-2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.c-accent { color: var(--accent); }
+.c-blue { color: var(--accent-2); }
+.c-amber { color: var(--accent-3); }
+.c-red { color: var(--accent-4); }
+.c-purple { color: var(--accent-5); }
+.c-white { color: var(--text-white); }
+
+/* ---- Status / Pulse ---- */
+.pulse-dot { display: inline-block; width: 10px; height: 10px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 0 0 var(--accent-glow); animation: pulse 2s infinite; margin-right: 12px; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(16,185,129, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(16,185,129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16,185,129, 0); } }
+
+/* ---- Section header ---- */
+.snum { position: absolute; top: 40px; right: 80px; font-family: var(--font-display); font-size: 160px; font-weight: 800; color: rgba(255,255,255,0.03); letter-spacing: -4px; z-index: 0; line-height: 1; pointer-events: none; }
+.section-label { display: inline-flex; align-items: center; gap: 16px; margin-bottom: 32px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; padding-right: 48px; }
+.section-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 16px var(--accent); }
+
+/* ---- Cards (Glassmorphism & Hover FX) ---- */
+.card-glass { 
+  background: rgba(15, 23, 42, 0.4); 
+  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); 
+  border: 1px solid rgba(255,255,255,0.08); 
+  border-radius: 16px; padding: 32px; 
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2); 
+  position: relative; overflow: hidden;
+  transition: all 0.4s var(--ease); 
+}
+.card-glass:hover {
+  background: rgba(30, 41, 59, 0.6);
+  border-color: rgba(255,255,255,0.2);
+  transform: translateY(-4px);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+}
+.card-glass::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 100%);
+  opacity: 0; transition: opacity 0.4s; pointer-events: none;
+}
+.card-glass:hover::after { opacity: 1; }
+
+/* ---- Layout Grid ---- */
+.g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+.g3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
+.g4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
+
+/* ---- Metrics ---- */
+.metric { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px 0; }
+.metric-val { font-family: var(--font-display); font-size: 56px; font-weight: 800; line-height: 1; }
+.metric-unit { font-family: var(--font-mono); font-size: 14px; color: var(--text-muted); margin-top: 12px; letter-spacing: 1px; text-transform: uppercase; }
+
+/* ---- Tags ---- */
+.tag { display: inline-flex; align-items: center; padding: 6px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.1); }
+.tag-g { background: rgba(16,185,129,0.15); color: #34d399; border-color: rgba(16,185,129,0.3); }
+.tag-b { background: rgba(56,189,248,0.15); color: #38bdf8; border-color: rgba(56,189,248,0.3); }
+.tag-a { background: rgba(245,158,11,0.15); color: #fbbf24; border-color: rgba(245,158,11,0.3); }
+.tag-r { background: rgba(244,63,94,0.15); color: #fb7185; border-color: rgba(244,63,94,0.3); }
+.tag-p { background: rgba(168,85,247,0.15); color: #c084fc; border-color: rgba(168,85,247,0.3); }
+
+/* ---- Images ---- */
+.img-frame { border-radius: 16px; overflow: hidden; border: 1px solid var(--border); background: var(--bg-surface); box-shadow: 0 24px 48px rgba(0,0,0,0.5); }
+.img-frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+/* ---- Heatmap ---- */
+.hmap { display: grid; grid-template-columns: 120px repeat(5, 1fr); gap: 6px; }
+.hmap-cell { padding: 16px 8px; text-align: center; border-radius: 8px; font-family: var(--font-mono); font-size: 15px; font-weight: 700; border:1px solid rgba(255,255,255,0.05); }
+.hmap-hd { color: var(--text-muted); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; text-align: center; margin-bottom: 8px; }
+.hmap-lb { display: flex; align-items: center; font-size: 15px; color: var(--text-primary); font-weight: 600; }
+.s1 { background: rgba(16,185,129,0.2); color: #34d399; }
+.s2 { background: rgba(56,189,248,0.2); color: #38bdf8; }
+.s3 { background: rgba(245,158,11,0.2); color: #fbbf24; }
+.s4 { background: rgba(249,115,22,0.2); color: #fb923c; }
+.s5 { background: rgba(244,63,94,0.3); color: #fb7185; }
+
+/* ---- Animations ---- */
+.rv { opacity: 0; transform: translateY(30px); transition: opacity 0.8s var(--ease), transform 0.8s var(--ease); }
+.active .rv { opacity: 1; transform: translateY(0); }
+.active .rv.d1 { transition-delay: 0.1s; }
+.active .rv.d2 { transition-delay: 0.2s; }
+.active .rv.d3 { transition-delay: 0.3s; }
+.active .rv.d4 { transition-delay: 0.4s; }
+.active .rv.d5 { transition-delay: 0.5s; }
+.active .rv.d6 { transition-delay: 0.6s; }
+
+/* ---- Nav ---- */
+.nav { position: absolute; bottom: 0; left: 0; right: 0; height: 64px; background: rgba(9,12,21,0.8); backdrop-filter: blur(24px); border-top: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: space-between; padding: 0 120px; z-index: 100; }
+.nav-dots { display: flex; gap: 12px; }
+.nav-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); opacity: 0.3; cursor: pointer; transition: all 0.3s; }
+.nav-dot.active { background: var(--accent-2); opacity: 1; width: 32px; border-radius: 4px; box-shadow: 0 0 12px rgba(56,189,248,0.6); }
+.nav-ctrls { display: flex; gap: 16px; }
+.nav-btn { background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text-primary); padding: 8px 20px; border-radius: 8px; font-family: var(--font-body); font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.nav-btn:hover { background: rgba(255,255,255,0.1); color: var(--text-white); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+.nav-lbl { font-family: var(--font-mono); font-size: 14px; color: var(--text-primary); letter-spacing: 1px; font-weight: 700; }
+
+/* Background image overlay */
+.bg-img { position: absolute; inset: 0; z-index: 2; }
+.bg-img img { width: 100%; height: 100%; object-fit: cover; }
+.bg-overlay { position: absolute; inset: 0; background: linear-gradient(135deg, rgba(9,12,21,0.85) 0%, rgba(2,6,23,0.95) 100%); }
+</style>
+</head>
+<body>
+<div class="viewport">
+<div class="stage" id="stage">
+
+<!-- Global Animated Background (Cleaned) -->
+<div class="global-bg"></div>
+<div class="ambient-glow glow-1"></div>
+<div class="ambient-glow glow-2"></div>
+
+<!-- ===== SLIDE 0 — TITLE ===== -->
+<div class="slide active" data-slide="0">
+  <div class="bg-img"><img src="hero.jpg" alt="Autonomous vehicle perception"><div class="bg-overlay"></div></div>
+  <div class="content" style="justify-content:center; align-items:center; text-align:center;">
+    <div class="rv d1">
+      <span class="label c-accent" style="letter-spacing:6px; font-size: 16px;"><span class="pulse-dot"></span>PROJECT P-195 · AI IN ACTION</span>
+    </div>
+    <h1 class="h-xl rv d2" style="margin-top:32px; font-size: 130px; text-shadow: 0 10px 40px rgba(0,0,0,0.5);">Adver<span class="grad">Test</span></h1>
+    <p class="body-xl rv d3" style="max-width:900px; margin-top:32px; color:var(--text-white); font-size: 26px; line-height: 1.6;">
+      Nền tảng kiểm thử adversarial cho Perception Models.<br>Phát hiện điểm yếu trước khi triển khai thực tế.
+    </p>
+    <div class="rv d4" style="display:flex; gap:20px; margin-top:56px;">
+      <span class="tag tag-g">Robustness Testing</span>
+      <span class="tag tag-b">Adversarial ML</span>
+      <span class="tag tag-a">Perception Safety</span>
+      <span class="tag tag-p">Human-in-the-loop</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 1 — PROBLEM ===== -->
+<div class="slide" data-slide="1">
+  <div class="content">
+    <span class="snum">01</span>
+    <div class="section-label rv"><div class="section-dot" style="background:var(--accent-4); box-shadow:0 0 12px var(--accent-4);"></div><span class="label c-red">VẤN ĐỀ THỰC TẾ</span></div>
+    
+    <div class="g2" style="flex:1; align-items:center;">
+      <div style="padding-right:60px;">
+        <h2 class="h-lg rv d1">Perception models<br><span class="c-red">dễ bị đánh lừa</span></h2>
+        <p class="body-xl rv d2" style="margin-top:32px; line-height:1.7;">
+          Nhiễu nhỏ vô hình, thời tiết xấu hay patch adversarial có thể đánh sập hoàn toàn hệ thống nhận diện — gây rủi ro an toàn nghiêm trọng cho xe tự hành & robotics.
+        </p>
+        
+        <div class="rv d3" style="margin-top:48px; display:flex; flex-direction:column; gap:24px;">
+          <div class="card-glass" style="display:flex; align-items:center; gap:32px; padding: 24px 32px; border-left: 4px solid var(--accent-4);">
+            <div class="metric-val c-red" style="font-size:42px; width:120px; text-align:left;">−48%</div>
+            <div class="body-lg">AP giảm dưới tấn công <strong class="c-white">FGSM</strong> (White-box, ε = 8)</div>
+          </div>
+          <div class="card-glass" style="display:flex; align-items:center; gap:32px; padding: 24px 32px; border-left: 4px solid var(--accent-3);">
+            <div class="metric-val c-amber" style="font-size:42px; width:120px; text-align:left;">−40%</div>
+            <div class="body-lg">AP giảm dưới <strong class="c-white">Sương mù</strong> (Physical, Severity 5)</div>
+          </div>
+          <div class="card-glass" style="display:flex; align-items:center; gap:32px; padding: 24px 32px; border-left: 4px solid var(--accent-5);">
+            <div class="metric-val c-purple" style="font-size:42px; width:120px; text-align:left;">−53%</div>
+            <div class="body-lg">AP giảm dưới <strong class="c-white">DPatch</strong> (Physical, Occlusion)</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="rv d4 img-frame" style="border-radius:24px; background:transparent; border:none; box-shadow:none;">
+        <img src="comparison.jpg" alt="Clean vs Attacked detection" style="object-fit:contain; max-height: 650px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); border-radius:16px;">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 2 — SOLUTION ===== -->
+<div class="slide" data-slide="2">
+  <div class="content">
+    <span class="snum">02</span>
+    <div class="section-label rv"><div class="section-dot"></div><span class="label c-accent">GIẢI PHÁP</span></div>
+    
+    <div class="g2" style="flex:1; align-items:center;">
+      <div style="padding-right:60px;">
+        <h2 class="h-lg rv d1">AdverTest: <span class="grad-2">End-to-end</span><br>robustness testing</h2>
+        <p class="body-xl rv d2" style="margin-top:32px;">Hệ thống tự động sinh nhiễu song song trên GPU, đánh giá mô hình và cung cấp vòng phản hồi khép kín (Closed-loop feedback).</p>
+        
+        <div class="rv d3" style="margin-top:48px; display:flex; flex-direction:column; gap:20px;">
+          <div style="display:flex; gap:16px; align-items:center;">
+            <div class="pulse-dot" style="background:var(--accent-2); box-shadow:0 0 0 0 rgba(56,189,248,0.7);"></div>
+            <div class="body-lg"><strong class="c-white">Performance:</strong> Xử lý & sinh nhiễu song song Multi-GPU (&lt;50ms/ảnh).</div>
+          </div>
+          <div style="display:flex; gap:16px; align-items:center;">
+            <div class="pulse-dot"></div>
+            <div class="body-lg"><strong class="c-white">Closed-loop Retraining:</strong> Tự động xuất Adversarial Dataset để train lại mô hình phòng thủ.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="g2 rv d4" style="gap:24px;">
+        <div class="card-glass" style="border-top:4px solid var(--accent); padding:32px;">
+          <div class="h-md" style="font-size:24px;">1. Import & Anonymize</div>
+          <div class="body-md" style="margin-top:16px;">Hỗ trợ format KITTI, nuScenes. Tự động ẩn danh khuôn mặt (GDPR compliance).</div>
+        </div>
+        <div class="card-glass" style="border-top:4px solid var(--accent-4); padding:32px;">
+          <div class="h-md" style="font-size:24px;">2. Parallel Generation</div>
+          <div class="body-md" style="margin-top:16px;">Áp dụng 6 nhóm tấn công × 5 severity tạo ra bộ test bao phủ toàn diện 95+ biến thể.</div>
+        </div>
+        <div class="card-glass" style="border-top:4px solid var(--accent-2); padding:32px;">
+          <div class="h-md" style="font-size:24px;">3. Benchmark Engine</div>
+          <div class="body-md" style="margin-top:16px;">Tính toán 12 metrics: AP, mAP, IoU, ASR, và RobustScore. Xuất báo cáo Heatmap.</div>
+        </div>
+        <div class="card-glass" style="border-top:4px solid var(--accent-3); padding:32px;">
+          <div class="h-md" style="font-size:24px;">4. Review & Retrain</div>
+          <div class="body-md" style="margin-top:16px;">Giao diện duyệt kết quả (Human-in-the-loop) để ra quyết định Accept/Retrain.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 3 — ATTACKS ===== -->
+<div class="slide" data-slide="3">
+  <div class="content">
+    <span class="snum">03</span>
+    <div class="section-label rv"><div class="section-dot" style="background:var(--accent-4); box-shadow:0 0 10px var(--accent-4);"></div><span class="label c-red">TẤN CÔNG</span></div>
+    
+    <div class="g2" style="flex:1;">
+      <div style="display:flex; flex-direction:column;">
+        <h2 class="h-lg rv d1">Phân loại <span class="c-red">tấn công</span></h2>
+        <p class="body-xl rv d2" style="margin-top:20px;">6 nhóm, 5 mức độ nghiêm trọng (Severity) — mô phỏng sát nhất các rủi ro vận hành thực tế.</p>
+        
+        <div class="rv d3 img-frame" style="flex:1; margin-top:40px; background:transparent; border:none; display:flex; align-items:center; box-shadow:none;">
+          <img src="weather.jpg" alt="Weather attacks grid" style="object-fit: contain; max-height: 100%; border-radius:16px; border:1px solid rgba(255,255,255,0.1); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+        </div>
+      </div>
+
+      <div class="g2 rv d4" style="gap:24px; padding-top:20px;">
+        <div class="card-glass" style="padding:24px;">
+          <div class="label c-accent" style="font-size: 18px;">Nhóm A: Corruption</div>
+          <div class="body-lg" style="margin-top:12px;">19 loại nhiễu tín hiệu (Gaussian, Defocus blur...).<br>19 × 5 severity.</div>
+        </div>
+        <div class="card-glass" style="padding:24px;">
+          <div class="label c-red" style="font-size: 18px;">Nhóm D: White-box</div>
+          <div class="body-lg" style="margin-top:12px;">Tấn công gradient (FGSM, PGD). Thao túng trực tiếp pixel để lừa model.</div>
+        </div>
+        <div class="card-glass" style="padding:24px;">
+          <div class="label c-blue" style="font-size: 18px;">Nhóm B: Weather</div>
+          <div class="body-lg" style="margin-top:12px;">Mô phỏng thời tiết vật lý: sương mù (Koschmieder), mưa bão, tuyết.</div>
+        </div>
+        <div class="card-glass" style="padding:24px;">
+          <div class="label c-purple" style="font-size: 18px;">Nhóm E: Patch</div>
+          <div class="body-lg" style="margin-top:12px;">Tấn công vật lý bằng Patch in ấn (DPatch). Đánh lừa bằng vùng che khuất.</div>
+        </div>
+        <div class="card-glass" style="padding:24px;">
+          <div class="label c-amber" style="font-size: 18px;">Nhóm C: Occlusion</div>
+          <div class="body-lg" style="margin-top:12px;">Che khuất ngẫu nhiên hoặc có chủ đích (10-90% diện tích vật thể).</div>
+        </div>
+        <div class="card-glass" style="padding:24px;">
+          <div class="label" style="color:#fb923c; font-size: 18px;">Nhóm F: Sensor Faults</div>
+          <div class="body-lg" style="margin-top:12px;">Mô phỏng lỗi phần cứng cảm biến: Dead pixels, row/column line drop.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 4 — DASHBOARD / HEATMAP ===== -->
+<div class="slide" data-slide="4">
+  <div class="content">
+    <span class="snum">04</span>
+    <div class="section-label rv"><div class="section-dot" style="background:var(--accent-2); box-shadow:0 0 10px var(--accent-2);"></div><span class="label c-blue">BÁO CÁO</span></div>
+    
+    <div class="g2" style="flex:1; gap:80px; align-items: center;">
+      <div style="display:flex; flex-direction:column; justify-content:center;">
+        <h2 class="h-lg rv d1"><span class="grad">Heatmap</span> & Metrics</h2>
+        <p class="body-xl rv d2" style="margin-top:24px;">Trực quan hóa độ suy giảm hiệu năng. ROI: Giảm 80% thời gian phân tích thủ công.</p>
+        
+        <div class="rv d3" style="margin-top:40px; display:flex; gap:24px;">
+          <div class="card-glass metric" style="flex:1; border-top:4px solid var(--accent); padding:20px;"><div class="metric-val c-accent" style="font-size:40px;">85.4</div><div class="metric-unit">AP Clean</div></div>
+          <div class="card-glass metric" style="flex:1; border-top:4px solid var(--accent-4); padding:20px;"><div class="metric-val c-red" style="font-size:40px;">47.2</div><div class="metric-unit">RobustScore</div></div>
+          <div class="card-glass metric" style="flex:1; border-top:4px solid var(--accent-3); padding:20px;"><div class="metric-val c-amber" style="font-size:40px;">32.1%</div><div class="metric-unit">ASR</div></div>
+        </div>
+
+        <div class="card-glass rv d4" style="margin-top:32px; border-color:var(--border-accent);">
+          <div class="label c-accent" style="margin-bottom:16px; font-size:14px;">5 Sanity Checks (Auto-QA)</div>
+          <ul style="list-style:none; display:flex; flex-direction:column; gap:12px;">
+            <li class="body-lg"><span class="c-accent font-bold">✓</span> ε=0 → AP ≈ AP_clean (sai số &lt; 0.1)</li>
+            <li class="body-lg"><span class="c-accent font-bold">✓</span> AP(c,s) giảm đơn điệu theo severity (s)</li>
+            <li class="body-lg"><span class="c-accent font-bold">✓</span> Tác động nhiễu ngẫu nhiên ≤ adversarial</li>
+            <li class="body-lg"><span class="c-accent font-bold">✓</span> Tính tất định: ±0.5 AP giữa 2 lần chạy</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="rv d5" style="display:flex; align-items:center; justify-content:center;">
+        <div class="card-glass" style="padding:40px; width:100%;">
+          <div class="hmap">
+            <div></div>
+            <div class="hmap-hd">S=1</div><div class="hmap-hd">S=2</div><div class="hmap-hd">S=3</div><div class="hmap-hd">S=4</div><div class="hmap-hd">S=5</div>
+
+            <div class="hmap-lb">FGSM</div>
+            <div class="hmap-cell s1">−2.1</div><div class="hmap-cell s2">−8.4</div><div class="hmap-cell s3">−21.3</div><div class="hmap-cell s4">−35.7</div><div class="hmap-cell s5">−48.9</div>
+
+            <div class="hmap-lb">PGD</div>
+            <div class="hmap-cell s1">−3.5</div><div class="hmap-cell s2">−12.1</div><div class="hmap-cell s4">−28.6</div><div class="hmap-cell s5">−42.3</div><div class="hmap-cell s5">−56.1</div>
+
+            <div class="hmap-lb">Gaussian</div>
+            <div class="hmap-cell s1">−1.2</div><div class="hmap-cell s1">−4.5</div><div class="hmap-cell s2">−11.8</div><div class="hmap-cell s3">−22.4</div><div class="hmap-cell s4">−31.6</div>
+
+            <div class="hmap-lb">Fog</div>
+            <div class="hmap-cell s1">−0.8</div><div class="hmap-cell s1">−3.2</div><div class="hmap-cell s2">−9.7</div><div class="hmap-cell s3">−18.5</div><div class="hmap-cell s4">−27.3</div>
+
+            <div class="hmap-lb">DPatch</div>
+            <div class="hmap-cell s2">−5.3</div><div class="hmap-cell s3">−15.7</div><div class="hmap-cell s4">−31.2</div><div class="hmap-cell s5">−44.6</div><div class="hmap-cell s5">−52.8</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 5 — DASHBOARD UI ===== -->
+<div class="slide" data-slide="5">
+  <div class="content">
+    <span class="snum">05</span>
+    <div class="section-label rv"><div class="section-dot" style="background:var(--accent-2); box-shadow:0 0 10px var(--accent-2);"></div><span class="label c-blue">GIAO DIỆN</span></div>
+    
+    <div class="g2" style="flex:1; align-items:center;">
+      <div style="padding-right:40px;">
+        <h2 class="h-lg rv d1">Real-time <span class="grad">Analytics UI</span></h2>
+        <p class="body-xl rv d2" style="margin-top:24px;">Giao diện Web Dashboard gồm 6 màn hình chức năng, được thiết kế chuẩn mực B2B cho kỹ sư AI.</p>
+        
+        <div class="g2 rv d3" style="gap:24px; margin-top:40px;">
+          <div class="card-glass" style="padding:24px;"><div class="h-sm c-white" style="font-size:20px;">Datasets</div><div class="body-md" style="margin-top:8px;">Quản lý dữ liệu lớn.</div></div>
+          <div class="card-glass" style="padding:24px;"><div class="h-sm c-white" style="font-size:20px;">Test Pipeline</div><div class="body-md" style="margin-top:8px;">Trigger test & dự toán.</div></div>
+          <div class="card-glass" style="padding:24px;"><div class="h-sm c-white" style="font-size:20px;">Job Monitor</div><div class="body-md" style="margin-top:8px;">Theo dõi tiến độ realtime.</div></div>
+          <div class="card-glass" style="padding:24px;"><div class="h-sm c-white" style="font-size:20px;">Comparison</div><div class="body-md" style="margin-top:8px;">So sánh Clean vs Attacked.</div></div>
+        </div>
+      </div>
+
+      <div class="rv d4 img-frame" style="height:600px; padding: 16px; background:rgba(0,0,0,0.4);">
+        <img src="dashboard.jpg" alt="Dashboard Mockup" style="border-radius:8px;">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 6 — ARCHITECTURE ===== -->
+<div class="slide" data-slide="6">
+  <div class="content">
+    <span class="snum">06</span>
+    <div class="section-label rv"><div class="section-dot" style="background:var(--accent-5); box-shadow:0 0 10px var(--accent-5);"></div><span class="label c-purple">KIẾN TRÚC</span></div>
+    
+    <div class="g2" style="flex:1;">
+      <div style="display:flex; flex-direction:column; justify-content:center;">
+        <h2 class="h-lg rv d1"><span class="grad">Model-Agnostic</span><br>Architecture</h2>
+        <p class="body-xl rv d2" style="margin-top:24px; margin-bottom:48px;">Thiết kế <strong>Plug-and-play</strong>: Hỗ trợ đánh giá bất kỳ mô hình độc quyền nào thông qua Adapter Pattern, không giới hạn ở YOLO hay SAM.</p>
+
+        <div class="rv d3" style="display:flex; flex-direction:column; gap:20px;">
+          <div class="card-glass" style="border-left:4px solid var(--accent); padding:20px 24px;">
+            <div class="h-sm" style="font-size:22px;">Frontend & API Server</div>
+            <div class="body-lg" style="margin-top:4px;">Giao tiếp RESTful / WebSockets (Next.js, FastAPI).</div>
+          </div>
+          <div class="card-glass" style="border-left:4px solid var(--accent-4); padding:20px 24px;">
+            <div class="h-sm" style="font-size:22px;">Detection Adapter (YOLO11)</div>
+            <div class="body-lg" style="margin-top:4px;">Giao diện chuẩn hóa nhãn và bounding box mapping.</div>
+          </div>
+          <div class="card-glass" style="border-left:4px solid var(--accent-2); padding:20px 24px;">
+            <div class="h-sm" style="font-size:22px;">Segmentation Adapter (SAM2)</div>
+            <div class="body-lg" style="margin-top:4px;">Xử lý prompt encoding và đánh giá mask IoU.</div>
+          </div>
+          <div class="card-glass" style="border-left:4px solid var(--accent-5); padding:20px 24px;">
+            <div class="h-sm" style="font-size:22px;">Core Engine (Person D)</div>
+            <div class="body-lg" style="margin-top:4px;">Điều phối pipeline sinh nhiễu và benchmark phân tán.</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="rv d4 img-frame" style="height:700px; border:none; background:transparent; display:flex; align-items:center; justify-content:center; box-shadow:none;">
+        <img src="architecture.jpg" alt="Architecture Diagram" style="border-radius:16px; border:1px solid rgba(255,255,255,0.2); box-shadow: 0 40px 100px rgba(0,0,0,0.8);">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 7 — QUALITY ===== -->
+<div class="slide" data-slide="7">
+  <div class="content">
+    <span class="snum">07</span>
+    <div class="section-label rv"><div class="section-dot"></div><span class="label c-accent">ĐẢM BẢO CHẤT LƯỢNG</span></div>
+    
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; text-align:center;">
+      <h2 class="h-xl rv d1">Production-ready <span class="grad">Pipeline</span></h2>
+      <p class="body-xl rv d2" style="margin-top:24px; max-width:800px;">Hệ thống áp dụng các tiêu chuẩn phát triển phần mềm khắt khe nhất, bảo đảm độ tin cậy tuyệt đối trước khi release.</p>
+      
+      <div class="g4 rv d3" style="width:100%; margin-top:64px;">
+        <div class="card-glass" style="padding:48px 24px; border-top:4px solid var(--accent); text-align:center;">
+          <div class="metric-val c-accent">98%</div>
+          <div class="h-sm" style="margin-top:24px;">Test Coverage</div>
+          <div class="body-md" style="margin-top:12px;">881+ Unit & Integration Tests tự động hóa hoàn toàn.</div>
+        </div>
+        <div class="card-glass" style="padding:48px 24px; border-top:4px solid var(--accent-2); text-align:center;">
+          <div class="metric-val c-blue">0</div>
+          <div class="h-sm" style="margin-top:24px;">Vulnerabilities</div>
+          <div class="body-md" style="margin-top:12px;">Ruff (Python) & ESLint (JS). Pass 100% Security Scan.</div>
+        </div>
+        <div class="card-glass" style="padding:48px 24px; border-top:4px solid var(--accent-5); text-align:center;">
+          <div class="metric-val c-purple">CI/CD</div>
+          <div class="h-sm" style="margin-top:24px;">Automated Delivery</div>
+          <div class="body-md" style="margin-top:12px;">Mỗi commit đều được check chất lượng trước khi merge.</div>
+        </div>
+        <div class="card-glass" style="padding:48px 24px; border-top:4px solid var(--accent-3); text-align:center;">
+          <div class="metric-val c-amber">SOC 2</div>
+          <div class="h-sm" style="margin-top:24px;">Compliance Ready</div>
+          <div class="body-md" style="margin-top:12px;">Kiểm soát truy cập (RBAC), Audit Logging và Ẩn danh data.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 8 — TECH STACK ===== -->
+<div class="slide" data-slide="8">
+  <div class="content">
+    <span class="snum">08</span>
+    <div class="section-label rv"><div class="section-dot" style="background:var(--accent-1); box-shadow:0 0 10px var(--accent-1);"></div><span class="label c-accent">CÔNG NGHỆ</span></div>
+    
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; text-align:center;">
+      <h2 class="h-xl rv d1">Core <span class="grad">Technologies</span></h2>
+      <p class="body-xl rv d2" style="margin-top:24px; max-width:800px;">Nền tảng Robustness Testing Model-Agnostic tối ưu hóa ở mức Hardware.</p>
+      
+      <div class="rv d3" style="width:100%; margin-top:64px; display:grid; grid-template-columns:repeat(3, 1fr); gap:32px;">
+        <div class="card-glass" style="padding:48px 32px; border-top:4px solid var(--accent-1); display:flex; flex-direction:column; align-items:center;">
+          <div class="h-sm" style="margin-bottom:32px; font-size:28px;">Platform & Backend</div>
+          <div style="display:flex; flex-wrap:wrap; gap:16px; justify-content:center; width:100%;">
+            <span class="tag tag-b" style="font-size:20px; color:var(--text-white); border-color:var(--accent-1);">FastAPI</span>
+            <span class="tag tag-b" style="font-size:20px; color:var(--text-white); border-color:var(--accent-1);">Uvicorn</span>
+            <span class="tag tag-b" style="font-size:20px; color:var(--text-white); border-color:var(--accent-1);">Celery</span>
+            <span class="tag tag-b" style="font-size:20px; color:var(--text-white); border-color:var(--accent-1);">Redis</span>
+            <span class="tag tag-b" style="font-size:20px; color:var(--text-white); border-color:var(--accent-1);">SQLite / SQLA</span>
+          </div>
+        </div>
+        <div class="card-glass" style="padding:48px 32px; border-top:4px solid var(--accent-2); display:flex; flex-direction:column; align-items:center;">
+          <div class="h-sm" style="margin-bottom:32px; font-size:28px;">Core Vision Models</div>
+          <div style="display:flex; flex-wrap:wrap; gap:16px; justify-content:center; width:100%;">
+            <span class="tag tag-b" style="font-size:20px; color:var(--text-white); border-color:var(--accent-2);">PyTorch</span>
+            <span class="tag tag-b" style="font-size:20px; color:var(--text-white); border-color:var(--accent-2);">Ultralytics</span>
+            <span class="tag tag-b" style="font-size:20px; color:var(--text-white); border-color:var(--accent-2);">MMDet3D</span>
+            <span class="tag tag-b" style="font-size:20px; color:var(--text-white); border-color:var(--accent-2);">SAM2</span>
+            <span class="tag tag-b" style="font-size:20px; color:var(--text-white); border-color:var(--accent-2);">Torchattacks</span>
+          </div>
+        </div>
+        <div class="card-glass" style="padding:48px 32px; border-top:4px solid var(--accent-3); display:flex; flex-direction:column; align-items:center;">
+          <div class="h-sm" style="margin-bottom:32px; font-size:28px;">Tracking & Metrics</div>
+          <div style="display:flex; flex-wrap:wrap; gap:16px; justify-content:center; width:100%;">
+            <span class="tag tag-b" style="font-size:20px; color:var(--text-white); border-color:var(--accent-3);">W&B Analytics</span>
+            <span class="tag tag-b" style="font-size:20px; color:var(--text-white); border-color:var(--accent-3);">Optuna</span>
+            <span class="tag tag-b" style="font-size:20px; color:var(--text-white); border-color:var(--accent-3);">PyCOCOTools</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 9 — TRACTION ===== -->
+<div class="slide" data-slide="9">
+  <div class="content">
+    <span class="snum">09</span>
+    <div class="section-label rv"><div class="section-dot" style="background:var(--accent-4); box-shadow:0 0 10px var(--accent-4);"></div><span class="label c-red">TRACTION</span></div>
+    
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; text-align:center;">
+      <h2 class="h-xl rv d1">Tiến Độ & <span class="grad">Hiệu Suất Thực Tế</span></h2>
+      <p class="body-xl rv d2" style="margin-top:24px; max-width:800px;">Các thông số kỹ thuật đo lường trực tiếp từ quá trình Benchmark.</p>
+      
+      <div class="g4 rv d3" style="width:100%; margin-top:64px;">
+        <div class="card-glass" style="padding:48px 24px; border-top:4px solid var(--accent); text-align:center; position:relative; overflow:hidden;">
+          <div style="position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:100px; height:40px; background:var(--accent); filter:blur(40px); opacity:0.5;"></div>
+          <div class="metric-val c-accent">100%</div>
+          <div class="h-sm" style="margin-top:24px;">Core Protocol</div>
+          <div class="body-md" style="margin-top:12px; color:var(--text-muted);">Hoàn thành toàn bộ (12/12 Module). Tỷ lệ Pass Unit Tests tuyệt đối.</div>
+        </div>
+        <div class="card-glass" style="padding:48px 24px; border-top:4px solid var(--accent-4); text-align:center; position:relative; overflow:hidden;">
+          <div style="position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:100px; height:40px; background:var(--accent-4); filter:blur(40px); opacity:0.5;"></div>
+          <div class="metric-val c-red">6 Nhóm</div>
+          <div class="h-sm" style="margin-top:24px;">Tấn Công Ác Ý</div>
+          <div class="body-md" style="margin-top:12px; color:var(--text-muted);">Từ Digital, Weather đến Physical Patch. Sẵn sàng tích hợp.</div>
+        </div>
+        <div class="card-glass" style="padding:48px 24px; border-top:4px solid var(--accent-3); text-align:center; position:relative; overflow:hidden;">
+          <div style="position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:100px; height:40px; background:var(--accent-3); filter:blur(40px); opacity:0.5;"></div>
+          <div class="metric-val c-amber">< 50ms</div>
+          <div class="h-sm" style="margin-top:24px;">Latency Target</div>
+          <div class="body-md" style="margin-top:12px; color:var(--text-muted);">Kiến trúc phân tán GPU Red-teaming được tối ưu hóa cực hạn.</div>
+        </div>
+        <div class="card-glass" style="padding:48px 24px; border-top:4px solid var(--accent-5); text-align:center; position:relative; overflow:hidden;">
+          <div style="position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:100px; height:40px; background:var(--accent-5); filter:blur(40px); opacity:0.5;"></div>
+          <div class="metric-val c-purple">15+</div>
+          <div class="h-sm" style="margin-top:24px;">API Endpoints</div>
+          <div class="body-md" style="margin-top:12px; color:var(--text-muted);">Hoàn thành Backend, đạt chuẩn SOC 2 với mã hóa AES-256.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 10 — MARKET ===== -->
+<div class="slide" data-slide="10">
+  <div class="content">
+    <span class="snum">10</span>
+    <div class="section-label rv"><div class="section-dot" style="background:var(--accent-3); box-shadow:0 0 10px var(--accent-3);"></div><span class="label c-amber">THỊ TRƯỜNG</span></div>
+    
+    <div class="g2" style="flex:1;">
+      <div style="display:flex; flex-direction:column; justify-content:center;">
+        <h2 class="h-lg rv d1">Quy Mô & <span class="grad">Ứng Dụng</span></h2>
+        <p class="body-xl rv d2" style="margin-top:24px;">Nhu cầu AI Robustness Testing là nền tảng cốt lõi cho kỷ nguyên Agentic AI an toàn.</p>
+      </div>
+      
+      <div class="rv d3" style="display:flex; flex-direction:column; gap:24px; justify-content:center;">
+        <div class="card-glass" style="display:flex; align-items:center; padding:40px; gap:40px; border-left:4px solid var(--accent); position:relative; overflow:hidden;">
+          <div style="position:absolute; left:0; top:0; bottom:0; width:100px; background:linear-gradient(90deg, rgba(56,189,248,0.1), transparent);"></div>
+          <div class="metric-val" style="min-width:100px; text-align:center; font-size:72px; font-weight:800; color:var(--accent); opacity:0.9;">01</div>
+          <div>
+            <h3 class="h-sm" style="margin-bottom:8px; font-size:26px;">Autonomous Vehicles</h3>
+            <p class="body-md" style="color:var(--text-muted);">Đánh giá hệ thống cảm biến (LiDAR, Camera) trên xe tự hành trước các điều kiện sương mù, mưa, hoặc tấn công vật lý che khuất.</p>
+          </div>
+        </div>
+        <div class="card-glass" style="display:flex; align-items:center; padding:40px; gap:40px; border-left:4px solid var(--accent-4); position:relative; overflow:hidden;">
+          <div style="position:absolute; left:0; top:0; bottom:0; width:100px; background:linear-gradient(90deg, rgba(248,113,113,0.1), transparent);"></div>
+          <div class="metric-val" style="min-width:100px; text-align:center; font-size:72px; font-weight:800; color:var(--accent-4); opacity:0.9;">02</div>
+          <div>
+            <h3 class="h-sm" style="margin-bottom:8px; font-size:26px;">Defense & Security</h3>
+            <p class="body-md" style="color:var(--text-muted);">Đảm bảo hệ thống tác chiến điện tử nhận diện mục tiêu ổn định, chống lại các kỹ thuật nhiễu loạn và tàng hình AI.</p>
+          </div>
+        </div>
+        <div class="card-glass" style="display:flex; align-items:center; padding:40px; gap:40px; border-left:4px solid var(--accent-3); position:relative; overflow:hidden;">
+          <div style="position:absolute; left:0; top:0; bottom:0; width:100px; background:linear-gradient(90deg, rgba(251,191,36,0.1), transparent);"></div>
+          <div class="metric-val" style="min-width:100px; text-align:center; font-size:72px; font-weight:800; color:var(--accent-3); opacity:0.9;">03</div>
+          <div>
+            <h3 class="h-sm" style="margin-bottom:8px; font-size:26px;">Healthcare & Robotics</h3>
+            <p class="body-md" style="color:var(--text-muted);">Thẩm định giới hạn an toàn tuyệt đối cho Robot y tế và thiết bị chẩn đoán; ngăn chặn mọi sai lệch nhận thức mô hình.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 11 — THANK YOU ===== -->
+<div class="slide">
+  <div style="position:absolute; inset:0; background:var(--bg-deep); z-index:-1;"></div>
+  
+  <div class="content" style="justify-content:center; align-items:center; text-align:center;">
+    <div class="rv d1">
+      <span class="label c-accent" style="letter-spacing:6px; font-size:18px;">VINAI · AI IN ACTION</span>
+    </div>
+    
+    <h2 class="h-xl rv d2" style="font-size:140px; margin-top:32px; font-weight:800;">Adver<span class="grad">Test</span></h2>
+    
+    <p class="body-xl rv d3" style="margin-top:32px; font-size:32px; color:var(--text-white); font-weight:500;">
+      Làm chủ sự an toàn.<br>Bức phá sức mạnh của AI.
+    </p>
+
+    <div class="rv d4" style="margin-top:80px; display:flex; gap:32px; align-items:center;">
+      <div class="card-glass" style="padding:16px 32px; display:flex; gap:16px; align-items:center;">
+        <span class="pulse-dot" style="background:var(--accent-2); margin:0;"></span>
+        <span class="tag tag-b" style="font-size:16px; border:none; background:transparent; padding:0;">Next Steps</span>
+        <span class="body-lg font-bold c-white">Triển khai & Đánh giá trên nền tảng Robotics thực tế</span>
+      </div>
+    </div>
+
+    <div class="rv d5" style="margin-top:80px; color:var(--text-muted); font-size:24px; font-family:var(--font-display); font-weight:700;">
+      Thank you for listening!
+    </div>
+  </div>
+</div>
+
+<!-- Navigation Bar -->
+<div class="nav">
+  <div class="nav-lbl" id="navLabel">01 / 09</div>
+  <div class="nav-dots" id="navDots"></div>
+  <div class="nav-ctrls">
+    <button class="nav-btn" onclick="navigate(-1)">Prev</button>
+    <button class="nav-btn" onclick="navigate(1)">Next</button>
+  </div>
+</div>
+
+</div>
+</div>
+
+<script>
+(function(){
+  const slides=document.querySelectorAll('.slide'), stage=document.getElementById('stage'), dots=document.getElementById('navDots'), lbl=document.getElementById('navLabel');
+  let cur=0;
+  slides.forEach((_,i)=>{const d=document.createElement('div');d.className='nav-dot'+(i===0?' active':'');d.onclick=()=>go(i);dots.appendChild(d);});
+  function go(n){if(n<0||n>=slides.length)return;slides[cur].classList.remove('active');dots.children[cur].classList.remove('active');cur=n;slides[cur].classList.add('active');dots.children[cur].classList.add('active');lbl.textContent=String(cur+1).padStart(2,'0')+' / '+String(slides.length).padStart(2,'0');}
+  window.navigate=function(d){go(cur+d);};
+  document.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();navigate(1);}if(e.key==='ArrowLeft'){e.preventDefault();navigate(-1);}if(e.key==='Home'){e.preventDefault();go(0);}if(e.key==='End'){e.preventDefault();go(slides.length-1);}});
+  let tx=0;stage.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});stage.addEventListener('touchend',e=>{const d=tx-e.changedTouches[0].clientX;if(Math.abs(d)>50)navigate(d>0?1:-1);},{passive:true});
+  function resize(){const s=Math.min(window.innerWidth/1920,window.innerHeight/1080);stage.style.transform=`scale(${s})`;}
+  window.addEventListener('resize',resize);resize();
+  
+  // Card hover FX
+  document.querySelectorAll('.card-glass').forEach(card => {
+    card.addEventListener('mousemove', e => {
+      const rect = card.getBoundingClientRect();
+      card.style.setProperty('--mouse-x', (e.clientX - rect.left) + 'px');
+      card.style.setProperty('--mouse-y', (e.clientY - rect.top) + 'px');
+    });
+  });
+})();
+</script>
+</body>
+</html>

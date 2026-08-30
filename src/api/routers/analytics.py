@@ -15,6 +15,7 @@ from src.analytics.comparison_analytics import (
 from src.analytics.run_analytics import (
     compute_run_attacks_breakdown,
     compute_run_classes_breakdown,
+    compute_run_distance_breakdown,
     compute_run_samples_breakdown,
     compute_run_severity_breakdown,
     compute_run_summary,
@@ -68,6 +69,7 @@ async def get_run_analytics_attacks(
 
 
 @router.get("/runs/{run_id}/severity")
+@router.get("/runs/{run_id}/severities")
 async def get_run_analytics_severity(
     run_id: str,
     store: SqliteRunStore = Depends(get_store),
@@ -88,6 +90,7 @@ async def get_run_analytics_classes(
 
 
 @router.get("/runs/{run_id}/samples")
+@router.get("/runs/{run_id}/analytics/samples")
 async def get_run_analytics_samples(
     run_id: str,
     attack: str | None = Query(default=None, description="Filter by attack name"),
@@ -105,6 +108,16 @@ async def get_run_analytics_samples(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/runs/{run_id}/distance")
+async def get_run_analytics_distance(
+    run_id: str,
+    store: SqliteRunStore = Depends(get_store),
+) -> dict[str, Any]:
+    """Get 3D perception performance and vulnerability breakdown across distance buckets (near/medium/far)."""
+    run_item = _require_completed_run(store, run_id)
+    return compute_run_distance_breakdown(run_item["report"])
 
 
 # ---- Paired Model Comparison Analytics ----

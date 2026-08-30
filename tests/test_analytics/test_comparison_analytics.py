@@ -45,9 +45,7 @@ def mock_comparison_fixture() -> tuple[dict, dict, dict]:
                     "severity": 1,
                     "degradation_hint": 0.30,
                     "failed": True,
-                    "object_evidence": [
-                        {"label": "car", "clean_detected": True, "attacked_detected": False}
-                    ],
+                    "object_evidence": [{"label": "car", "clean_detected": True, "attacked_detected": False}],
                 },
                 {
                     "sample_id": "img_02",
@@ -55,9 +53,7 @@ def mock_comparison_fixture() -> tuple[dict, dict, dict]:
                     "severity": 2,
                     "degradation_hint": 0.45,
                     "failed": True,
-                    "object_evidence": [
-                        {"label": "bus", "clean_detected": True, "attacked_detected": False}
-                    ],
+                    "object_evidence": [{"label": "bus", "clean_detected": True, "attacked_detected": False}],
                 },
             ],
         },
@@ -78,9 +74,7 @@ def mock_comparison_fixture() -> tuple[dict, dict, dict]:
                     "severity": 1,
                     "degradation_hint": 0.0,
                     "failed": False,
-                    "object_evidence": [
-                        {"label": "car", "clean_detected": True, "attacked_detected": True}
-                    ],
+                    "object_evidence": [{"label": "car", "clean_detected": True, "attacked_detected": True}],
                 },
                 {
                     "sample_id": "img_02",
@@ -88,9 +82,7 @@ def mock_comparison_fixture() -> tuple[dict, dict, dict]:
                     "severity": 2,
                     "degradation_hint": 0.40,
                     "failed": True,
-                    "object_evidence": [
-                        {"label": "bus", "clean_detected": True, "attacked_detected": False}
-                    ],
+                    "object_evidence": [{"label": "bus", "clean_detected": True, "attacked_detected": False}],
                 },
             ],
         },

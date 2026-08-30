@@ -111,9 +111,9 @@ def adapter_request(
             "score_threshold": config.confidence_threshold,
         }
     if family.id == "sam2":
-        sam_config = version.training_metadata.get("sam_config")
+        sam_config = version.training_metadata.get("sam_config") or version.training_metadata.get("config")
         if not sam_config:
-            raise ValueError("MODEL_FAMILY_CONFIG_MISSING: SAM2 requires its model config")
+            raise ValueError("MODEL_FAMILY_CONFIG_MISSING: SAM 2 requires a YAML model configuration")
         return family.adapter_name, {
             "weights": checkpoint,
             "config": str(sam_config),

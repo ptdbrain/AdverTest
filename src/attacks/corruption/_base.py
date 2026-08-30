@@ -66,12 +66,8 @@ class ImageCorruptionBase(BaseAttack):
         with _RNG_LOCK:
             numpy_state = np.random.get_state()
             python_state = random.getstate()
-            random_noise = getattr(
-                getattr(_imagecorruptions, "sk", None), "util", None
-            )
-            original_random_noise = (
-                getattr(random_noise, "random_noise", None) if random_noise else None
-            )
+            random_noise = getattr(getattr(_imagecorruptions, "sk", None), "util", None)
+            original_random_noise = getattr(random_noise, "random_noise", None) if random_noise else None
 
             def _seeded_random_noise(image: np.ndarray, *args: object, **kwargs: object) -> np.ndarray:
                 kwargs.setdefault("rng", np.random.default_rng(seed))

@@ -29,9 +29,7 @@ class ComputeWorker:
         self,
         config: TrainingRunConfig,
         *,
-        callbacks: Callable[[ProgressEvent], None]
-        | Sequence[Callable[[ProgressEvent], None]]
-        | None = None,
+        callbacks: Callable[[ProgressEvent], None] | Sequence[Callable[[ProgressEvent], None]] | None = None,
     ) -> TrainingReport:
         emitters = self._callbacks(callbacks)
         machine = TrainingStateMachine()

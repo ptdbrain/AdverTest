@@ -152,9 +152,7 @@ def test_builder_rejects_mandatory_unsafe_inputs(
     source = config.generated_sources[0]
     record = source.records[0]
     if mutation == "locked":
-        record = record.model_copy(
-            update={"source_sample_id": config.split_manifest.test_ids[0]}
-        )
+        record = record.model_copy(update={"source_sample_id": config.split_manifest.test_ids[0]})
     elif mutation == "benchmark":
         record = record.model_copy(update={"intended_use": "benchmark"})
     elif mutation == "missing_transform":

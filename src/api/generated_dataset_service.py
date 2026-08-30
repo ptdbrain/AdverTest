@@ -131,7 +131,11 @@ class GeneratedDatasetService:
         record = self.record_store.get_record("dataset_version", dataset_version_id)
         if record is None:
             raise ValueError(f"unknown dataset version {dataset_version_id!r}")
-        version_payload = {key: value for key, value in record.items() if key not in {"id", "record_type", "created_at", "updated_at", "generation_source"}}
+        version_payload = {
+            key: value
+            for key, value in record.items()
+            if key not in {"id", "record_type", "created_at", "updated_at", "generation_source"}
+        }
         version = DatasetVersion.model_validate(version_payload)
         if not version.records or not all(record.anonymized for record in version.records):
             raise ValueError("source dataset version is not ready for generation")

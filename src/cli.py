@@ -1,15 +1,15 @@
 """Command-line entry point — the fastest way to check your plugin works.
 
-    python -m src.cli attacks                     # catalog + owners
-    python -m src.cli models
-    python -m src.cli datasets
-    python -m src.cli estimate --attacks fgsm     # cost before running
-    python -m src.cli run --attacks gaussian_noise,fgsm --severities 1,3,5
-    python -m src.cli run --attacks fgsm --params '{"fgsm": {"epsilon_per_severity": [0.05]}}'
-    python -m src.cli generate-attack --config configs/pgd.json
-    python -m src.cli anonymize-dataset --config configs/kitti-anonymize.json
-    python -m src.cli train-patch --config configs/patch.json
-    python -m src.cli inspect-attack-dataset --path data/attacked/.../
+python -m src.cli attacks                     # catalog + owners
+python -m src.cli models
+python -m src.cli datasets
+python -m src.cli estimate --attacks fgsm     # cost before running
+python -m src.cli run --attacks gaussian_noise,fgsm --severities 1,3,5
+python -m src.cli run --attacks fgsm --params '{"fgsm": {"epsilon_per_severity": [0.05]}}'
+python -m src.cli generate-attack --config configs/pgd.json
+python -m src.cli anonymize-dataset --config configs/kitti-anonymize.json
+python -m src.cli train-patch --config configs/patch.json
+python -m src.cli inspect-attack-dataset --path data/attacked/.../
 """
 
 from __future__ import annotations
@@ -289,9 +289,7 @@ def _dataset_ingest(args: argparse.Namespace) -> int:
     payload = _read_json(args.config)
     source_payload = payload["source"]
     source = get_dataset(source_payload["name"], **source_payload.get("params", {}))
-    version = DatasetIngestor(payload["output_dir"]).ingest(
-        source, IngestConfig.model_validate(payload["ingest"])
-    )
+    version = DatasetIngestor(payload["output_dir"]).ingest(source, IngestConfig.model_validate(payload["ingest"]))
     print(version.model_dump_json(indent=2))
     return 0
 

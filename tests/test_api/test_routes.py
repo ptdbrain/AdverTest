@@ -47,7 +47,7 @@ async def test_model_and_dataset_catalogs(client):
     models = await client.get("/api/v1/catalog/models")
     datasets = await client.get("/api/v1/catalog/datasets")
     assert "blob_detector" in {item["name"] for item in models.json()}
-    assert "pointpillars" not in {item["name"] for item in models.json()}
+    assert "pointpillars" in {item["name"] for item in models.json()}
     assert "bevfusion" not in {item["name"] for item in models.json()}
     assert "synthetic_shapes" in {item["name"] for item in datasets.json()}
 
@@ -86,7 +86,10 @@ async def test_run_is_queued_and_report_is_retrievable(client):
     sample = samples.json()[0]
     assert "clean_image_path" not in sample
     assert set(sample["artifacts"]) == {
-        "clean_input_url", "attacked_input_url", "clean_prediction_url", "attacked_prediction_url"
+        "clean_input_url",
+        "attacked_input_url",
+        "clean_prediction_url",
+        "attacked_prediction_url",
     }
     assert all(value is None or value.startswith("/data/") for value in sample["artifacts"].values())
 
@@ -144,20 +147,26 @@ async def test_raw_upload_is_not_marked_anonymized(client):
 
 @pytest.mark.asyncio
 async def test_quick_inference_fails_fast_without_a_runnable_checkpoint(client):
-    response = await client.post("/api/v1/inference-experiments", json={
-        "upload_batch_id": "batch-missing-123",
-        "model_version_id": "yolo_b0",
-        "attacks": ["gaussian_noise"],
-    })
+    response = await client.post(
+        "/api/v1/inference-experiments",
+        json={
+            "upload_batch_id": "batch-missing-123",
+            "model_version_id": "yolo_b0",
+            "attacks": ["gaussian_noise"],
+        },
+    )
     assert response.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_quick_inference_requires_a_recipe_or_attack(client):
-    response = await client.post("/api/v1/inference-experiments", json={
-        "upload_batch_id": "batch-missing-123",
-        "model_version_id": "yolo_b0",
-    })
+    response = await client.post(
+        "/api/v1/inference-experiments",
+        json={
+            "upload_batch_id": "batch-missing-123",
+            "model_version_id": "yolo_b0",
+        },
+    )
     assert response.status_code == 422
 
 
@@ -209,24 +218,30 @@ async def test_quick_inference_accepts_the_runnable_catalog_model_id(client, mon
     )
     assert uploaded.status_code == 201
 
-    response = await client.post("/api/v1/inference-experiments", json={
-        "upload_batch_id": "batch-catalog-model",
-        "checkpoint_id": model_id,
-        "model_family_id": "yolo11",
-        "task_id": "segmentation",
-        "attacks": ["gaussian_noise"],
-    })
+    response = await client.post(
+        "/api/v1/inference-experiments",
+        json={
+            "upload_batch_id": "batch-catalog-model",
+            "checkpoint_id": model_id,
+            "model_family_id": "yolo11",
+            "task_id": "segmentation",
+            "attacks": ["gaussian_noise"],
+        },
+    )
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "MODEL_FAMILY_TASK_MISMATCH"
 
-    response = await client.post("/api/v1/inference-experiments", json={
-        "upload_batch_id": "batch-catalog-model",
-        "checkpoint_id": model_id,
-        "model_family_id": "yolo11",
-        "task_id": "detection2d",
-        "attacks": ["gaussian_noise"],
-        "confidence_threshold": 0.61,
-    })
+    response = await client.post(
+        "/api/v1/inference-experiments",
+        json={
+            "upload_batch_id": "batch-catalog-model",
+            "checkpoint_id": model_id,
+            "model_family_id": "yolo11",
+            "task_id": "detection2d",
+            "attacks": ["gaussian_noise"],
+            "confidence_threshold": 0.61,
+        },
+    )
     assert response.status_code == 202
     assert enqueued[0].checkpoint_id == model_id
     assert enqueued[0].model == "yolo11"

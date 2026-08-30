@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from src.config import PROJECT_ROOT
+
 TaskKind = Literal["detection2d", "segmentation", "detection3d"]
 
 
@@ -153,19 +155,21 @@ def _scan_person_b_summaries(root: Path) -> list[ModelVersion]:
             "training_summary": payload,
             "source_run": str(summary_path.parent),
         }
-        versions.append(ModelVersion(
-            id=version_id,
-            model_name=str(registration.get("model_id", "yolo11s")),
-            task="detection2d",
-            checkpoint_path=str(checkpoint.resolve()) if checkpoint.is_file() else None,
-            checkpoint_hash=_file_sha256(checkpoint) if checkpoint.is_file() else None,
-            parent_id=_PERSON_B_CANONICAL_LINEAGE.get(role, checkpoint_data.get("parent_model_version")),
-            training_metadata=metadata,
-            runnable=checkpoint.is_file(),
-            blocked_reason=None if checkpoint.is_file() else "CHECKPOINT_MISSING",
-            model_family_id="yolo11",
-            checkpoint_role=_ROLE_CHECKPOINT_KIND.get(role, "fine_tuned"),
-        ))
+        versions.append(
+            ModelVersion(
+                id=version_id,
+                model_name=str(registration.get("model_id", "yolo11s")),
+                task="detection2d",
+                checkpoint_path=str(checkpoint.resolve()) if checkpoint.is_file() else None,
+                checkpoint_hash=_file_sha256(checkpoint) if checkpoint.is_file() else None,
+                parent_id=_PERSON_B_CANONICAL_LINEAGE.get(role, checkpoint_data.get("parent_model_version")),
+                training_metadata=metadata,
+                runnable=checkpoint.is_file(),
+                blocked_reason=None if checkpoint.is_file() else "CHECKPOINT_MISSING",
+                model_family_id="yolo11",
+                checkpoint_role=_ROLE_CHECKPOINT_KIND.get(role, "fine_tuned"),
+            )
+        )
     return versions
 
 
@@ -176,17 +180,29 @@ def scan_model_artifacts(root: Path) -> list[ModelVersion]:
     are required before scientific metrics can be reported.  A checkpoint is
     still registered, so the UI can tell its owner exactly what is missing.
     """
-    versions = scan_yolo_training_runs(root)
-    for checkpoint in root.rglob("sam2*.pt"):
+    effective_root = (
+        root
+        if root.exists()
+        else (PROJECT_ROOT.parent.parent / "runs" if (PROJECT_ROOT.parent.parent / "runs").exists() else root)
+    )
+    versions = scan_yolo_training_runs(effective_root)
+    for checkpoint in effective_root.rglob("sam2*.pt"):
         if not checkpoint.is_file():
             continue
-        versions.append(ModelVersion(
-            id=f"sam2-{checkpoint.stem}", model_name="sam2", task="segmentation",
-            checkpoint_path=str(checkpoint.resolve()), checkpoint_hash=_file_sha256(checkpoint),
-            parent_id=None, training_metadata={"source_checkpoint": str(checkpoint)},
-            runnable=False, blocked_reason="WAITING_FOR_ARTIFACTS",
-            model_family_id="sam2",
-        ))
+        versions.append(
+            ModelVersion(
+                id=f"sam2-{checkpoint.stem}",
+                model_name="sam2",
+                task="segmentation",
+                checkpoint_path=str(checkpoint.resolve()),
+                checkpoint_hash=_file_sha256(checkpoint),
+                parent_id=None,
+                training_metadata={"source_checkpoint": str(checkpoint)},
+                runnable=False,
+                blocked_reason="WAITING_FOR_ARTIFACTS",
+                model_family_id="sam2",
+            )
+        )
     return sorted(versions, key=lambda version: version.id)
 
 
@@ -252,10 +268,7 @@ def list_known_versions() -> list[ModelVersion]:
     SAM2 roles are included as WAITING_FOR_ARTIFACTS.
     """
     versions: list[ModelVersion] = []
-    parents_by_id = {
-        version_id: parent_id
-        for version_id, parent_id in _ROLE_METADATA.values()
-    }
+    parents_by_id = {version_id: parent_id for version_id, parent_id in _ROLE_METADATA.values()}
     for role, (version_id, parent_id) in _ROLE_METADATA.items():
         lineage: list[str] = []
         ancestor_id = parent_id
@@ -317,15 +330,119 @@ def scan_base_checkpoints(root: Path) -> list[ModelVersion]:
                 checkpoint_role="base",
             )
         )
+
+    # 3D PointPillars base checkpoint discovery
+    from src.config import PROJECT_ROOT
+
+    is_project_root = root in {PROJECT_ROOT, PROJECT_ROOT / "checkpoints", PROJECT_ROOT.parent.parent / "checkpoints"}
+
+    pp_candidates = [
+        root / "pointpillars_kitti_3class.pth",
+        root / "pointpillars.pth",
+        root / "surrogates" / "pointpillars_kitti_3class.pth",
+    ]
+    if is_project_root:
+        pp_candidates.extend(
+            [
+                root.parent / "checkpoints" / "pointpillars_kitti_3class.pth",
+                root.parent / "data" / "checkpoints" / "pointpillars_kitti_3class.pth",
+                PROJECT_ROOT / "checkpoints" / "pointpillars_kitti_3class.pth",
+                PROJECT_ROOT.parent.parent / "checkpoints" / "pointpillars_kitti_3class.pth",
+            ]
+        )
+    for pp_ckpt in pp_candidates:
+        if pp_ckpt.is_file():
+            versions.append(
+                ModelVersion(
+                    id="pointpillars-kitti-3class-base",
+                    model_name="pointpillars-kitti-3class",
+                    task="detection3d",
+                    checkpoint_path=str(pp_ckpt.resolve()),
+                    checkpoint_hash=_file_sha256(pp_ckpt),
+                    parent_id=None,
+                    training_metadata={
+                        "source": "vendor_base",
+                        "role": "base",
+                        "config_id": "pointpillars-kitti-3class",
+                        "config_file": "configs/mmdet3d/pointpillars_hv_secfpn_6x8_160e_kitti-3d-3class.py",
+                    },
+                    runnable=True,
+                    model_family_id="pointpillars3d",
+                    checkpoint_role="base",
+                )
+            )
+            break
+
+    # SAM2 Segmentation base checkpoint discovery
+    sam2_candidates = [
+        root / "sam2" / "sam2.1_hiera_small.pt",
+        root / "sam2" / "sam2.1_hiera_s.pt",
+        root / "sam2" / "sam2.1_hiera_tiny.pt",
+        root / "sam2" / "sam2.1_hiera_t.pt",
+        root / "sam2.1_hiera_small.pt",
+        root / "sam2_hiera_small.pt",
+    ]
+    if is_project_root:
+        sam2_candidates.extend(
+            [
+                root.parent / "checkpoints" / "sam2" / "sam2.1_hiera_small.pt",
+                root.parent / "checkpoints" / "sam2.1_hiera_small.pt",
+                PROJECT_ROOT / "checkpoints" / "sam2" / "sam2.1_hiera_small.pt",
+                PROJECT_ROOT / "checkpoints" / "sam2.1_hiera_small.pt",
+                PROJECT_ROOT.parent.parent / "checkpoints" / "sam2" / "sam2.1_hiera_small.pt",
+                PROJECT_ROOT.parent.parent / "checkpoints" / "sam2.1_hiera_small.pt",
+            ]
+        )
+    for sam2_ckpt in sam2_candidates:
+        if sam2_ckpt.is_file():
+            versions.append(
+                ModelVersion(
+                    id="sam2-hiera-small-base",
+                    model_name="sam2",
+                    task="segmentation",
+                    checkpoint_path=str(sam2_ckpt.resolve()),
+                    checkpoint_hash=_file_sha256(sam2_ckpt),
+                    parent_id=None,
+                    training_metadata={
+                        "source": "vendor_base",
+                        "role": "base",
+                        "config": "configs/sam2.1/sam2.1_hiera_s.yaml",
+                    },
+                    runnable=True,
+                    model_family_id="sam2",
+                    checkpoint_role="base",
+                )
+            )
+            break
     return versions
 
 
 def _resolve_surrogate_checkpoint(root: Path, model_id: str) -> Path | None:
-    candidates = (
+    local_candidates = (
         root / "surrogates" / f"{model_id}.pt",
         root / f"{model_id}.pt",
     )
-    for candidate in candidates:
+    for candidate in local_candidates:
         if candidate.is_file():
             return candidate.resolve()
+
+    from src.config import PROJECT_ROOT
+
+    if root in {PROJECT_ROOT, PROJECT_ROOT / "checkpoints", PROJECT_ROOT.parent.parent / "checkpoints"}:
+        project_candidates = (
+            root.parent / "checkpoints" / "surrogates" / f"{model_id}.pt",
+            root.parent / "checkpoints" / f"{model_id}.pt",
+            PROJECT_ROOT / "checkpoints" / "surrogates" / f"{model_id}.pt",
+            PROJECT_ROOT / "checkpoints" / f"{model_id}.pt",
+            PROJECT_ROOT.parent.parent / "checkpoints" / "surrogates" / f"{model_id}.pt",
+            PROJECT_ROOT.parent.parent / "checkpoints" / f"{model_id}.pt",
+            PROJECT_ROOT.parent.parent
+            / "data"
+            / "checkpoints"
+            / "uploaded"
+            / f"checkpoint-f15d49bc51cd4d27-{model_id}-clean-b0_best.pt",
+        )
+        for candidate in project_candidates:
+            if candidate.is_file():
+                return candidate.resolve()
     return None

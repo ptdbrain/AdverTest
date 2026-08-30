@@ -205,7 +205,11 @@ def resolve_run_config(
     if not version.runnable or not version.checkpoint_path:
         raise HTTPException(
             status_code=409,
-            detail={"code": "MODEL_NOT_RUNNABLE", "model_version_id": config.model_version_id, "reason": version.blocked_reason},
+            detail={
+                "code": "MODEL_NOT_RUNNABLE",
+                "model_version_id": config.model_version_id,
+                "reason": version.blocked_reason,
+            },
         )
     checkpoint = Path(version.checkpoint_path).resolve()
     if not checkpoint.is_file():
@@ -315,7 +319,9 @@ def comparison_signature(report: dict[str, Any]) -> dict[str, Any]:
     run_config = provenance.get("run_config") or {}
     samples = report.get("sample_results") or []
     return {
-        "dataset_version_id": provenance.get("dataset_version_id") or run_config.get("dataset_version_id") or report.get("dataset"),
+        "dataset_version_id": provenance.get("dataset_version_id")
+        or run_config.get("dataset_version_id")
+        or report.get("dataset"),
         "benchmark_protocol_id": provenance.get("benchmark_protocol_id") or run_config.get("benchmark_protocol_id"),
         "recipe_hash": (provenance.get("recipe") or {}).get("recipe_hash"),
         "sample_ids": sorted(str(item.get("sample_id")) for item in samples if item.get("sample_id")),
@@ -375,13 +381,10 @@ def is_failure_case(payload: dict[str, Any]) -> bool:
     """Accept only benchmark samples carrying an explicit failure signal."""
     degradation = payload.get("degradation_hint")
     has_positive_degradation = (
-        isinstance(degradation, (int, float))
-        and not isinstance(degradation, bool)
-        and degradation > 0.0
+        isinstance(degradation, (int, float)) and not isinstance(degradation, bool) and degradation > 0.0
     )
     has_reason = any(
-        isinstance(payload.get(field), str) and bool(payload[field].strip())
-        for field in ("reason", "failure_reason")
+        isinstance(payload.get(field), str) and bool(payload[field].strip()) for field in ("reason", "failure_reason")
     )
     return has_positive_degradation or has_reason or payload.get("failed") is True
 

@@ -304,10 +304,7 @@ class AnnotationTransformer:
         object_logs: list[ObjectTransformRecord] = []
         for index, box in enumerate(sample.boxes):
             visible_ratio = _box_visible_under_occlusion(box, occlusion)
-            drop = (
-                policy.occlusion_may_drop
-                and visible_ratio < policy.min_visible_ratio
-            )
+            drop = policy.occlusion_may_drop and visible_ratio < policy.min_visible_ratio
             if not drop:
                 kept_boxes.append(box)
             geometry = box.as_tuple()
@@ -320,11 +317,7 @@ class AnnotationTransformer:
                     transformed_hash=None if drop else _box_hash(box),
                     visible_ratio=visible_ratio,
                     kept=not drop,
-                    reason=(
-                        "occluded_below_visible_ratio"
-                        if drop
-                        else "occlusion_gt_preserved"
-                    ),
+                    reason=("occluded_below_visible_ratio" if drop else "occlusion_gt_preserved"),
                     policy_version=policy.version,
                 )
             )
@@ -424,13 +417,7 @@ def _transform_boxes(
         outside = clipped_area <= 0.0
         below = visible_ratio < policy.min_visible_ratio
         drop = outside or (policy.drop_boxes_below_visible_ratio and below)
-        reason = (
-            "outside_output"
-            if outside
-            else "below_visible_ratio"
-            if drop
-            else "kept"
-        )
+        reason = "outside_output" if outside else "below_visible_ratio" if drop else "kept"
         transformed_box = None
         if not drop:
             transformed_box = Box(
@@ -446,15 +433,9 @@ def _transform_boxes(
             ObjectTransformRecord(
                 object_id=f"box-{index}",
                 original_geometry=box.as_tuple(),
-                transformed_geometry=(
-                    transformed_box.as_tuple() if transformed_box is not None else None
-                ),
+                transformed_geometry=(transformed_box.as_tuple() if transformed_box is not None else None),
                 original_hash=_box_hash(box),
-                transformed_hash=(
-                    _box_hash(transformed_box)
-                    if transformed_box is not None
-                    else None
-                ),
+                transformed_hash=(_box_hash(transformed_box) if transformed_box is not None else None),
                 visible_ratio=visible_ratio,
                 kept=not drop,
                 reason=reason,
@@ -475,11 +456,7 @@ def _transform_optional_mask(
     original = np.asarray(mask, dtype=np.bool_)
     transformed = _warp_mask(original, transform)
     original_area = int(original.sum())
-    visible_ratio = (
-        min(1.0, float(transformed.sum()) / original_area)
-        if original_area > 0
-        else 0.0
-    )
+    visible_ratio = min(1.0, float(transformed.sum()) / original_area) if original_area > 0 else 0.0
     empty = not bool(transformed.any())
     drop = empty and policy.drop_empty_masks
     return (
@@ -509,8 +486,7 @@ def _occlusion_mask_logs(
     instance_masks = sample.meta.get("instance_masks")
     if isinstance(instance_masks, dict):
         masks.extend(
-            (str(instance_id), np.asarray(mask, dtype=np.bool_))
-            for instance_id, mask in instance_masks.items()
+            (str(instance_id), np.asarray(mask, dtype=np.bool_)) for instance_id, mask in instance_masks.items()
         )
     records: list[MaskTransformRecord] = []
     for instance_id, mask in masks:
@@ -566,9 +542,7 @@ def _log(
     return AnnotationTransformLog(
         transform_kind=transform.kind,
         transform_version=transform.version,
-        matrix=tuple(
-            tuple(float(value) for value in row) for row in transform.matrix
-        ),
+        matrix=tuple(tuple(float(value) for value in row) for row in transform.matrix),
         output_shape=transform.output_shape,
         policy_version=policy.version,
         source_image_hash=array_digest(source.image),

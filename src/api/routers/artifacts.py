@@ -29,9 +29,10 @@ async def upload_local_content(
     actor_id: str = Depends(require_platform_actor),
     artifacts: ArtifactService = Depends(get_platform_artifacts),
 ) -> Response:
-    del actor_id
     try:
-        artifacts.upload_local_content(project_id, session_id, await request.body())
+        artifacts.upload_local_content(project_id, session_id, await request.body(), actor_id=actor_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -47,9 +48,12 @@ async def complete_upload(
     actor_id: str = Depends(require_platform_actor),
     artifacts: ArtifactService = Depends(get_platform_artifacts),
 ) -> dict:
-    del actor_id
     try:
-        return _public_artifact(artifacts.complete_upload(project_id, session_id, body.sha256, body.size_bytes))
+        return _public_artifact(
+            artifacts.complete_upload(project_id, session_id, body.sha256, body.size_bytes, actor_id=actor_id)
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (FileNotFoundError, ValueError) as exc:
@@ -63,8 +67,10 @@ async def get_artifact(
     actor_id: str = Depends(require_platform_actor),
     artifacts: ArtifactService = Depends(get_platform_artifacts),
 ) -> dict:
-    del actor_id
-    artifact = artifacts.get(project_id, artifact_id)
+    try:
+        artifact = artifacts.get(project_id, artifact_id, actor_id=actor_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     if artifact is None:
         raise HTTPException(status_code=404, detail="ARTIFACT_UNKNOWN")
     return _public_artifact(artifact)
@@ -77,8 +83,10 @@ async def create_download_url(
     actor_id: str = Depends(require_platform_actor),
     artifacts: ArtifactService = Depends(get_platform_artifacts),
 ) -> dict:
-    del actor_id
-    url = artifacts.signed_download_url(project_id, artifact_id)
+    try:
+        url = artifacts.signed_download_url(project_id, artifact_id, actor_id=actor_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     if url is None:
         raise HTTPException(status_code=409, detail="ARTIFACT_NOT_READY")
     if url.startswith("local://"):
@@ -93,15 +101,20 @@ async def download_local_content(
     actor_id: str = Depends(require_platform_actor),
     artifacts: ArtifactService = Depends(get_platform_artifacts),
 ) -> Response:
-    del actor_id
-    artifact = artifacts.get(project_id, artifact_id)
-    if artifact is None:
-        raise HTTPException(status_code=404, detail="ARTIFACT_UNKNOWN")
     try:
-        content = artifacts.read_bytes(project_id, artifact_id)
+        artifact = artifacts.get(project_id, artifact_id, actor_id=actor_id)
+        if artifact is None:
+            raise HTTPException(status_code=404, detail="ARTIFACT_UNKNOWN")
+        content = artifacts.read_bytes(project_id, artifact_id, actor_id=actor_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return Response(content=content, media_type=artifact["mime_type"], headers={"Content-Disposition": f'attachment; filename="{artifact["original_filename"]}"'})
+    return Response(
+        content=content,
+        media_type=artifact["mime_type"],
+        headers={"Content-Disposition": f'attachment; filename="{artifact["original_filename"]}"'},
+    )
 
 
 def _public_artifact(artifact: dict) -> dict:

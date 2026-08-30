@@ -18,6 +18,7 @@ from src.evaluation.robustness_metrics import degradation_metrics
 
 # ---- Helpers ----
 
+
 def _sample(sample_id: str = "s0") -> Sample:
     return Sample(
         sample_id=sample_id,
@@ -49,6 +50,7 @@ def _cell(attack: str, severity: int, ap: float) -> CellResult:
 
 
 # ---- Unit conversion tests ----
+
 
 class TestDegradationUnitConversion:
     """Verify `0.42 → 42.0%` consistently across domain, API, and export."""
@@ -92,10 +94,13 @@ class TestDegradationUnitConversion:
         assert math.isfinite(cell["degradation_ratio"])
 
     def test_every_cell_has_unit_field(self):
-        report = _report(0.80, [
-            _cell("noise", 1, 0.60),
-            _cell("fog", 2, 0.40),
-        ])
+        report = _report(
+            0.80,
+            [
+                _cell("noise", 1, 0.60),
+                _cell("fog", 2, 0.40),
+            ],
+        )
         for cell in report.as_dict()["cells"]:
             assert "unit" in cell
             assert cell["unit"] == "ratio"
@@ -223,11 +228,14 @@ class TestHeatmapUnitConsistency:
     """Heatmap must produce ratio values in [0, 1], not percent."""
 
     def test_heatmap_values_are_ratios(self):
-        report = _report(1.0, [
-            _cell("noise", 1, 0.90),
-            _cell("noise", 3, 0.58),
-            _cell("fog", 2, 0.50),
-        ])
+        report = _report(
+            1.0,
+            [
+                _cell("noise", 1, 0.90),
+                _cell("noise", 3, 0.58),
+                _cell("fog", 2, 0.50),
+            ],
+        )
         heatmap = report.heatmap()
         for attack, severities in heatmap.items():
             for severity, value in severities.items():

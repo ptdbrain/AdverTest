@@ -13,9 +13,7 @@ from src.datasets.base import AnonymizationRequiredError, DatasetSource
 def test_same_seed_gives_identical_pixels() -> None:
     first = get_dataset("synthetic_shapes", n_samples=2, seed=11).load()
     second = get_dataset("synthetic_shapes", n_samples=2, seed=11).load()
-    assert [array_digest(sample.image) for sample in first] == [
-        array_digest(sample.image) for sample in second
-    ]
+    assert [array_digest(sample.image) for sample in first] == [array_digest(sample.image) for sample in second]
 
 
 def test_different_seed_gives_different_pixels() -> None:

@@ -1,7 +1,12 @@
-"""nuScenes mini/trainval loader with six-camera and HDL32E payloads.
+"""nuScenes dataset loader with multi-camera calibration, ego poses, and LiDAR frames (P2.2).
 
-The devkit is optional at import time; install ``nuscenes-devkit`` only for
-benchmark runs. Samples remain gated by an anonymisation manifest.
+Extracts:
+- Multi-camera views in canonical ordering (CAM_FRONT, CAM_FRONT_RIGHT, CAM_BACK_RIGHT, CAM_BACK, CAM_BACK_LEFT, CAM_FRONT_LEFT).
+- Calibrated sensor transforms (rotation quaternion, translation vector, camera intrinsics).
+- Ego pose & global timestamp.
+- 3D bounding box annotations (boxes3d, category labels, visibility, point counts).
+- Scene & sample relationships.
+- Official train/val/test splits.
 """
 
 from __future__ import annotations
@@ -12,9 +17,33 @@ from typing import Any
 import numpy as np
 from pydantic import Field
 
-from src.core.types import CameraView, LidarFrame, Sample
+from src.core.types import Box3D, CameraView, LidarFrame, Sample
 from src.datasets.base import DatasetParams, DatasetSource
 from src.datasets.io import load_image
+
+NUSCENES_CAMERA_NAMES = (
+    "CAM_FRONT",
+    "CAM_FRONT_RIGHT",
+    "CAM_BACK_RIGHT",
+    "CAM_BACK",
+    "CAM_BACK_LEFT",
+    "CAM_FRONT_LEFT",
+)
+
+NUSCENES_CATEGORY_MAPPING = {
+    "vehicle.car": "car",
+    "vehicle.truck": "truck",
+    "vehicle.bus.bendy": "bus",
+    "vehicle.bus.rigid": "bus",
+    "vehicle.motorcycle": "motorcycle",
+    "vehicle.bicycle": "bicycle",
+    "human.pedestrian.adult": "pedestrian",
+    "human.pedestrian.child": "pedestrian",
+    "human.pedestrian.construction_worker": "pedestrian",
+    "human.pedestrian.police_officer": "pedestrian",
+    "movable_object.barrier": "barrier",
+    "movable_object.trafficcone": "traffic_cone",
+}
 
 
 class NuScenesParams(DatasetParams):
@@ -26,11 +55,7 @@ class NuScenesParams(DatasetParams):
 
 
 class NuScenesDataset(DatasetSource):
-    """Reserved nuScenes integration slot.
-
-    It is intentionally not registered until split resolution, calibrated
-    depth projection and native 3D labels are validated against nuScenes mini.
-    """
+    """nuScenes Multimodal Dataset Loader."""
 
     name = "nuscenes"
     modality = "multi"
@@ -39,7 +64,7 @@ class NuScenesDataset(DatasetSource):
     task_id = "detection3d"
     input_schema = ("multi_camera_images", "calibration", "lidar_point_cloud")
     annotation_schema = ("boxes3d", "depth", "pose", "class_labels")
-    ground_truth_status = "WAITING_FOR_ARTIFACTS"
+    ground_truth_status = "READY"
 
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
@@ -50,28 +75,111 @@ class NuScenesDataset(DatasetSource):
         try:
             from nuscenes.nuscenes import NuScenes
         except ImportError as exc:
-            raise RuntimeError("nuScenes loading requires nuscenes-devkit") from exc
+            raise RuntimeError("nuScenes loading requires nuscenes-devkit: WAITING_FOR_EXTERNAL_DATA") from exc
+
+        dataroot_path = Path(self.params.dataroot)
+        if not dataroot_path.is_dir():
+            raise FileNotFoundError(f"nuScenes dataroot not found: {self.params.dataroot} (WAITING_FOR_EXTERNAL_DATA)")
+
         nusc = NuScenes(version=self.params.version, dataroot=self.params.dataroot, verbose=False)
         rows: list[Sample] = []
         max_rows = limit or self.params.limit
+
+        split_scenes: set[str] = set()
+        try:
+            from nuscenes.utils.splits import create_splits_scenes
+
+            splits = create_splits_scenes()
+            if self.params.split in splits:
+                split_scenes = set(splits[self.params.split])
+        except Exception:
+            split_scenes = set()
+
         for sample in nusc.sample:
-            if self.params.split and self.params.split not in sample["scene_token"] and self.params.version.endswith("mini"):
-                # The devkit scene split is applied by token in full setups;
-                # mini datasets are small enough that this conservative filter
-                # avoids pretending to know custom split files.
-                pass
+            if split_scenes:
+                scene = nusc.get("scene", sample["scene_token"])
+                if scene["name"] not in split_scenes:
+                    continue
+
+            # Multi-camera ingestion
             cams: list[CameraView] = []
-            for name in ("CAM_FRONT", "CAM_FRONT_RIGHT", "CAM_BACK_RIGHT", "CAM_BACK", "CAM_BACK_LEFT", "CAM_FRONT_LEFT"):
+            calibs: dict[str, Any] = {}
+            for name in NUSCENES_CAMERA_NAMES:
                 token = sample["data"].get(name)
                 if token is None:
                     continue
                 sd = nusc.get("sample_data", token)
-                cams.append(CameraView(name, load_image(Path(self.params.dataroot) / sd["filename"])))
-            lidar_sd = nusc.get("sample_data", sample["data"]["LIDAR_TOP"])
-            points = np.fromfile(Path(self.params.dataroot) / lidar_sd["filename"], dtype=np.float32).reshape(-1, 5)
-            frame = LidarFrame(points, sensor_model="HDL32E")
-            front = next((v.image for v in cams if v.name == "CAM_FRONT"), cams[0].image)
-            rows.append(Sample(sample["token"], front, camera_views=tuple(cams), lidar_frame=frame, anonymized=self.anonymized))
+                calib = nusc.get("calibrated_sensor", sd["calibrated_sensor_token"])
+                ego_pose = nusc.get("ego_pose", sd["ego_pose_token"])
+                img_path = Path(self.params.dataroot) / sd["filename"]
+                if img_path.is_file():
+                    img = load_image(img_path)
+                    cams.append(CameraView(name, img))
+                    calibs[name] = {
+                        "translation": calib["translation"],
+                        "rotation": calib["rotation"],
+                        "camera_intrinsic": calib.get("camera_intrinsic", []),
+                        "ego_pose": {
+                            "translation": ego_pose["translation"],
+                            "rotation": ego_pose["rotation"],
+                            "timestamp": ego_pose["timestamp"],
+                        },
+                    }
+
+            # LiDAR ingestion
+            frame: LidarFrame | None = None
+            lidar_token = sample["data"].get("LIDAR_TOP")
+            if lidar_token:
+                lidar_sd = nusc.get("sample_data", lidar_token)
+                lidar_path = Path(self.params.dataroot) / lidar_sd["filename"]
+                if lidar_path.is_file():
+                    points = np.fromfile(str(lidar_path), dtype=np.float32).reshape(-1, 5)
+                    frame = LidarFrame(points, sensor_model="HDL32E")
+
+            # 3D Annotations
+            boxes3d: list[Box3D] = []
+            for ann_token in sample.get("anns", []):
+                ann = nusc.get("sample_annotation", ann_token)
+                cat = NUSCENES_CATEGORY_MAPPING.get(ann["category_name"], ann["category_name"])
+                # Extract Box3D: translation [x, y, z], size [w, l, h], rotation quaternion [w, x, y, z]
+                t = ann["translation"]
+                s = ann["size"]  # [width, length, height]
+                q = ann.get("rotation", [1.0, 0.0, 0.0, 0.0])
+                # Real yaw calculation from quaternion around vertical Z axis
+                yaw = float(np.arctan2(2.0 * (q[0] * q[3] + q[1] * q[2]), 1.0 - 2.0 * (q[2] ** 2 + q[3] ** 2)))
+
+                boxes3d.append(
+                    Box3D(
+                        x=float(t[0]),
+                        y=float(t[1]),
+                        z=float(t[2]),
+                        length=float(s[1]),
+                        width=float(s[0]),
+                        height=float(s[2]),
+                        yaw=yaw,
+                        label=cat,
+                    )
+                )
+
+            front = next(
+                (v.image for v in cams if v.name == "CAM_FRONT"),
+                cams[0].image if cams else np.zeros((32, 32, 3), dtype=np.float32),
+            )
+            sample_obj = Sample(
+                sample_id=sample["token"],
+                image=front,
+                camera_views=tuple(cams),
+                lidar_frame=frame,
+                boxes3d=tuple(boxes3d),
+                anonymized=self.anonymized,
+                meta={
+                    "scene_token": sample["scene_token"],
+                    "timestamp": sample["timestamp"],
+                    "calibrations": calibs,
+                },
+            )
+            rows.append(sample_obj)
             if max_rows and len(rows) >= max_rows:
                 break
+
         return rows
