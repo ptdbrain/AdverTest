@@ -16,6 +16,8 @@ from src.api.dependencies import (
     get_worker,
     get_workflow_store,
 )
+from src.api.defense_scope import require_scoped_record, require_scoped_run
+from src.api.platform_dependencies import require_project_member
 from src.api.helpers import (
     comparison_metric_deltas,
     comparison_signature,
@@ -267,11 +269,14 @@ async def approve_retraining_backlog(
 @router.post("/model-comparisons", status_code=201)
 async def create_model_comparison(
     body: ModelComparisonIn,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Create a paired model comparison between baseline and candidate runs."""
-    baseline = require_run(store, body.baseline_run_id)
-    candidate = require_run(store, body.candidate_run_id)
+    del actor_id  # Membership is enforced by the dependency before evidence is loaded.
+    baseline = require_scoped_run(store, run_id=body.baseline_run_id, project_id=project_id)
+    candidate = require_scoped_run(store, run_id=body.candidate_run_id, project_id=project_id)
     if baseline.get("report") is None or candidate.get("report") is None:
         raise HTTPException(status_code=409, detail="both runs must complete before comparison")
 
@@ -279,7 +284,7 @@ async def create_model_comparison(
     baseline_sig = comparison_signature(left)
     candidate_sig = comparison_signature(right)
     paired = baseline_sig == candidate_sig
-    comparison_id = f"comparison-{stable_digest(body.model_dump(mode='json'), length=20)}"
+    comparison_id = f"comparison-{stable_digest({'project_id': project_id, **body.model_dump(mode='json')}, length=20)}"
 
     deltas = comparison_metric_deltas(left, right) if paired else {}
     base_attack_score = mean_attack_score(left)
@@ -290,6 +295,7 @@ async def create_model_comparison(
 
     payload = {
         "comparison_id": comparison_id,
+        "project_id": project_id,
         **body.model_dump(mode="json"),
         "paired": paired,
         "baseline_signature": baseline_sig,
@@ -314,32 +320,47 @@ async def create_model_comparison(
 @router.post("/comparisons")
 async def create_comparison_alias(
     body: ModelComparisonIn,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Compatibility alias for model-comparisons endpoint."""
-    return await create_model_comparison(body, store=store)
+    return await create_model_comparison(body, project_id=project_id, actor_id=actor_id, store=store)
 
 
 @router.get("/model-comparisons/{comparison_id}")
 async def get_model_comparison(
     comparison_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Retrieve model comparison record."""
-    record = store.get_record("model_comparison", comparison_id)
-    if record is None:
-        raise HTTPException(status_code=404, detail=f"unknown comparison {comparison_id!r}")
-    return record
+    del actor_id
+    return require_scoped_record(
+        store,
+        record_type="model_comparison",
+        record_id=comparison_id,
+        project_id=project_id,
+    )
 
 
 @router.get("/model-comparisons/{comparison_id}/export")
 async def export_model_comparison(
     comparison_id: str,
     format: str = Query(default="json"),
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> Response:
     """Export comparison report in JSON, CSV, or HTML format."""
-    comparison = await get_model_comparison(comparison_id, store=store)
+    del actor_id
+    comparison = require_scoped_record(
+        store,
+        record_type="model_comparison",
+        record_id=comparison_id,
+        project_id=project_id,
+    )
     try:
         artifact = export_comparison(comparison, format)  # type: ignore[arg-type]
     except ValueError as exc:
@@ -357,34 +378,43 @@ async def export_model_comparison(
 @router.get("/model-comparisons/{comparison_id}/metric-deltas")
 async def get_model_comparison_metric_deltas(
     comparison_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Retrieve metric deltas for comparison."""
-    comp = await get_model_comparison(comparison_id, store=store)
+    del actor_id
+    comp = require_scoped_record(store, record_type="model_comparison", record_id=comparison_id, project_id=project_id)
     return comp.get("metric_deltas", {})
 
 
 @router.get("/model-comparisons/{comparison_id}/recovery-report")
 async def get_model_comparison_recovery_report(
     comparison_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Retrieve recovery report for comparison."""
-    comp = await get_model_comparison(comparison_id, store=store)
+    del actor_id
+    comp = require_scoped_record(store, record_type="model_comparison", record_id=comparison_id, project_id=project_id)
     return comp.get("recovery_report", {})
 
 
 @router.get("/model-comparisons/{comparison_id}/failures")
 async def get_model_comparison_failures(
     comparison_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Return failure deltas between baseline and candidate runs."""
-    comp = await get_model_comparison(comparison_id, store=store)
+    del actor_id
+    comp = require_scoped_record(store, record_type="model_comparison", record_id=comparison_id, project_id=project_id)
     baseline_id = comp.get("baseline_run_id")
     candidate_id = comp.get("candidate_run_id")
-    base_run = store.get(baseline_id) if baseline_id else None
-    cand_run = store.get(candidate_id) if candidate_id else None
+    base_run = require_scoped_run(store, run_id=baseline_id, project_id=project_id) if baseline_id else None
+    cand_run = require_scoped_run(store, run_id=candidate_id, project_id=project_id) if candidate_id else None
     base_failures = (base_run.get("report") or {}).get("worst_cases", []) if base_run else []
     cand_failures = (cand_run.get("report") or {}).get("worst_cases", []) if cand_run else []
     return {

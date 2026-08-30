@@ -573,6 +573,8 @@ def _row_payload(row: sqlite3.Row) -> dict[str, Any]:
         "report": json.loads(row["report_json"]) if row["report_json"] else None,
         "error": row["error"],
         "cancel_requested": bool(row["cancel_requested"]),
+        "project_id": row["project_id"] if "project_id" in row.keys() else None,
+        "owner_user_id": row["owner_user_id"] if "owner_user_id" in row.keys() else None,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
