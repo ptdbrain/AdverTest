@@ -197,7 +197,10 @@ async def download_run_artifacts_zip(
         if "config" in record:
             zf.writestr("run_config.json", json.dumps(record["config"], indent=2))
 
-        samples = store.list_samples(run_id)
+        # The production control-plane keeps sample evidence inside the
+        # completed report; the local SQLite store does not expose a separate
+        # ``list_samples`` API.
+        samples = (record.get("report") or {}).get("sample_results", [])
         if samples:
             zf.writestr("samples_diagnostics.json", json.dumps(samples, indent=2))
 
