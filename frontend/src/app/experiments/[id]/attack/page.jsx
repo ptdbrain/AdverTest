@@ -191,6 +191,20 @@ function executionStepForJob(job) {
   return 2;
 }
 
+function executionStatusMessageForJob(job) {
+  const stage = job?.detail?.stage || job?.status;
+  if (stage === "GPU_STARTING") {
+    return "GPU Cloud Run đang khởi động theo yêu cầu. Đây không phải lỗi; job sẽ tự chạy khi worker sẵn sàng.";
+  }
+  if (stage === "PREPARING") {
+    return "GPU đã sẵn sàng, đang nạp checkpoint và dữ liệu đã ẩn danh từ GCS.";
+  }
+  if (stage === "GENERATING") return "Đang sinh biến thể nhiễu đối kháng trên GPU.";
+  if (stage === "INFERENCING") return "Đang suy luận clean và attacked trên GPU.";
+  if (["EVALUATING", "COMPUTING_METRICS"].includes(stage)) return "Đang tính metric và chuẩn bị evidence.";
+  return "Đang gửi job tới GPU worker.";
+}
+
 function ConfigureAttackPageContent() {
   const params = useParams();
   const router = useRouter();
@@ -217,6 +231,7 @@ function ConfigureAttackPageContent() {
   const [attackMode, setAttackMode] = useState("combined"); // "combined" | "individual"
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionStep, setExecutionStep] = useState(0);
+  const [executionStatusMessage, setExecutionStatusMessage] = useState("");
   const [executionError, setExecutionError] = useState("");
 
   // Attack Recipe Summary (The active queue of confirmed attacks)
@@ -315,6 +330,7 @@ function ConfigureAttackPageContent() {
   const handleStartExecution = async () => {
     setIsExecuting(true);
     setExecutionStep(1);
+    setExecutionStatusMessage("Đang kiểm tra cấu hình và gửi job tới GPU worker...");
     setExecutionError("");
     try {
       const [versions, datasets] = await Promise.all([
@@ -346,10 +362,12 @@ function ConfigureAttackPageContent() {
       if (preflight.fatal_errors?.length) throw new Error(preflight.fatal_errors.join(" "));
       setExecutionStep(2);
       const created = await createRun(config);
+      setExecutionStatusMessage(executionStatusMessageForJob(created));
       const { job, report, samples } = await waitForRealRun(created.run_id, (currentJob) => {
         // A poll can observe a lower-level worker state after INFERENCING.
         // Keep the checklist monotonic so the UI never appears to run backward.
         setExecutionStep((previous) => Math.max(previous, executionStepForJob(currentJob)));
+        setExecutionStatusMessage(executionStatusMessageForJob(currentJob));
       });
 
       const executedAt = new Date().toISOString();
@@ -891,6 +909,12 @@ function ConfigureAttackPageContent() {
                 <p className="text-xs text-slate-500 font-mono">Mô hình: {expContext.selectedModelName}</p>
               </div>
             </div>
+
+            {executionStatusMessage && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                {executionStatusMessage}
+              </div>
+            )}
 
             {/* Step Progress Checklist */}
             <div className="space-y-2.5 text-xs border border-slate-100 p-3 rounded-xl bg-slate-50">
