@@ -108,3 +108,17 @@ def test_analytics_comparison_loader_is_project_scoped(tmp_path) -> None:
         _require_comparison(store, "comparison-a", project_id="project-b")
 
     assert error.value.status_code == 404
+
+
+def test_scoped_workflow_loader_hides_a_closed_loop_from_another_project(tmp_path) -> None:
+    from src.api.defense_scope import require_scoped_workflow_job
+    from src.api.workflow_store import WorkflowJobStore
+
+    workflow = WorkflowJobStore(f"sqlite:///{(tmp_path / 'workflow.db').as_posix()}")
+    job_id = workflow.create_job("closed_loop", {"project_id": "project-a"})
+
+    with pytest.raises(HTTPException) as error:
+        require_scoped_workflow_job(workflow, job_id=job_id, project_id="project-b")
+
+    assert error.value.status_code == 404
+    assert error.value.detail["code"] == "WORKFLOW_NOT_FOUND_IN_PROJECT"

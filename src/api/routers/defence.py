@@ -16,7 +16,7 @@ from src.api.dependencies import (
     get_worker,
     get_workflow_store,
 )
-from src.api.defense_scope import require_scoped_record, require_scoped_run
+from src.api.defense_scope import require_scoped_record, require_scoped_run, require_scoped_workflow_job
 from src.api.platform_dependencies import require_project_member
 from src.api.helpers import (
     is_failure_case,
@@ -597,15 +597,21 @@ async def get_failure_cluster(
 @router.post("/closed-loop/start", status_code=201, response_model=ClosedLoopSnapshotOut)
 async def start_closed_loop(
     body: ClosedLoopStartIn,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
     workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> dict[str, Any]:
     """Start a closed-loop retraining pipeline from a completed benchmark run."""
     from src.training.closed_loop import ClosedLoopTracker
 
-    item = store.get(body.run_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail={"code": "RUN_UNKNOWN", "run_id": body.run_id})
+    del actor_id
+    try:
+        item = require_scoped_run(store, run_id=body.run_id, project_id=project_id)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise HTTPException(status_code=404, detail={"code": "RUN_UNKNOWN", "run_id": body.run_id}) from exc
+        raise
     if item.get("report") is None:
         raise HTTPException(status_code=409, detail={"code": "RUN_NOT_COMPLETED", "run_id": body.run_id})
 
@@ -636,7 +642,7 @@ async def start_closed_loop(
             }
         )
 
-    loop_id = workflow_store.create_job("closed_loop", {"source_run_id": body.run_id})
+    loop_id = workflow_store.create_job("closed_loop", {"project_id": project_id, "source_run_id": body.run_id})
     tracker = ClosedLoopTracker(loop_id=loop_id)
     workflow_store.append_event(
         loop_id,
@@ -646,6 +652,7 @@ async def start_closed_loop(
     job = workflow_store.get_job(loop_id)
     payload = {
         "loop_id": loop_id,
+        "project_id": project_id,
         "source_run_id": body.run_id,
         "state": tracker.state,
         "audit": audit,
@@ -664,11 +671,19 @@ async def start_closed_loop(
 @router.get("/closed-loop/{loop_id}", response_model=ClosedLoopSnapshotOut)
 async def get_closed_loop(
     loop_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> dict[str, Any]:
     """Get current state of a closed-loop pipeline."""
-    job = workflow_store.get_job(loop_id)
-    if job is None or job.get("job_type") != "closed_loop":
+    del actor_id
+    try:
+        job = require_scoped_workflow_job(workflow_store, job_id=loop_id, project_id=project_id)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise HTTPException(status_code=404, detail={"code": "CLOSED_LOOP_UNKNOWN", "loop_id": loop_id}) from exc
+        raise
+    if job.get("job_type") != "closed_loop":
         raise HTTPException(status_code=404, detail={"code": "CLOSED_LOOP_UNKNOWN", "loop_id": loop_id})
     checkpoints = workflow_store.checkpoints(loop_id)
     if not checkpoints:
@@ -680,14 +695,22 @@ async def get_closed_loop(
 async def advance_closed_loop(
     loop_id: str,
     body: ClosedLoopAdvanceIn,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
     workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> dict[str, Any]:
     """Advance a recovery loop to a target state if backed by valid persisted evidence."""
     from src.training.closed_loop import ClosedLoopAuditEntry, ClosedLoopTracker, validate_transition
 
-    job = workflow_store.get_job(loop_id)
-    if job is None or job.get("job_type") != "closed_loop":
+    del actor_id
+    try:
+        job = require_scoped_workflow_job(workflow_store, job_id=loop_id, project_id=project_id)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise HTTPException(status_code=404, detail={"code": "CLOSED_LOOP_UNKNOWN", "loop_id": loop_id}) from exc
+        raise
+    if job.get("job_type") != "closed_loop":
         raise HTTPException(status_code=404, detail={"code": "CLOSED_LOOP_UNKNOWN", "loop_id": loop_id})
     checkpoints = workflow_store.checkpoints(loop_id)
     if not checkpoints:
@@ -813,6 +836,7 @@ async def advance_closed_loop(
     audit_payloads = [entry.model_dump(mode="json") for entry in tracker.audit]
     updated_payload = {
         "loop_id": loop_id,
+        "project_id": project_id,
         "source_run_id": latest["source_run_id"],
         "state": tracker.state,
         "audit": audit_payloads,

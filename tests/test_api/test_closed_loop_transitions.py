@@ -47,7 +47,9 @@ async def _advance(client, loop_id: str, target: str, artifact_id: str):
 async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> None:
     import src.api.routes as routes
 
-    source_run_id = routes._store.create(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1))
+    source_run_id = routes._store.create(
+        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1), project_id=client.default_project_id
+    )
     routes._store.complete(source_run_id, _report(source_run_id))
     started = await client.post("/api/v1/closed-loop/start", json={"run_id": source_run_id})
     loop_id = started.json()["loop_id"]
@@ -150,7 +152,9 @@ async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> No
 async def test_closed_loop_invalid_skip_is_rejected_without_mutation(client) -> None:
     import src.api.routes as routes
 
-    run_id = routes._store.create(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1))
+    run_id = routes._store.create(
+        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1), project_id=client.default_project_id
+    )
     routes._store.complete(run_id, _report(run_id))
     started = await client.post("/api/v1/closed-loop/start", json={"run_id": run_id})
     loop_id = started.json()["loop_id"]

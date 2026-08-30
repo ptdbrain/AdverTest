@@ -93,15 +93,14 @@ async def test_comparison_analytics_endpoints(client) -> None:
     )
     summary_data = summary_resp.json()
     assert summary_data["comparison_id"] == comparison_id
-    assert summary_data["paired"] is True
-    assert "verdict" in summary_data
+    assert summary_data["eligibility"]["status"] == "NOT_ELIGIBLE"
+    assert summary_data["decision"]["status"] == "NOT_ELIGIBLE"
 
     # 2. Recovery
     recovery_resp = await client.get(f"/api/v1/analytics/comparisons/{comparison_id}/recovery")
     assert recovery_resp.status_code == 200
     recovery_data = recovery_resp.json()
-    assert "overall_recovery" in recovery_data
-    assert "per_attack_recovery" in recovery_data
+    assert recovery_data["reason"] == "NOT_ELIGIBLE"
 
     # 3. Classes
     classes_resp = await client.get(f"/api/v1/analytics/comparisons/{comparison_id}/classes")
@@ -113,9 +112,8 @@ async def test_comparison_analytics_endpoints(client) -> None:
     failures_resp = await client.get(f"/api/v1/analytics/comparisons/{comparison_id}/failures")
     assert failures_resp.status_code == 200
     failures_data = failures_resp.json()
-    assert "total_baseline_failures" in failures_data
-    assert "recovered_count" in failures_data
-    assert "still_failed_count" in failures_data
+    assert failures_data["baseline_count"] == 0
+    assert failures_data["recovered_count"] == 0
 
 
 @pytest.mark.asyncio

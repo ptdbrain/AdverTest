@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import HTTPException, status
 
 from src.api.jobs import SqliteRunStore
+from src.api.workflow_store import WorkflowJobStore
 
 
 def require_scoped_run(store: SqliteRunStore, *, run_id: str, project_id: str) -> dict[str, Any]:
@@ -35,3 +36,19 @@ def require_scoped_record(
             detail={"code": "RECORD_NOT_FOUND_IN_PROJECT", "id": record_id},
         )
     return record
+
+
+def require_scoped_workflow_job(
+    workflow_store: WorkflowJobStore,
+    *,
+    job_id: str,
+    project_id: str,
+) -> dict[str, Any]:
+    """Load workflow state only when its immutable request owns the project."""
+    job = workflow_store.get_job(job_id)
+    if job is None or job.get("request", {}).get("project_id") != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "WORKFLOW_NOT_FOUND_IN_PROJECT", "id": job_id},
+        )
+    return job

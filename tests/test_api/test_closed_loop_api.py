@@ -42,7 +42,9 @@ def _completed_report(run_id: str) -> dict:
 async def test_closed_loop_start_is_durable_and_retrievable(client) -> None:
     import src.api.routes as routes
 
-    run_id = routes._store.create(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1))
+    run_id = routes._store.create(
+        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1), project_id=client.default_project_id
+    )
     routes._store.complete(run_id, _completed_report(run_id))
 
     created = await client.post("/api/v1/closed-loop/start", json={"run_id": run_id})
@@ -76,7 +78,9 @@ async def test_closed_loop_start_is_durable_and_retrievable(client) -> None:
 async def test_closed_loop_rejects_an_incomplete_source_run(client) -> None:
     import src.api.routes as routes
 
-    run_id = routes._store.create(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1))
+    run_id = routes._store.create(
+        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1), project_id=client.default_project_id
+    )
 
     response = await client.post("/api/v1/closed-loop/start", json={"run_id": run_id})
 
@@ -96,7 +100,9 @@ async def test_closed_loop_rejects_unknown_or_failure_free_source(client) -> Non
     assert missing.status_code == 422
     assert missing.json()["detail"][0]["loc"] == ["body", "run_id"]
 
-    run_id = routes._store.create(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1))
+    run_id = routes._store.create(
+        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1), project_id=client.default_project_id
+    )
     report = _completed_report(run_id)
     report["worst_cases"] = []
     routes._store.complete(run_id, report)
