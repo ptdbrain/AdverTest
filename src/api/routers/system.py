@@ -24,8 +24,8 @@ async def get_runtime_specs() -> dict[str, Any]:
         try:
             device_name = torch.cuda.get_device_name(0)
             free_bytes, total_bytes = torch.cuda.mem_get_info(0)
-            total_vram_gb = round(total_bytes / (1024 ** 3), 2)
-            free_vram_gb = round(free_bytes / (1024 ** 3), 2)
+            total_vram_gb = round(total_bytes / (1024**3), 2)
+            free_vram_gb = round(free_bytes / (1024**3), 2)
         except Exception:
             device_name = "NVIDIA CUDA Device"
 

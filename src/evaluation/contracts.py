@@ -45,8 +45,7 @@ class MetricEnvelope(_FrozenContract):
             if not math.isclose(self.percent_value, self.value * 100.0, abs_tol=1e-9):
                 raise ValueError("percent_value must equal ratio value multiplied by 100")
         if self.unit == "percent" and (
-            self.percent_value is None
-            or not math.isclose(self.percent_value, self.value, abs_tol=1e-9)
+            self.percent_value is None or not math.isclose(self.percent_value, self.value, abs_tol=1e-9)
         ):
             raise ValueError("percent metrics require percent_value equal to value")
         if self.ci95 is not None and self.ci95[0] > self.ci95[1]:

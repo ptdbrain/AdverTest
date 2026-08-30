@@ -42,20 +42,12 @@ class SplitPolicy(BaseModel):
 
 class SplitBuilder:
     def build(self, version: DatasetVersion, policy: SplitPolicy) -> SplitManifest:
-        has_official = bool(version.records) and all(
-            record.official_split is not None for record in version.records
-        )
+        has_official = bool(version.records) and all(record.official_split is not None for record in version.records)
         if policy.strategy == "official" and not has_official:
             raise ValueError("official split requested but membership is incomplete")
-        if policy.strategy == "official" or (
-            policy.strategy == "official_or_seeded" and has_official
-        ):
+        if policy.strategy == "official" or (policy.strategy == "official_or_seeded" and has_official):
             assignments = {
-                name: tuple(
-                    record.sample_id
-                    for record in version.records
-                    if record.official_split == name
-                )
+                name: tuple(record.sample_id for record in version.records if record.official_split == name)
                 for name in ("train", "val", "test")
             }
         elif policy.strategy == "class_stratified":

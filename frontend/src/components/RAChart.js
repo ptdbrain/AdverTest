@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -36,7 +36,7 @@ function CustomBarTooltip({ active, payload }) {
   if (!data) return null;
 
   const isBaseline = data.isBaseline;
-  const raVal = Number(data.ra ?? 0);
+  const raVal = data.ra;
   const degradation = Math.max(0, 100 - raVal);
 
   return (
@@ -83,17 +83,22 @@ function CustomBarTooltip({ active, payload }) {
         )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "2px" }}>
           <span>{t("ra.mapActual")}</span>
-          <span style={{ fontFamily: "var(--font-mono)" }}>{Number(data.ap ?? 0).toFixed(3)}</span>
+          <span style={{ fontFamily: "var(--font-mono)" }}>{data.ap == null ? "—" : Number(data.ap).toFixed(3)}</span>
         </div>
       </div>
     </div>
   );
 }
 
-export default function RAChart({ cells = [], apClean = 1, report = null }) {
+export default function RAChart({ cells = [], apClean = null, report = null }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const { t } = useLanguage();
   const chartData = useMemo(() => {
-    if (cells.length === 0 || apClean === 0) return [];
+    if (cells.length === 0 || typeof apClean !== "number" || !Number.isFinite(apClean) || apClean <= 0) return [];
 
     const baselineItem = {
       name: "Baseline",
@@ -114,11 +119,12 @@ export default function RAChart({ cells = [], apClean = 1, report = null }) {
 
     const uniqueCells = Array.from(cellMap.values());
 
-    const attackItems = uniqueCells.map((cell, idx) => {
+    const attackItems = uniqueCells.flatMap((cell, idx) => {
+      if (typeof cell.ap !== "number" || !Number.isFinite(cell.ap)) return [];
       const label = getDescriptiveAttackName(cell, cell.severity, report);
       const raRatio = cell.ap / apClean;
       const raPct = Math.min(100, Math.max(0, raRatio * 100));
-      return {
+      return [{
         name: label,
         label,
         attack: cell.attack,
@@ -128,13 +134,13 @@ export default function RAChart({ cells = [], apClean = 1, report = null }) {
         ap: cell.ap,
         color: ATTACK_PALETTE[idx % ATTACK_PALETTE.length],
         isBaseline: false,
-      };
+      }];
     });
 
     return [baselineItem, ...attackItems];
   }, [cells, apClean, report]);
 
-  if (chartData.length === 0) {
+  if (!mounted || chartData.length === 0) {
     return (
       <div className="chart-container">
         <div className="chart-container__title">{t("ra.chartTitle")}</div>

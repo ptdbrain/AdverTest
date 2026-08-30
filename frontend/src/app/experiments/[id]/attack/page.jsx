@@ -37,7 +37,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import Card from "@/components/common/Card";
 import Badge from "@/components/common/Badge";
 import Button from "@/components/common/Button";
-import { ATTACK_CATEGORIES, ATTACK_PRESETS } from "@/data/mockData";
+import { ATTACK_CATEGORIES, ATTACK_PRESETS } from "@/lib/constants";
 import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -173,7 +173,7 @@ async function waitForRealRun(runId, onProgress) {
   }
 }
 
-export default function ConfigureAttackPage() {
+function ConfigureAttackPageContent() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -906,5 +906,19 @@ export default function ConfigureAttackPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ConfigureAttackPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-400">
+          Loading attack configuration...
+        </div>
+      }
+    >
+      <ConfigureAttackPageContent />
+    </React.Suspense>
   );
 }

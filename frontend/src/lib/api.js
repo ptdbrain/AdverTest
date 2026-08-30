@@ -95,6 +95,7 @@ export function getPerceptionModes() { return apiFetch("/api/v1/perception-modes
 export function getModelFamilies(taskId) { return apiFetch(`/api/v1/model-families?task_id=${encodeURIComponent(taskId)}`); }
 export function getBaseCheckpoints(taskId, familyId) { return apiFetch(`/api/v1/base-checkpoints?task_id=${encodeURIComponent(taskId)}&model_family_id=${encodeURIComponent(familyId)}`); }
 export function getDefenceCheckpoints(taskId) { return apiFetch(`/api/v1/defence-checkpoints?task_id=${encodeURIComponent(taskId)}`); }
+export function getRunDefenceCandidates(runId) { return apiFetch(`/api/v1/runs/${encodeURIComponent(runId)}/defence-candidates`); }
 export function createDefenceRun(baselineRunId, checkpointId) {
   return apiFetch("/api/v1/defence-runs", { method: "POST", body: JSON.stringify({ baseline_run_id: baselineRunId, checkpoint_id: checkpointId }) });
 }
@@ -144,6 +145,22 @@ export function getRunSamples(runId, params = {}) {
   return apiFetch(`/api/v1/runs/${runId}/samples${qs ? `?${qs}` : ""}`);
 }
 
+export function getRunAnalyticsSummary(runId) {
+  return apiFetch(`/api/v1/analytics/runs/${encodeURIComponent(runId)}/summary`);
+}
+
+export function getRunAnalyticsAttacks(runId) {
+  return apiFetch(`/api/v1/analytics/runs/${encodeURIComponent(runId)}/attacks`);
+}
+
+export function getRunAnalyticsClasses(runId) {
+  return apiFetch(`/api/v1/analytics/runs/${encodeURIComponent(runId)}/classes`);
+}
+
+export function getRunAnalyticsDistance(runId) {
+  return apiFetch(`/api/v1/analytics/runs/${encodeURIComponent(runId)}/distance`);
+}
+
 export function cancelRun(runId) {
   return apiFetch(`/api/v1/runs/${runId}/cancel`, { method: "POST" });
 }
@@ -164,14 +181,18 @@ export function getReviews(params = {}) {
   return apiFetch(`/api/v1/reviews${qs ? `?${qs}` : ""}`);
 }
 
-export function resolveReview(reviewId, decision, decisionNote, resolvedBy) {
+export function resolveReview(reviewId, decision, decisionNote, resolvedBy, batchClusterId = null) {
+  const payload = {
+    decision,
+    decision_note: decisionNote,
+    resolved_by: resolvedBy,
+  };
+  if (batchClusterId) {
+    payload.batch_cluster_id = batchClusterId;
+  }
   return apiFetch(`/api/v1/reviews/${reviewId}`, {
     method: "PATCH",
-    body: JSON.stringify({
-      decision,
-      decision_note: decisionNote,
-      resolved_by: resolvedBy,
-    }),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -179,6 +200,29 @@ export function triggerAutoFlag(runId, threshold = 30) {
   return apiFetch(`/api/v1/runs/${runId}/flag-reviews?threshold=${threshold}`, {
     method: "POST"
   });
+}
+
+/* ---- Risk Rubric & HITL Triage ---- */
+export function getRiskRubric() {
+  return apiFetch("/api/v1/risk-rubric");
+}
+
+export function assessReviewRisk(reviewId) {
+  return apiFetch(`/api/v1/risk-rubric/assess?review_id=${encodeURIComponent(reviewId)}`, {
+    method: "POST",
+  });
+}
+
+export function getRiskSessionSummary(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return apiFetch(`/api/v1/risk-rubric/session-summary${qs ? `?${qs}` : ""}`);
+}
+
+export function autoGroupFailureClusters(runId = null) {
+  const url = runId
+    ? `/api/v1/failure-clusters/auto-group?run_id=${encodeURIComponent(runId)}`
+    : "/api/v1/failure-clusters/auto-group";
+  return apiFetch(url, { method: "POST" });
 }
 
 export function createRetrainingBacklog(name) {

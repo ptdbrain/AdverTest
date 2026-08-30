@@ -103,12 +103,8 @@ def test_training_handoff_contracts_are_versioned() -> None:
 
 
 def test_committed_contract_fixtures_are_loadable() -> None:
-    detection = DetectionPredictionWire.model_validate_json(
-        _fixture("detection_prediction.json")
-    )
-    segmentation = SegmentationPredictionWire.model_validate_json(
-        _fixture("segmentation_prediction.json")
-    )
+    detection = DetectionPredictionWire.model_validate_json(_fixture("detection_prediction.json"))
+    segmentation = SegmentationPredictionWire.model_validate_json(_fixture("segmentation_prediction.json"))
     metric = MetricEnvelope.model_validate_json(_fixture("metric_envelope.json"))
     failure_payload = __import__("json").loads(_fixture("failure_payload.json"))
     failure = FailureCase.model_validate(failure_payload["case"])
@@ -116,9 +112,7 @@ def test_committed_contract_fixtures_are_loadable() -> None:
     job_payload = __import__("json").loads(_fixture("job_request_event.json"))
     request = JobRequest.model_validate(job_payload["request"])
     event = ProgressEvent.model_validate(job_payload["event"])
-    metadata = ModelVersionMetadata.model_validate_json(
-        _fixture("model_metadata.json")
-    )
+    metadata = ModelVersionMetadata.model_validate_json(_fixture("model_metadata.json"))
 
     assert detection.to_domain().sample_id == "sample-detection-1"
     assert segmentation.to_domain().instances[0].mask.dtype == np.bool_

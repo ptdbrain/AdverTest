@@ -37,14 +37,8 @@ def compute_comparison_summary(
     base_report = (baseline_run or {}).get("report") or {}
     cand_report = (candidate_run or {}).get("report") or {}
 
-    baseline_clean = float(
-        recovery_data.get("baseline_clean")
-        or base_report.get("ap_clean", 0.0)
-    )
-    candidate_clean = float(
-        recovery_data.get("candidate_clean")
-        or cand_report.get("ap_clean", 0.0)
-    )
+    baseline_clean = float(recovery_data.get("baseline_clean") or base_report.get("ap_clean", 0.0))
+    candidate_clean = float(recovery_data.get("candidate_clean") or cand_report.get("ap_clean", 0.0))
     clean_delta = candidate_clean - baseline_clean
 
     base_attacked = _calculate_mean_attack_score(base_report)
@@ -57,13 +51,9 @@ def compute_comparison_summary(
         gained = cand_attacked - base_attacked
         recovery_ratio = (gained / lost) if lost > 0 else None
 
-    recovery_percent = (
-        round(recovery_ratio * 100.0, 4) if recovery_ratio is not None else None
-    )
+    recovery_percent = round(recovery_ratio * 100.0, 4) if recovery_ratio is not None else None
 
-    clean_retention_ratio = (
-        candidate_clean / baseline_clean if baseline_clean > 0 else 1.0
-    )
+    clean_retention_ratio = candidate_clean / baseline_clean if baseline_clean > 0 else 1.0
 
     verdict, reasons = _determine_comparison_verdict(
         paired=paired,
@@ -120,12 +110,10 @@ def compute_comparison_recovery(
     candidate_clean = float(cand_report.get("ap_clean", 0.0))
 
     base_cells = {
-        (str(c.get("attack")), int(c.get("severity", 1))): float(c.get("ap", 0.0))
-        for c in base_report.get("cells", [])
+        (str(c.get("attack")), int(c.get("severity", 1))): float(c.get("ap", 0.0)) for c in base_report.get("cells", [])
     }
     cand_cells = {
-        (str(c.get("attack")), int(c.get("severity", 1))): float(c.get("ap", 0.0))
-        for c in cand_report.get("cells", [])
+        (str(c.get("attack")), int(c.get("severity", 1))): float(c.get("ap", 0.0)) for c in cand_report.get("cells", [])
     }
 
     attack_names = sorted({key[0] for key in set(base_cells.keys()) | set(cand_cells.keys())})
@@ -162,16 +150,18 @@ def compute_comparison_recovery(
                 group = str(c.get("group", "A"))
                 break
 
-        per_attack_recovery.append({
-            "attack": attack,
-            "group": group,
-            "baseline_mean_ap": round(base_mean_ap, 4),
-            "candidate_mean_ap": round(cand_mean_ap, 4),
-            "delta_ap": round(delta_ap, 4),
-            "recovery_ratio": round(rec_ratio, 6) if rec_ratio is not None else None,
-            "recovery_percent": round(rec_percent, 4) if rec_percent is not None else None,
-            "status": status,
-        })
+        per_attack_recovery.append(
+            {
+                "attack": attack,
+                "group": group,
+                "baseline_mean_ap": round(base_mean_ap, 4),
+                "candidate_mean_ap": round(cand_mean_ap, 4),
+                "delta_ap": round(delta_ap, 4),
+                "recovery_ratio": round(rec_ratio, 6) if rec_ratio is not None else None,
+                "recovery_percent": round(rec_percent, 4) if rec_percent is not None else None,
+                "status": status,
+            }
+        )
 
     # Per-severity recovery
     severity_levels = sorted({key[1] for key in set(base_cells.keys()) | set(cand_cells.keys())})
@@ -188,30 +178,26 @@ def compute_comparison_recovery(
         lost = baseline_clean - base_mean
         ratio = (delta / lost) if lost > 0 else None
 
-        per_severity_recovery.append({
-            "severity": sev,
-            "baseline_mean_ap": round(base_mean, 4),
-            "candidate_mean_ap": round(cand_mean, 4),
-            "delta_ap": round(delta, 4),
-            "recovery_ratio": round(ratio, 6) if ratio is not None else None,
-            "recovery_percent": round(ratio * 100.0, 4) if ratio is not None else None,
-        })
+        per_severity_recovery.append(
+            {
+                "severity": sev,
+                "baseline_mean_ap": round(base_mean, 4),
+                "candidate_mean_ap": round(cand_mean, 4),
+                "delta_ap": round(delta, 4),
+                "recovery_ratio": round(ratio, 6) if ratio is not None else None,
+                "recovery_percent": round(ratio * 100.0, 4) if ratio is not None else None,
+            }
+        )
 
     base_attacked_total = _calculate_mean_attack_score(base_report)
     cand_attacked_total = _calculate_mean_attack_score(cand_report)
     overall_lost = baseline_clean - base_attacked_total
-    overall_ratio = (
-        (cand_attacked_total - base_attacked_total) / overall_lost
-        if overall_lost > 0
-        else None
-    )
+    overall_ratio = (cand_attacked_total - base_attacked_total) / overall_lost if overall_lost > 0 else None
 
     return {
         "overall_recovery": {
             "ratio_value": round(overall_ratio, 6) if overall_ratio is not None else None,
-            "percent_value": (
-                round(overall_ratio * 100.0, 4) if overall_ratio is not None else None
-            ),
+            "percent_value": (round(overall_ratio * 100.0, 4) if overall_ratio is not None else None),
             "unit": "percent",
             "formula": "(candidate_attacked - baseline_attacked) / (baseline_clean - baseline_attacked)",
         },
@@ -221,11 +207,7 @@ def compute_comparison_recovery(
             "baseline_clean": round(baseline_clean, 4),
             "candidate_clean": round(candidate_clean, 4),
             "clean_delta": round(candidate_clean - baseline_clean, 4),
-            "retained_percent": (
-                round(candidate_clean / baseline_clean * 100.0, 4)
-                if baseline_clean > 0
-                else 100.0
-            ),
+            "retained_percent": (round(candidate_clean / baseline_clean * 100.0, 4) if baseline_clean > 0 else 100.0),
         },
     }
 
@@ -281,18 +263,20 @@ def compute_comparison_classes(
         else:
             status = "NEUTRAL"
 
-        results.append({
-            "class_name": cls_name,
-            "baseline_clean_rate": round(base_clean_rate, 4),
-            "candidate_clean_rate": round(cand_clean_rate, 4),
-            "clean_delta": round(clean_delta, 4),
-            "baseline_attacked_rate": round(base_attacked_rate, 4),
-            "candidate_attacked_rate": round(cand_attacked_rate, 4),
-            "attacked_delta": round(attacked_delta, 4),
-            "recovery_ratio": round(rec_ratio, 6) if rec_ratio is not None else None,
-            "recovery_percent": round(rec_percent, 4) if rec_percent is not None else None,
-            "status": status,
-        })
+        results.append(
+            {
+                "class_name": cls_name,
+                "baseline_clean_rate": round(base_clean_rate, 4),
+                "candidate_clean_rate": round(cand_clean_rate, 4),
+                "clean_delta": round(clean_delta, 4),
+                "baseline_attacked_rate": round(base_attacked_rate, 4),
+                "candidate_attacked_rate": round(cand_attacked_rate, 4),
+                "attacked_delta": round(attacked_delta, 4),
+                "recovery_ratio": round(rec_ratio, 6) if rec_ratio is not None else None,
+                "recovery_percent": round(rec_percent, 4) if rec_percent is not None else None,
+                "status": status,
+            }
+        )
 
     return results
 
@@ -320,12 +304,8 @@ def compute_comparison_failures(
     base_report = (baseline_run or {}).get("report") or {}
     cand_report = (candidate_run or {}).get("report") or {}
 
-    base_samples = {
-        _sample_key(s): s for s in base_report.get("sample_results", [])
-    }
-    cand_samples = {
-        _sample_key(s): s for s in cand_report.get("sample_results", [])
-    }
+    base_samples = {_sample_key(s): s for s in base_report.get("sample_results", [])}
+    cand_samples = {_sample_key(s): s for s in cand_report.get("sample_results", [])}
 
     # Fallback to worst_cases if sample_results are empty
     if not base_samples and base_report.get("worst_cases"):
@@ -418,9 +398,7 @@ def _determine_comparison_verdict(
     reasons: list[str] = []
 
     if not paired:
-        return "INCOMPATIBLE_PROTOCOL", [
-            f"Runs are not paired on protocol parameters: {', '.join(incompatibilities)}"
-        ]
+        return "INCOMPATIBLE_PROTOCOL", [f"Runs are not paired on protocol parameters: {', '.join(incompatibilities)}"]
 
     # Clean degradation check (plan allows max 2% clean drop)
     max_clean_drop = 0.02 * baseline_clean if baseline_clean > 0 else 0.02

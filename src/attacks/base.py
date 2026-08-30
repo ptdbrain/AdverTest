@@ -187,19 +187,11 @@ class BaseAttack(ABC):
     def resolve_parameters(self, severity: int) -> dict[str, Any]:
         """Return the exact configured and per-severity values used by a step."""
         if not 0 <= severity <= self.severity_levels:
-            raise ValueError(
-                f"severity for {self.name!r} must be 0..{self.severity_levels}, "
-                f"got {severity}"
-            )
+            raise ValueError(f"severity for {self.name!r} must be 0..{self.severity_levels}, got {severity}")
         configured = self.param_dict()
         resolved = dict(configured)
         for name, value in configured.items():
-            if (
-                severity > 0
-                and name.endswith("_per_severity")
-                and isinstance(value, (list, tuple))
-                and value
-            ):
+            if severity > 0 and name.endswith("_per_severity") and isinstance(value, (list, tuple)) and value:
                 resolved[name.removesuffix("_per_severity")] = self.level(
                     severity,
                     value,

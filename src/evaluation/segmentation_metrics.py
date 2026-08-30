@@ -5,15 +5,17 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 from src.core.types import ModelPrediction, Sample, SegmentationPrediction
 from src.evaluation.base import EvaluationResult
 from src.evaluation.contracts import FailureCase, MetricEnvelope
-from src.pipeline.protocol import BenchmarkProtocol
 from src.segmentation.protocol import validate_segmentation_sample
+
+if TYPE_CHECKING:
+    from src.pipeline.protocol import BenchmarkProtocol
 
 METRIC_IMPLEMENTATION = "advertest-segmentation-v1"
 FailureReason = Literal[

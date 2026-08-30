@@ -80,26 +80,36 @@ def test_generic_runner_runs_detection3d() -> None:
         lidar_frame=LidarFrame(points, ("x", "y", "z", "intensity"), "test-sensor"),
         boxes3d=(
             Box3D(
-                x=10, y=0, z=1,
-                length=4, width=2, height=1.5,
-                yaw=0, label="Car", score=1.0,
+                x=10,
+                y=0,
+                z=1,
+                length=4,
+                width=2,
+                height=1.5,
+                yaw=0,
+                label="Car",
+                score=1.0,
             ),
         ),
     )
 
     evaluator = Kitti3DEvaluator()
 
-    protocol = BenchmarkProtocol(
-        name="test-3d-benchmark",
-        dataset_version_id="kitti3d-test",
-        sample_ids=("3d-s1",),
-        sample_hashes={"3d-s1": "hash-1"},
-        ground_truth_hashes={"3d-s1": "gt-1"},
-        recipe_hashes=("recipe-fog-1",),
-        seeds=(195,),
-        metric_versions={"kitti_3d_ap": "advertest-bev-v1", "bev_iou": "1.0.0"},
-        created_at=datetime.now(UTC),
-    ).transition("VALIDATED").transition("LOCKED")
+    protocol = (
+        BenchmarkProtocol(
+            name="test-3d-benchmark",
+            dataset_version_id="kitti3d-test",
+            sample_ids=("3d-s1",),
+            sample_hashes={"3d-s1": "hash-1"},
+            ground_truth_hashes={"3d-s1": "gt-1"},
+            recipe_hashes=("recipe-fog-1",),
+            seeds=(195,),
+            metric_versions={"kitti_3d_ap": "advertest-bev-v1", "bev_iou": "1.0.0"},
+            created_at=datetime.now(UTC),
+        )
+        .transition("VALIDATED")
+        .transition("LOCKED")
+    )
 
     runner = BenchmarkRunner(
         sample_provider=lambda _protocol: [sample],
@@ -139,21 +149,31 @@ def test_generic_runner_skips_detection3d_without_evaluator() -> None:
         image=np.zeros((4, 4, 3), dtype=np.float32),
         boxes3d=(
             Box3D(
-                x=10, y=0, z=1,
-                length=4, width=2, height=1.5,
-                yaw=0, label="Car", score=1.0,
+                x=10,
+                y=0,
+                z=1,
+                length=4,
+                width=2,
+                height=1.5,
+                yaw=0,
+                label="Car",
+                score=1.0,
             ),
         ),
     )
 
-    protocol = BenchmarkProtocol(
-        name="test-3d-no-eval",
-        dataset_version_id="kitti3d-test",
-        sample_ids=("3d-s1",),
-        sample_hashes={"3d-s1": "hash-1"},
-        ground_truth_hashes={"3d-s1": "gt-1"},
-        metric_versions={},
-    ).transition("VALIDATED").transition("LOCKED")
+    protocol = (
+        BenchmarkProtocol(
+            name="test-3d-no-eval",
+            dataset_version_id="kitti3d-test",
+            sample_ids=("3d-s1",),
+            sample_hashes={"3d-s1": "hash-1"},
+            ground_truth_hashes={"3d-s1": "gt-1"},
+            metric_versions={},
+        )
+        .transition("VALIDATED")
+        .transition("LOCKED")
+    )
 
     runner = BenchmarkRunner(
         sample_provider=lambda _protocol: [sample],

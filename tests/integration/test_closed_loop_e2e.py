@@ -46,10 +46,12 @@ async def test_closed_loop_preserves_evidence_and_blocks_unverified_training(cli
     created = await client.post("/api/v1/retraining-backlogs", json={"name": f"recovery-{baseline_run_id}"})
     assert created.status_code == 201
     backlog_id = created.json()["id"]
-    assert (await client.post(
-        f"/api/v1/retraining-backlogs/{backlog_id}/items",
-        json={"failure_id": f"{baseline_run_id}:gaussian_noise:severity-1"},
-    )).status_code == 201
+    assert (
+        await client.post(
+            f"/api/v1/retraining-backlogs/{backlog_id}/items",
+            json={"failure_id": f"{baseline_run_id}:gaussian_noise:severity-1"},
+        )
+    ).status_code == 201
     approved = await client.post(f"/api/v1/retraining-backlogs/{backlog_id}/approve")
     assert approved.status_code == 200
     assert approved.json()["failure_ids"]

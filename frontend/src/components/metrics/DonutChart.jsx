@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   ResponsiveContainer,
   PieChart,
@@ -20,6 +20,15 @@ export default function DonutChart({
   innerRadius = 55,
   outerRadius = 75,
 }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return <div style={{ width: "100%", height }} className="min-h-[160px]" />;
+  }
+
   return (
     <div style={{ width: "100%", height }} className="relative flex items-center justify-center">
       <ResponsiveContainer width="100%" height="100%">

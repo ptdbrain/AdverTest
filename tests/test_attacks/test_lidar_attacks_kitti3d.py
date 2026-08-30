@@ -18,10 +18,10 @@ def kitti3d_sample():
     points[:, :3] *= 20.0  # realistic range
     points[:, 3] = np.abs(points[:, 3])  # positive intensity
     return Sample(
-        sample_id='kitti3d-attack-test',
+        sample_id="kitti3d-attack-test",
         image=np.zeros((4, 4, 3), dtype=np.float32),
-        lidar_frame=LidarFrame(points, ('x', 'y', 'z', 'intensity'), 'KITTI-Velodyne'),
-        boxes3d=(Box3D(x=10, y=0, z=1, length=4, width=2, height=1.5, yaw=0, label='Car', score=1.0),),
+        lidar_frame=LidarFrame(points, ("x", "y", "z", "intensity"), "KITTI-Velodyne"),
+        boxes3d=(Box3D(x=10, y=0, z=1, length=4, width=2, height=1.5, yaw=0, label="Car", score=1.0),),
     )
 
 
@@ -32,7 +32,7 @@ def test_lidar_sector_drop(kitti3d_sample):
     assert res.lidar_frame.points.shape[0] < kitti3d_sample.lidar_frame.points.shape[0]
     assert res.boxes3d is kitti3d_sample.boxes3d
     assert res.image is kitti3d_sample.image
-    assert res.lidar_frame.fields == ('x', 'y', 'z', 'intensity')
+    assert res.lidar_frame.fields == ("x", "y", "z", "intensity")
     assert not np.isnan(res.lidar_frame.points).any()
 
 

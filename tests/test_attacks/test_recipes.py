@@ -152,9 +152,7 @@ def test_random_builders_are_seeded_without_replacement_and_honor_filters() -> N
     first = builder.random_n(request, ATTACK_CATALOG)
     second = builder.random_n(request, ATTACK_CATALOG)
 
-    assert [recipe.recipe_hash for recipe in first] == [
-        recipe.recipe_hash for recipe in second
-    ]
+    assert [recipe.recipe_hash for recipe in first] == [recipe.recipe_hash for recipe in second]
     assert len({recipe.recipe_hash for recipe in first}) == 3
     for recipe in first:
         names = [step.attack_name for step in recipe.steps]

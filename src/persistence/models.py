@@ -1,79 +1,20 @@
-"""Platform-owned relational records for the Render PostgreSQL control plane."""
+"""Platform-owned relational records.
+
+Project and user tables are deliberately not duplicated here: person D owns
+their migrations. Platform records retain project/user UUIDs and gain foreign
+keys once those shared tables land in the migration registry.
+"""
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     pass
-
-
-class UserRecord(Base):
-    """Control-plane identity persisted by the production PostgreSQL database."""
-
-    __tablename__ = "users"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
-    display_name: Mapped[str] = mapped_column(String(200))
-    role: Mapped[str] = mapped_column(String(32), default="VIEWER")
-    status: Mapped[str] = mapped_column(String(32), default="ACTIVE")
-    storage_quota_bytes: Mapped[int] = mapped_column(BigInteger, default=10 * 1024 * 1024 * 1024)
-    compute_quota_hours: Mapped[float] = mapped_column(default=100.0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class ProjectRecord(Base):
-    """A project is the ownership boundary for sessions, jobs, and artifacts."""
-
-    __tablename__ = "projects"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    name: Mapped[str] = mapped_column(String(200))
-    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    description: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
-class AuditLogRecord(Base):
-    """Append-only security audit trail for control-plane actions."""
-
-    __tablename__ = "audit_logs"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    actor_user_id: Mapped[str] = mapped_column(String(36), index=True)
-    action: Mapped[str] = mapped_column(String(64), index=True)
-    resource_type: Mapped[str] = mapped_column(String(64))
-    resource_id: Mapped[str] = mapped_column(String(64))
-    detail_json: Mapped[str] = mapped_column(Text, default="{}")
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
-
-
-class ExperimentSessionRecord(Base):
-    """Durable experiment session used by the NewUI multi-run workflow."""
-
-    __tablename__ = "sessions"
-
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
-    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="RESTRICT"), index=True)
-    name: Mapped[str] = mapped_column(String(255))
-    description: Mapped[str] = mapped_column(Text, default="")
-    task_id: Mapped[str] = mapped_column(String(100))
-    model_id: Mapped[str] = mapped_column(String(200))
-    dataset_id: Mapped[str] = mapped_column(String(200))
-    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
-    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
-    runs_json: Mapped[str] = mapped_column(Text, default="[]")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ArtifactRecord(Base):
@@ -123,7 +64,9 @@ class CheckpointRecord(Base):
     class_schema_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     validation_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class CheckpointValidationRecord(Base):
@@ -199,4 +142,94 @@ class JobEventRecord(Base):
     total: Mapped[int] = mapped_column(Integer)
     percent: Mapped[float] = mapped_column()
     message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProjectRecord(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    owner_user_id: Mapped[str] = mapped_column(String(36), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ProjectMembershipRecord(Base):
+    __tablename__ = "project_memberships"
+    __table_args__ = (
+        UniqueConstraint("project_id", "user_id", name="uq_project_user_membership"),
+        Index("ix_project_memberships_user", "user_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    role: Mapped[str] = mapped_column(String(32), default="MEMBER")
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ExperimentSessionRecord(Base):
+    __tablename__ = "experiment_sessions"
+    __table_args__ = (
+        Index("ix_experiment_sessions_project_status", "project_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True, default="default-project")
+    owner_user_id: Mapped[str] = mapped_column(String(36), index=True, default="system")
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    task_id: Mapped[str] = mapped_column(String(100), default="detection2d")
+    task_name: Mapped[str] = mapped_column(String(200), default="Object Detection")
+    model_id: Mapped[str] = mapped_column(String(100), default="")
+    model_name: Mapped[str] = mapped_column(String(200), default="")
+    dataset_id: Mapped[str] = mapped_column(String(100), default="")
+    dataset_name: Mapped[str] = mapped_column(String(200), default="")
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    total_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class SessionRunRecord(Base):
+    __tablename__ = "session_runs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("experiment_sessions.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True, default="default-project")
+    name: Mapped[str] = mapped_column(String(255))
+    timestamp: Mapped[str] = mapped_column(String(64))
+    attack_type: Mapped[str] = mapped_column(String(100))
+    attack_name: Mapped[str] = mapped_column(String(200))
+    severity: Mapped[int] = mapped_column(Integer, default=1)
+    clean_map: Mapped[float] = mapped_column(Float, default=0.0)
+    attacked_map: Mapped[float] = mapped_column(Float, default=0.0)
+    map_drop_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    clean_conf: Mapped[float] = mapped_column(Float, default=0.0)
+    attacked_conf: Mapped[float] = mapped_column(Float, default=0.0)
+    psnr: Mapped[str] = mapped_column(String(32), default="N/A")
+    ssim: Mapped[str] = mapped_column(String(32), default="N/A")
+    inference_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    robustness_score: Mapped[float] = mapped_column(Float, default=0.0)
+    clean_bbox_count: Mapped[int] = mapped_column(Integer, default=0)
+    attacked_bbox_count: Mapped[int] = mapped_column(Integer, default=0)
+    sample_id: Mapped[str] = mapped_column(String(64), default="000000")
+    clean_miou: Mapped[float | None] = mapped_column(Float, nullable=True)
+    attacked_miou: Mapped[float | None] = mapped_column(Float, nullable=True)
+    miou_drop_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_combined: Mapped[bool] = mapped_column(Boolean, default=False)
+    attack_components_json: Mapped[str] = mapped_column(Text, default="[]")
+    note: Mapped[str] = mapped_column(Text, default="")
+    seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    run_config_hash: Mapped[str] = mapped_column(String(128), default="")
+    backend_run_id: Mapped[str] = mapped_column(String(128), default="")
+    metrics_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

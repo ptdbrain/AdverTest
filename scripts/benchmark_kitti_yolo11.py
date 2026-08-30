@@ -341,9 +341,7 @@ def _markdown(report: RunReport, payload: dict[str, Any]) -> str:
         "",
         "| severity | " + " | ".join(str(level) for level in levels) + " |",
         "|---" * (len(levels) + 1) + "|",
-        "| RA(s) | "
-        + " | ".join(f"{metrics['robustness_accuracy'].get(level, 0.0):.3f}" for level in levels)
-        + " |",
+        "| RA(s) | " + " | ".join(f"{metrics['robustness_accuracy'].get(level, 0.0):.3f}" for level in levels) + " |",
         "",
         "### RR(c) — resilience rate per attack (5)",
         "",

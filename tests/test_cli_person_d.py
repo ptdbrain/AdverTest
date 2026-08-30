@@ -12,9 +12,7 @@ def write_json(path: Path, payload: dict) -> None:
 
 def test_recipe_validate_and_sample_emit_json(tmp_path: Path, capsys) -> None:
     load_attacks()
-    recipe = RecipeBuilder().random_n(
-        RandomNRequest(count=1, steps_per_recipe=1, seed=195), ATTACK_CATALOG
-    )[0]
+    recipe = RecipeBuilder().random_n(RandomNRequest(count=1, steps_per_recipe=1, seed=195), ATTACK_CATALOG)[0]
     validate_path = tmp_path / "validate.json"
     write_json(validate_path, {"recipe": recipe.model_dump(mode="json")})
     assert main(["recipe-validate", "--config", str(validate_path)]) == 0

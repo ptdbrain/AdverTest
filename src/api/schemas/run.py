@@ -11,11 +11,16 @@ class CostEstimateOut(BaseModel):
     n_gradient_steps: int = 0
     cost_units: float
     estimated_seconds: float
+    estimate_token: str | None = None
+    artifact_storage_estimate_bytes: int = 0
+    gpu_cpu_cost_estimate: float = 0.0
     warnings: list[str] = Field(default_factory=list)
+
 
 class SkippedOut(BaseModel):
     attack: str
     reason: str
+
 
 class CellOut(BaseModel):
     attack: str
@@ -32,6 +37,7 @@ class CellOut(BaseModel):
     category: str | None = None
     metrics: dict[str, Any] = Field(default_factory=dict)
     provenance: dict[str, Any] = Field(default_factory=dict)
+
 
 class RunReportOut(BaseModel):
     run_id: str
@@ -52,10 +58,12 @@ class RunReportOut(BaseModel):
     benchmark_metrics_available: bool = True
     needs_review: bool = False
 
+
 class PreflightOut(BaseModel):
     compatible: list[str] = Field(default_factory=list)
     skipped_with_reason: list[SkippedOut] = Field(default_factory=list)
     fatal_errors: list[str] = Field(default_factory=list)
+
 
 class RunJobOut(BaseModel):
     run_id: str

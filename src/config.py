@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     # Security & Auth
     jwt_secret: str = "advertest-insecure-development-secret-key-2026"
     admin_default_password: str = "AdminPassword123!"
+    google_client_id: str = ""
+    google_client_secret: str | None = None
     wandb_encryption_key: str = "replace-this-with-a-fernet-key-in-production"
 
     # Test-run defaults (plan §5: cheap by default, opt into expensive scans)
@@ -55,9 +57,12 @@ class Settings(BaseSettings):
     object_storage_backend: Literal["local", "s3"] = "local"
     object_storage_bucket: str = "advertest-artifacts"
     object_storage_endpoint_url: str | None = None
+    object_storage_endpoint: str | None = None
     object_storage_region: str = "auto"
     object_storage_access_key_id: str | None = None
+    object_storage_access_key: str | None = None
     object_storage_secret_access_key: str | None = None
+    object_storage_secret_key: str | None = None
     object_storage_signed_url_ttl_seconds: int = Field(default=900, ge=60, le=86_400)
     queue_backend: Literal["local", "redis", "http_dispatcher"] = "local"
     redis_url: str | None = None
@@ -110,6 +115,79 @@ class Settings(BaseSettings):
     @property
     def resolved_platform_database_url(self) -> str:
         return self.platform_database_url or self.database_url
+
+    @property
+    def resolved_object_storage_endpoint(self) -> str | None:
+        return self.object_storage_endpoint_url or self.object_storage_endpoint
+
+    @property
+    def resolved_object_storage_access_key(self) -> str | None:
+        return self.object_storage_access_key_id or self.object_storage_access_key
+
+    @property
+    def resolved_object_storage_secret_key(self) -> str | None:
+        return self.object_storage_secret_access_key or self.object_storage_secret_key
+
+    def validate_production_environment(self) -> None:
+        """Validate that all security secrets and production settings meet production hardening standards."""
+        if self.app_env != "production":
+            return
+
+        failed_keys: list[str] = []
+
+        # 1. JWT Secret validation (must be secure, >= 32 chars, not contain development/insecure keywords)
+        insecure_jwt_markers = ("insecure", "development", "secret", "default", "changeme", "advertest")
+        if (
+            not self.jwt_secret
+            or len(self.jwt_secret.strip()) < 32
+            or any(marker in self.jwt_secret.lower() for marker in insecure_jwt_markers)
+        ):
+            failed_keys.append("JWT_SECRET (must be >= 32 chars and not use default/insecure value)")
+
+        # 2. Admin Default Password validation
+        if not self.admin_default_password or self.admin_default_password in (
+            "AdminPassword123!",
+            "admin",
+            "password",
+            "12345678",
+        ):
+            failed_keys.append("ADMIN_DEFAULT_PASSWORD (must be changed from default)")
+
+        # 3. Database URL validation (PostgreSQL required in production, SQLite forbidden)
+        db_url = self.resolved_platform_database_url
+        if db_url.startswith("sqlite:"):
+            failed_keys.append("DATABASE_URL / PLATFORM_DATABASE_URL (SQLite is not permitted in production)")
+
+        # 4. Storage configuration validation
+        if self.object_storage_backend == "s3":
+            if (
+                not self.object_storage_access_key_id
+                or self.object_storage_access_key_id in ("minioadmin", "admin")
+                or not self.object_storage_secret_access_key
+                or self.object_storage_secret_access_key in ("minioadminpassword", "password")
+            ):
+                failed_keys.append(
+                    "OBJECT_STORAGE_ACCESS_KEY_ID / OBJECT_STORAGE_SECRET_ACCESS_KEY (must be securely configured)"
+                )
+
+        # 5. Queue backend validation
+        if self.queue_backend == "redis" and (not self.redis_url or not self.redis_url.strip()):
+            failed_keys.append("REDIS_URL (required when QUEUE_BACKEND=redis)")
+
+        # 6. Google OAuth client ID validation
+        if (
+            not self.google_client_id
+            or not self.google_client_id.strip()
+            or self.google_client_id == "your-google-client-id.apps.googleusercontent.com"
+        ):
+            failed_keys.append("GOOGLE_CLIENT_ID (must be configured in production)")
+
+        if failed_keys:
+            # Strictly do not log raw secrets or credentials in error messages
+            raise ValueError(
+                "CRITICAL PRODUCTION CONFIGURATION ERROR: The following settings failed security validation: "
+                + ", ".join(failed_keys)
+            )
 
 
 @lru_cache

@@ -40,7 +40,7 @@ import {
   AVAILABLE_DATASETS,
   AVAILABLE_MODELS,
   CLASS_LABELS_DATA,
-} from "@/data/mockData";
+} from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { getApiBase } from "@/lib/api";
 

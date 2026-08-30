@@ -74,7 +74,6 @@ def test_validate_invalid_config_catches_errors(trainer: YoloTrainer) -> None:
     assert any("Invalid trainer_name" in err for err in report.errors)
 
 
-
 def test_estimate_computes_resources(trainer: YoloTrainer, valid_config: TrainingRunConfig) -> None:
     estimate = trainer.estimate(valid_config)
     assert estimate.gpu_hours > 0.0

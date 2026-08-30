@@ -43,7 +43,9 @@ class _CpuTrainer(ModelTrainer):
             run_id=config.run_id,
             state="TRAINING",
             checkpoint=CheckpointMetadata(
-                path=str(checkpoint), sha256=file_digest(checkpoint, length=64), parent_model_version=config.model_version
+                path=str(checkpoint),
+                sha256=file_digest(checkpoint, length=64),
+                parent_model_version=config.model_version,
             ),
         )
 
@@ -64,8 +66,16 @@ def test_training_job_persists_events_checkpoint_and_child_lineage(tmp_path: Pat
     store = WorkflowJobStore(f"sqlite:///{tmp_path / 'jobs.db'}")
     service = TrainingJobService(store, registry)
     request = TrainingRunConfig(
-        run_id="request-id", trainer_name="cpu", model_version="base-v1", dataset_version_id="dataset-v1",
-        split_manifest_id="split-v1", defense_profile_id="defense-v1", seed=17, epochs=1, batch_size=1, learning_rate=0.001,
+        run_id="request-id",
+        trainer_name="cpu",
+        model_version="base-v1",
+        dataset_version_id="dataset-v1",
+        split_manifest_id="split-v1",
+        defense_profile_id="defense-v1",
+        seed=17,
+        epochs=1,
+        batch_size=1,
+        learning_rate=0.001,
     )
 
     job_id = service.enqueue(request)

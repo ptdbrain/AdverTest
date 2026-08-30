@@ -73,9 +73,7 @@ def test_official_split_membership_is_preserved_and_test_is_locked(tmp_path: Pat
         SplitPolicy(strategy="official", seed=195, lock_test=True),
     )
 
-    expected_test = tuple(
-        record.sample_id for record in version.records if record.official_split == "test"
-    )
+    expected_test = tuple(record.sample_id for record in version.records if record.official_split == "test")
     assert manifest.test_ids == expected_test
     assert manifest.locked_test_ids == expected_test
 
@@ -104,10 +102,7 @@ def test_class_stratified_split_has_no_overlap(tmp_path: Path) -> None:
     assert train | val | test == {record.sample_id for record in version.records}
     for split_ids in (train, val, test):
         present = {
-            label
-            for record in version.records
-            if record.sample_id in split_ids
-            for label in record.class_labels
+            label for record in version.records if record.sample_id in split_ids for label in record.class_labels
         }
         assert present == {"Car", "Pedestrian", "Cyclist"}
 

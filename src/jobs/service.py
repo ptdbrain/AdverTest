@@ -159,7 +159,9 @@ class PlatformJobService:
             if record is None or record.status in _TERMINAL:
                 return False
             if record.cancel_requested:
-                return self._finish(session, record, JobStatus.CANCELLED.value, "JOB_CANCELLED", "Cancellation requested")
+                return self._finish(
+                    session, record, JobStatus.CANCELLED.value, "JOB_CANCELLED", "Cancellation requested"
+                )
             record.status = JobStatus.COMPLETED.value
             record.stage = "COMPLETED"
             record.completed_units = record.total_units or record.completed_units
@@ -188,7 +190,14 @@ class PlatformJobService:
             if record.status in _TERMINAL:
                 return True
             record.cancel_requested = True
-            self._append_event(session, record, "CANCEL_REQUESTED", record.completed_units, record.total_units, "Cancellation requested")
+            self._append_event(
+                session,
+                record,
+                "CANCEL_REQUESTED",
+                record.completed_units,
+                record.total_units,
+                "Cancellation requested",
+            )
             return True
 
     def retry(self, project_id: str, job_id: str) -> dict[str, Any] | None:
@@ -208,21 +217,33 @@ class PlatformJobService:
             record.error_message = None
             record.cancel_requested = False
             record.completed_at = None
-            self._append_event(session, record, "QUEUED", record.completed_units, record.total_units, "Job retry queued")
+            self._append_event(
+                session, record, "QUEUED", record.completed_units, record.total_units, "Job retry queued"
+            )
             return _job_payload(record)
 
     @staticmethod
     def _append_event(
         session: Any, record: PlatformJobRecord, stage: str, completed: int, total: int, message: str
     ) -> None:
-        sequence = session.scalar(
-            select(func.coalesce(func.max(JobEventRecord.sequence), -1)).where(JobEventRecord.job_id == record.id)
-        ) + 1
+        sequence = (
+            session.scalar(
+                select(func.coalesce(func.max(JobEventRecord.sequence), -1)).where(JobEventRecord.job_id == record.id)
+            )
+            + 1
+        )
         percent = 0.0 if total == 0 else round(100.0 * completed / total, 4)
-        session.add(JobEventRecord(
-            job_id=record.id, sequence=sequence, stage=stage, completed=completed,
-            total=total, percent=percent, message=message,
-        ))
+        session.add(
+            JobEventRecord(
+                job_id=record.id,
+                sequence=sequence,
+                stage=stage,
+                completed=completed,
+                total=total,
+                percent=percent,
+                message=message,
+            )
+        )
 
     def _finish(
         self, session: Any, record: PlatformJobRecord, status: str, error_code: str, error_message: str

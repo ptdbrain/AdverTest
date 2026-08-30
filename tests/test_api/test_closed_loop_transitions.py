@@ -47,13 +47,9 @@ async def _advance(client, loop_id: str, target: str, artifact_id: str):
 async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> None:
     import src.api.routes as routes
 
-    source_run_id = routes._store.create(
-        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1)
-    )
+    source_run_id = routes._store.create(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1))
     routes._store.complete(source_run_id, _report(source_run_id))
-    started = await client.post(
-        "/api/v1/closed-loop/start", json={"run_id": source_run_id}
-    )
+    started = await client.post("/api/v1/closed-loop/start", json={"run_id": source_run_id})
     loop_id = started.json()["loop_id"]
 
     routes._store.put_record(
@@ -73,9 +69,7 @@ async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> No
     routes._workflow_store.approve_backlog(backlog["id"])
     await _advance(client, loop_id, "BACKLOG_APPROVED", backlog["id"])
 
-    routes._store.put_record(
-        "defense_profile", "defense-001", {"profile_id": "defense-001"}
-    )
+    routes._store.put_record("defense_profile", "defense-001", {"profile_id": "defense-001"})
     await _advance(client, loop_id, "DEFENSE_PROFILED", "defense-001")
 
     routes._store.put_record(
@@ -88,9 +82,7 @@ async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> No
             "locked_test_excluded": True,
         },
     )
-    await _advance(
-        client, loop_id, "DATASET_MANIFEST_CREATED", "manifest-001"
-    )
+    await _advance(client, loop_id, "DATASET_MANIFEST_CREATED", "manifest-001")
 
     training_id = routes._workflow_store.create_job(
         "training",
@@ -115,9 +107,7 @@ async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> No
         },
     )
     await _advance(client, loop_id, "TRAINING_COMPLETED", training_id)
-    await _advance(
-        client, loop_id, "CHECKPOINT_VALIDATED", "checkpoint-sha256"
-    )
+    await _advance(client, loop_id, "CHECKPOINT_VALIDATED", "checkpoint-sha256")
 
     routes._store.put_record(
         "checkpoint_gate",
@@ -132,18 +122,10 @@ async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> No
     await _advance(client, loop_id, "GATE_EVALUATED", "gate-001")
     await _advance(client, loop_id, "MODEL_REGISTERED", "yolo-r1")
 
-    candidate_run_id = routes._store.create(
-        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1)
-    )
-    await _advance(
-        client, loop_id, "RE_BENCHMARK_STARTED", candidate_run_id
-    )
-    routes._store.complete(
-        candidate_run_id, _report(candidate_run_id, model_version="yolo-r1")
-    )
-    await _advance(
-        client, loop_id, "RE_BENCHMARK_COMPLETED", candidate_run_id
-    )
+    candidate_run_id = routes._store.create(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1))
+    await _advance(client, loop_id, "RE_BENCHMARK_STARTED", candidate_run_id)
+    routes._store.complete(candidate_run_id, _report(candidate_run_id, model_version="yolo-r1"))
+    await _advance(client, loop_id, "RE_BENCHMARK_COMPLETED", candidate_run_id)
 
     routes._store.put_record(
         "model_comparison",
@@ -156,9 +138,7 @@ async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> No
             "recovery_report": {"recovery_rate": {"unit": "percent"}},
         },
     )
-    final = await _advance(
-        client, loop_id, "RECOVERY_REPORTED", "comparison-001"
-    )
+    final = await _advance(client, loop_id, "RECOVERY_REPORTED", "comparison-001")
 
     assert final["artifacts"]["recovery_report"] == "comparison-001"
     assert len(final["events"]) == 15  # QUEUED + identified + 13 transitions
@@ -170,9 +150,7 @@ async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> No
 async def test_closed_loop_invalid_skip_is_rejected_without_mutation(client) -> None:
     import src.api.routes as routes
 
-    run_id = routes._store.create(
-        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1)
-    )
+    run_id = routes._store.create(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1))
     routes._store.complete(run_id, _report(run_id))
     started = await client.post("/api/v1/closed-loop/start", json={"run_id": run_id})
     loop_id = started.json()["loop_id"]

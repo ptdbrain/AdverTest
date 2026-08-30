@@ -40,6 +40,7 @@ class BDD100KSemanticDataset(DatasetSource):
         raw_root = Path(self.params.root).expanduser()  # type: ignore[attr-defined]
         if not raw_root.is_absolute():
             from src.config import PROJECT_ROOT
+
             if (PROJECT_ROOT / raw_root).exists():
                 self.root = (PROJECT_ROOT / raw_root).resolve()
             elif (PROJECT_ROOT.parent.parent / raw_root).exists():
@@ -54,7 +55,9 @@ class BDD100KSemanticDataset(DatasetSource):
         self.anonymized = True
 
     def info(self) -> DatasetInfo:
-        return DatasetInfo(name=self.name, anonymized=True, classes=tuple(_LABELS.values()), note="external semantic-only; non-paired")
+        return DatasetInfo(
+            name=self.name, anonymized=True, classes=tuple(_LABELS.values()), note="external semantic-only; non-paired"
+        )
 
     def load(self, limit: int | None = None) -> list[Sample]:
         split = self.params.split  # type: ignore[attr-defined]
@@ -73,5 +76,21 @@ class BDD100KSemanticDataset(DatasetSource):
             if semantic is None:
                 continue
             binary = np.isin(semantic, tuple(_LABELS)).astype(np.uint8)
-            samples.append(Sample(sample_id=f"{split}/{key}", image=load_image(image_path), mask=None, anonymized=True, meta={"semantic_mask": binary, "semantic_label_map": np.asarray(semantic), "semantic_classes": _LABELS, "comparison_scope": "external_semantic_nonpaired", "split": split, "source_path": str(image_path), "anonymization_manifest": str(self.manifest)}))
+            samples.append(
+                Sample(
+                    sample_id=f"{split}/{key}",
+                    image=load_image(image_path),
+                    mask=None,
+                    anonymized=True,
+                    meta={
+                        "semantic_mask": binary,
+                        "semantic_label_map": np.asarray(semantic),
+                        "semantic_classes": _LABELS,
+                        "comparison_scope": "external_semantic_nonpaired",
+                        "split": split,
+                        "source_path": str(image_path),
+                        "anonymization_manifest": str(self.manifest),
+                    },
+                )
+            )
         return samples

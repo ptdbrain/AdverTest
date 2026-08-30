@@ -59,9 +59,7 @@ def test_order_changes_output_and_same_recipe_is_byte_deterministic() -> None:
 
     assert first.loadable and first.final_sample is not None
     assert repeated.final_sample is not None
-    assert array_digest(first.final_sample.image) == array_digest(
-        repeated.final_sample.image
-    )
+    assert array_digest(first.final_sample.image) == array_digest(repeated.final_sample.image)
     assert first.step_records == repeated.step_records
     assert first.intermediate_hashes == repeated.intermediate_hashes
     assert array_digest(first.final_sample.image) != array_digest(

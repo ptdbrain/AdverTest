@@ -60,18 +60,22 @@ def _sample_for(attack_cls: type[BaseAttack], sample: Sample) -> Sample:
     if "camera_rig" in attack_cls.required_sensors:
         views = tuple(
             CameraView(name, np.roll(sample.image, index * 2, axis=1), previous_image=sample.image.copy())
-            for index, name in enumerate(("CAM_FRONT", "CAM_FRONT_LEFT", "CAM_FRONT_RIGHT", "CAM_BACK", "CAM_BACK_LEFT", "CAM_BACK_RIGHT"))
+            for index, name in enumerate(
+                ("CAM_FRONT", "CAM_FRONT_LEFT", "CAM_FRONT_RIGHT", "CAM_BACK", "CAM_BACK_LEFT", "CAM_BACK_RIGHT")
+            )
         )
         sample = sample.with_camera_views(views)
     if "lidar" in attack_cls.required_sensors:
         rings = np.arange(32, dtype=np.float32).repeat(8)
-        points = np.column_stack((
-            np.linspace(1, 40, len(rings), dtype=np.float32),
-            np.sin(rings),
-            np.cos(rings),
-            np.full(len(rings), 1.0, dtype=np.float32),
-            rings,
-        ))
+        points = np.column_stack(
+            (
+                np.linspace(1, 40, len(rings), dtype=np.float32),
+                np.sin(rings),
+                np.cos(rings),
+                np.full(len(rings), 1.0, dtype=np.float32),
+                rings,
+            )
+        )
         sample = sample.with_lidar_frame(LidarFrame(points, sensor_model="HDL32E"))
     return sample
 
@@ -80,11 +84,18 @@ def _distance(sample: Sample, attacked: Sample, attack_cls: type[BaseAttack]) ->
     if "lidar" in attack_cls.affected_sensors:
         assert attacked.lidar_frame is not None and sample.lidar_frame is not None
         return float(abs(len(attacked.lidar_frame.points) - len(sample.lidar_frame.points))) + float(
-            np.linalg.norm(attacked.lidar_frame.points[:, :4].mean(axis=0) - sample.lidar_frame.points[:, :4].mean(axis=0))
+            np.linalg.norm(
+                attacked.lidar_frame.points[:, :4].mean(axis=0) - sample.lidar_frame.points[:, :4].mean(axis=0)
+            )
         )
     if "camera_rig" in attack_cls.affected_sensors:
         assert attacked.camera_views
-        return float(sum(np.linalg.norm(a.image - b.image) for a, b in zip(attacked.camera_views, sample.camera_views, strict=True)))
+        return float(
+            sum(
+                np.linalg.norm(a.image - b.image)
+                for a, b in zip(attacked.camera_views, sample.camera_views, strict=True)
+            )
+        )
     return float(np.linalg.norm(attacked.image - sample.image))
 
 
@@ -93,11 +104,7 @@ def _attack(attack_cls: type[BaseAttack]) -> BaseAttack:
     params = (
         {"allow_builtin_patch": True}
         if "allow_builtin_patch" in attack_cls.params_model.model_fields
-        else (
-            {"depth_policy": "linear_prior"}
-            if "depth_policy" in attack_cls.params_model.model_fields
-            else {}
-        )
+        else ({"depth_policy": "linear_prior"} if "depth_policy" in attack_cls.params_model.model_fields else {})
     )
     return attack_cls(**params)
 

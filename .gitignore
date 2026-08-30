@@ -39,6 +39,10 @@ Thumbs.db
 *.safetensors
 *.db
 *.sqlite3
+*.tgz
+*.tar.gz
+*.zip
+*.bin
 
 # Model weights + training runs (ultralytics downloads yolo11s.pt into the CWD)
 *.pt
@@ -54,9 +58,11 @@ htmlcov/
 coverage.xml
 .pytest-tmp-final/
 .pytest-tmp-*/
+.audit-pytest-*/
 .pytest-*/
 .pytest-*.log
 .pytest-*.err
+.tmp.driveupload/
 
 # Docker
 docker-compose.override.yml

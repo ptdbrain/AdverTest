@@ -15,32 +15,35 @@ const TERMINAL_STATES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
 const FALLBACK_MODES = [
   { id: "detection2d", title: "2D Object Detection", status: "available" },
   { id: "segmentation", title: "Instance Segmentation", status: "coming_later" },
-  { id: "detection3d", title: "3D Object Detection", status: "coming_later" },
+  { id: "detection3d", title: "3D Object Detection", status: "ready" },
 ];
 
 const FALLBACK_FAMILIES = [
   { id: "yolo11", display_name: "YOLO11", runnable: true },
+  { id: "pointpillars", display_name: "PointPillars", runnable: true },
 ];
 
 const FALLBACK_CHECKPOINTS = [
   { id: "yolo11s-base", model_name: "yolo11s", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "checkpoints/surrogates/yolo11s.pt" },
   { id: "yolo11n", model_name: "YOLO11n", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11n.pt" },
   { id: "yolo11s", model_name: "YOLO11s", task: "detection2d", model_family_id: "yolo11", runnable: true, checkpoint_path: "yolo11s.pt" },
+  { id: "pointpillars-kitti", model_name: "PointPillars (KITTI)", task: "detection3d", model_family_id: "pointpillars", runnable: true, checkpoint_path: "hv_pointpillars_secfpn_6x8_160e_kitti-3d-3class.pth" },
 ];
 
 const FALLBACK_DATASETS = [
   { id: "kitti_val", name: "kitti", title: "KITTI Validation", annotation_schema: ["2d_bbox"], benchmark_ready: true, anonymized: true },
   { id: "coco_val", name: "coco", title: "COCO Validation", annotation_schema: ["2d_bbox"], benchmark_ready: true, anonymized: true },
   { id: "synthetic_shapes", name: "synthetic_shapes", title: "Synthetic Shapes", annotation_schema: ["2d_bbox"], benchmark_ready: true, anonymized: true },
+  { id: "kitti3d", name: "kitti3d", title: "KITTI 3D Validation", annotation_schema: ["3d_bbox", "lidar"], benchmark_ready: true, anonymized: true },
 ];
 
 const FALLBACK_ATTACKS = [
   { name: "fgsm", threat_model: "white_box", attack_type: "gradient", scenario_kind: "digital", available: true, version: "1.0.0" },
   { name: "pgd", threat_model: "white_box", attack_type: "gradient", scenario_kind: "digital", available: true, version: "1.0.0" },
   { name: "mi_fgsm", threat_model: "white_box", attack_type: "gradient", scenario_kind: "digital", available: true, version: "1.0.0" },
-  { name: "cw_l2", threat_model: "white_box", attack_type: "optimization", scenario_kind: "digital", available: true, version: "2.0.0" },
+  { name: "cw_l2", threat_model: "white_box", attack_type: "optimization", scenario_kind: "digital", available: true, version: "1.0.0" },
   { name: "tog", threat_model: "white_box", attack_type: "targeted", scenario_kind: "digital", available: true, version: "1.0.0" },
-  { name: "dpatch", threat_model: "white_box", attack_type: "patch", scenario_kind: "physical", available: true, version: "2.0.0" },
+  { name: "dpatch", threat_model: "white_box", attack_type: "patch", scenario_kind: "physical", available: true, version: "1.0.0" },
   { name: "depth_fog", threat_model: "gray_box", attack_type: "weather", scenario_kind: "physical", available: true, version: "1.0.0" },
   { name: "depth_rain", threat_model: "gray_box", attack_type: "weather", scenario_kind: "physical", available: true, version: "1.0.0" },
   { name: "object_occlusion", threat_model: "gray_box", attack_type: "physical", scenario_kind: "physical", available: true, version: "1.0.0" },
@@ -49,16 +52,19 @@ const FALLBACK_ATTACKS = [
   { name: "motion_blur", threat_model: "black_box", attack_type: "corruption", scenario_kind: "digital", available: true, version: "1.0.0" },
   { name: "defocus_blur", threat_model: "black_box", attack_type: "corruption", scenario_kind: "digital", available: true, version: "1.0.0" },
   { name: "square_attack", threat_model: "black_box", attack_type: "query", scenario_kind: "digital", available: true, version: "1.0.0" },
+  { name: "lidar_fog", threat_model: "gray_box", attack_type: "weather", scenario_kind: "physical", available: true, version: "1.0.0" },
+  { name: "lidar_snow", threat_model: "gray_box", attack_type: "weather", scenario_kind: "physical", available: true, version: "1.0.0" },
+  { name: "lidar_sector_drop", threat_model: "gray_box", attack_type: "occlusion", scenario_kind: "physical", available: true, version: "1.0.0" },
+  { name: "lidar_point_dropout", threat_model: "gray_box", attack_type: "sensor", scenario_kind: "digital", available: true, version: "1.0.0" },
 ];
 
 function pathToArtifactUri(pathValue) {
   if (!pathValue) return null;
   if (/^https?:\/\//i.test(pathValue)) return pathValue;
   if (typeof pathValue === "string") {
-    const normalized = pathValue.replace(/\\/g, "/");
-    const dataIdx = normalized.indexOf("/data/");
+    const dataIdx = pathValue.indexOf("/data/");
     if (dataIdx !== -1) {
-      return artifactUrl(normalized.slice(dataIdx));
+      return artifactUrl(pathValue.slice(dataIdx));
     }
   }
   return artifactUrl(pathValue);

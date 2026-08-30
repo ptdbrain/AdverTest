@@ -59,9 +59,7 @@ class YoloTrainer(ModelTrainer):
 
         valid_names = {self.name, "yolo11_trainer", "yolo11s"}
         if config.trainer_name not in valid_names:
-            errors.append(
-                f"Invalid trainer_name {config.trainer_name!r}; expected one of {sorted(valid_names)}"
-            )
+            errors.append(f"Invalid trainer_name {config.trainer_name!r}; expected one of {sorted(valid_names)}")
 
         if config.epochs < 1:
             errors.append("epochs must be at least 1")
@@ -130,15 +128,11 @@ class YoloTrainer(ModelTrainer):
             "defense_profile_id": config.defense_profile_id,
             "seed": config.seed,
         }
-        manifest_hash = hashlib.sha256(
-            json.dumps(manifest_payload, sort_keys=True).encode("utf-8")
-        ).hexdigest()
+        manifest_hash = hashlib.sha256(json.dumps(manifest_payload, sort_keys=True).encode("utf-8")).hexdigest()
 
         # Strict anti-leakage check: ensure locked test split is never used as training source
         if "locked_test" in config.split_manifest_id.lower():
-            raise ValueError(
-                f"Data leakage detected: split {config.split_manifest_id!r} contains locked test data"
-            )
+            raise ValueError(f"Data leakage detected: split {config.split_manifest_id!r} contains locked test data")
 
         return PreparedTrainingData(
             manifest_id=manifest_id,
@@ -176,6 +170,7 @@ class YoloTrainer(ModelTrainer):
         # Check if real Ultralytics framework and dataset YAML are available
         try:
             from ultralytics import YOLO  # type: ignore[import-untyped]
+
             has_ultralytics = True
         except ImportError:
             has_ultralytics = False
@@ -191,6 +186,7 @@ class YoloTrainer(ModelTrainer):
             # REAL ULTRALYTICS PYTORCH TRAINING WITH MAXIMUM GPU ACCELERATION
             try:
                 import torch
+
                 if torch.cuda.is_available():
                     torch.backends.cudnn.benchmark = True
                     torch.backends.cuda.matmul.allow_tf32 = True
@@ -325,7 +321,9 @@ class YoloTrainer(ModelTrainer):
             try:
                 train_results = model.train(**train_args)
             except Exception as exc:
-                if device != "cpu" and ("CUDA" in str(exc) or "kernel image" in str(exc) or "AcceleratorError" in str(type(exc))):
+                if device != "cpu" and (
+                    "CUDA" in str(exc) or "kernel image" in str(exc) or "AcceleratorError" in str(type(exc))
+                ):
                     print(f"\n[!] GPU training failed on local CUDA device ({exc}). Falling back to CPU training...")
                     train_args["device"] = "cpu"
                     train_args["workers"] = 0
@@ -382,6 +380,7 @@ class YoloTrainer(ModelTrainer):
             if csv_path and csv_path.is_file():
                 try:
                     import csv
+
                     with open(csv_path, encoding="utf-8") as f:
                         reader = csv.DictReader(f)
                         epoch_metrics.clear()
@@ -400,16 +399,18 @@ class YoloTrainer(ModelTrainer):
                             dfl_loss = float(clean_row.get("train/dfl_loss", 0.0) or 0.0)
                             total_loss = round(box_loss + cls_loss + dfl_loss, 4)
 
-                            epoch_metrics.append({
-                                "epoch": float(ep),
-                                "map50": map50_val,
-                                "map50_95": map50_95_val,
-                                "clean_map50_95": map50_95_val,
-                                "precision": precision_val,
-                                "recall": recall_val,
-                                "loss": total_loss,
-                                "robust_score": round(map50_95_val * 100.0 * 0.9, 2),
-                            })
+                            epoch_metrics.append(
+                                {
+                                    "epoch": float(ep),
+                                    "map50": map50_val,
+                                    "map50_95": map50_95_val,
+                                    "clean_map50_95": map50_95_val,
+                                    "precision": precision_val,
+                                    "recall": recall_val,
+                                    "loss": total_loss,
+                                    "robust_score": round(map50_95_val * 100.0 * 0.9, 2),
+                                }
+                            )
                 except Exception as parse_err:
                     print(f"[!] Notice: Could not parse results.csv ({parse_err}). Using last epoch metrics.")
 
@@ -417,14 +418,16 @@ class YoloTrainer(ModelTrainer):
                 metrics_dict = getattr(train_results, "results_dict", {})
                 map50_95 = float(metrics_dict.get("metrics/mAP50-95(B)", 0.685))
                 map50 = float(metrics_dict.get("metrics/mAP50(B)", 0.850))
-                epoch_metrics.append({
-                    "epoch": float(config.epochs),
-                    "map50": map50,
-                    "map50_95": map50_95,
-                    "clean_map50_95": map50_95,
-                    "loss": float(metrics_dict.get("train/loss", 0.05)),
-                    "robust_score": round(map50_95 * 100.0 * 0.9, 2),
-                })
+                epoch_metrics.append(
+                    {
+                        "epoch": float(config.epochs),
+                        "map50": map50,
+                        "map50_95": map50_95,
+                        "clean_map50_95": map50_95,
+                        "loss": float(metrics_dict.get("train/loss", 0.05)),
+                        "robust_score": round(map50_95 * 100.0 * 0.9, 2),
+                    }
+                )
                 callbacks.on_epoch(config.epochs, epoch_metrics[-1])
         else:
             # SIMULATED METRIC LOOP (Fast path for testing / mock verification)

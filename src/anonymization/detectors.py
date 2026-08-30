@@ -49,13 +49,9 @@ class YoloOnnxDetector:
         self.kind = kind
         self.checkpoint = Path(checkpoint).expanduser().resolve()
         if not self.checkpoint.is_file():
-            raise FileNotFoundError(
-                f"{kind} detector checkpoint does not exist: {self.checkpoint}"
-            )
+            raise FileNotFoundError(f"{kind} detector checkpoint does not exist: {self.checkpoint}")
         if self.checkpoint.suffix.lower() != ".onnx":
-            raise ValueError(
-                f"{kind} detector must use an ONNX checkpoint, got: {self.checkpoint}"
-            )
+            raise ValueError(f"{kind} detector must use an ONNX checkpoint, got: {self.checkpoint}")
         self.confidence = confidence
         self.iou = iou
         self.image_size = image_size
@@ -133,9 +129,7 @@ class YoloOnnxDetector:
             try:
                 from ultralytics import YOLO
             except ImportError as exc:  # pragma: no cover - dependency guard
-                raise RuntimeError(
-                    "YOLO anonymization requires the models-cpu or models-gpu extra"
-                ) from exc
+                raise RuntimeError("YOLO anonymization requires the models-cpu or models-gpu extra") from exc
             self._backend = YOLO(str(self.checkpoint), task="detect")
         return self._backend
 
@@ -144,20 +138,13 @@ def _validate_input_size(path: Path, image_size: int) -> None:
     try:
         import onnx
     except ImportError as exc:  # pragma: no cover - dependency guard
-        raise RuntimeError(
-            "ONNX detector validation requires the models-cpu or models-gpu extra"
-        ) from exc
+        raise RuntimeError("ONNX detector validation requires the models-cpu or models-gpu extra") from exc
     model = onnx.load(path, load_external_data=False)
     dimensions = model.graph.input[0].type.tensor_type.shape.dim
     fixed_height = dimensions[-2].dim_value
     fixed_width = dimensions[-1].dim_value
-    if fixed_height and fixed_width and (
-        fixed_height != image_size or fixed_width != image_size
-    ):
-        raise ValueError(
-            f"checkpoint input is {fixed_height}x{fixed_width}, "
-            f"but image_size is {image_size}: {path}"
-        )
+    if fixed_height and fixed_width and (fixed_height != image_size or fixed_width != image_size):
+        raise ValueError(f"checkpoint input is {fixed_height}x{fixed_width}, but image_size is {image_size}: {path}")
 
 
 def _tile_starts(length: int, tile_size: int, overlap: float) -> list[int]:

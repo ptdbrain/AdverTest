@@ -3,15 +3,19 @@ from src.pipeline.protocol import BenchmarkProtocol
 
 
 def test_paired_bootstrap_resamples_ids_deterministically() -> None:
-    protocol = BenchmarkProtocol(
-        name="bootstrap",
-        dataset_version_id="d1",
-        sample_ids=("a", "b", "c"),
-        sample_hashes={key: key for key in ("a", "b", "c")},
-        ground_truth_hashes={key: key for key in ("a", "b", "c")},
-        bootstrap_iterations=100,
-        bootstrap_seed=7,
-    ).transition("VALIDATED").transition("LOCKED")
+    protocol = (
+        BenchmarkProtocol(
+            name="bootstrap",
+            dataset_version_id="d1",
+            sample_ids=("a", "b", "c"),
+            sample_hashes={key: key for key in ("a", "b", "c")},
+            ground_truth_hashes={key: key for key in ("a", "b", "c")},
+            bootstrap_iterations=100,
+            bootstrap_seed=7,
+        )
+        .transition("VALIDATED")
+        .transition("LOCKED")
+    )
     values = {"a": 1.0, "b": 2.0, "c": 3.0}
 
     first = paired_bootstrap(

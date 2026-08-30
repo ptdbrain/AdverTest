@@ -10,14 +10,36 @@ client = TestClient(app)
 
 
 def test_list_sessions_endpoint():
-    """Verify GET /api/v1/sessions returns list of sessions."""
+    """Verify GET /api/v1/sessions returns list of sessions without mock seed."""
     response = client.get("/api/v1/sessions")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
-    assert len(data) >= 1
-    assert "id" in data[0]
-    assert "runs" in data[0]
+
+    # Create a test session
+    session_payload = {
+        "id": "EXP-SEED-LIST-001",
+        "name": "Listing Test Session",
+        "description": "Session for listing test",
+        "task_id": "detection2d",
+        "task_name": "Object Detection",
+        "model_id": "local_yolo11s_clean",
+        "model_name": "YOLO11s",
+        "dataset_id": "kitti_anonymized_de",
+        "dataset_name": "KITTI De-anonymized Set",
+        "created_at": "12/05/2025 10:00:00",
+        "updated_at": "12/05/2025 10:00:00",
+        "runs": [],
+    }
+    create_res = client.post("/api/v1/sessions", json=session_payload)
+    assert create_res.status_code == 200
+
+    # Verify session is in list
+    response2 = client.get("/api/v1/sessions")
+    assert response2.status_code == 200
+    data2 = response2.json()
+    assert len(data2) >= 1
+    assert any(s["id"] == "EXP-SEED-LIST-001" for s in data2)
 
 
 def test_create_and_get_session_flow():

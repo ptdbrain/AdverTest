@@ -389,12 +389,8 @@ class PerObjectEvaluationDetail:
             }
             if self.attacked_match
             else None,
-            "clean_confidence": round(self.clean_confidence, 4)
-            if self.clean_confidence is not None
-            else None,
-            "attacked_confidence": round(self.attacked_confidence, 4)
-            if self.attacked_confidence is not None
-            else None,
+            "clean_confidence": round(self.clean_confidence, 4) if self.clean_confidence is not None else None,
+            "attacked_confidence": round(self.attacked_confidence, 4) if self.attacked_confidence is not None else None,
             "status_clean": self.status_clean,
             "status_attacked": self.status_attacked,
             "iou_clean": round(self.iou_clean, 4),
@@ -488,8 +484,9 @@ def per_object_detection_comparison(
                     status_attacked=status_attacked,
                     iou_clean=best_clean_iou,
                     iou_attacked=best_attacked_iou,
-                    failure_reason=failure_reason if status_clean == "correct" else (None if status_attacked == "correct" else failure_reason),
+                    failure_reason=failure_reason
+                    if status_clean == "correct"
+                    else (None if status_attacked == "correct" else failure_reason),
                 )
             )
     return details
-

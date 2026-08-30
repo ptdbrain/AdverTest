@@ -147,7 +147,9 @@ class TestAuditTrail:
     def test_metadata_is_preserved(self):
         tracker = ClosedLoopTracker(loop_id="loop-meta")
         tracker.advance(
-            "CLUSTER_FORMED", "c1", "cluster",
+            "CLUSTER_FORMED",
+            "c1",
+            "cluster",
             metadata={"failure_count": 42, "attack": "fog"},
         )
         assert tracker.audit[0].metadata["failure_count"] == 42
@@ -208,7 +210,9 @@ class TestRecoveryReport:
     def test_recovery_with_audit_trail(self):
         entries = (
             ClosedLoopAuditEntry(step=0, state="CLUSTER_FORMED", artifact_id="c1", artifact_type="cluster"),
-            ClosedLoopAuditEntry(step=1, state="BACKLOG_CREATED", artifact_id="b1", artifact_type="backlog", parent_step=0),
+            ClosedLoopAuditEntry(
+                step=1, state="BACKLOG_CREATED", artifact_id="b1", artifact_type="backlog", parent_step=0
+            ),
         )
         r = RecoveryReport(
             report_id="rr-002",

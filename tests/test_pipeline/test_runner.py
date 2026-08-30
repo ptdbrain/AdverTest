@@ -46,9 +46,7 @@ def test_ordered_recipe_produces_one_final_evidence_result() -> None:
         ),
     )
 
-    report = TestRunner().run(
-        RunConfig(recipe=recipe, limit=2, bootstrap_repetitions=0)
-    )
+    report = TestRunner().run(RunConfig(recipe=recipe, limit=2, bootstrap_repetitions=0))
 
     assert len(report.cells) == 1
     # cell.attack is the human-readable recipe name, not the raw hash
@@ -74,9 +72,7 @@ def test_evidence_includes_structured_ground_truth_boxes() -> None:
 
 
 def test_report_bootstrap_resamples_samples_not_aggregate_cells() -> None:
-    report = TestRunner().run(
-        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=2, bootstrap_repetitions=20)
-    )
+    report = TestRunner().run(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=2, bootstrap_repetitions=20))
     assert report.metrics["clean"]["ap50_ci95"] is not None
     assert report.cells[0].metrics["ap50_ci95"] is not None
 

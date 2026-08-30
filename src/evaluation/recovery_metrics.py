@@ -28,21 +28,13 @@ def recovery_rate(
     values = (baseline_clean, baseline_attacked, defended_attacked)
     if not all(math.isfinite(value) for value in values):
         return UndefinedMetric(name="recovery_rate", reason="inputs must be finite")
-    denominator = (
-        baseline_clean - baseline_attacked
-        if higher_is_better
-        else baseline_attacked - baseline_clean
-    )
+    denominator = baseline_clean - baseline_attacked if higher_is_better else baseline_attacked - baseline_clean
     if math.isclose(denominator, 0.0, abs_tol=1e-12):
         return UndefinedMetric(
             name="recovery_rate",
             reason="recovery denominator is zero because baseline has no measured attack damage",
         )
-    numerator = (
-        defended_attacked - baseline_attacked
-        if higher_is_better
-        else baseline_attacked - defended_attacked
-    )
+    numerator = defended_attacked - baseline_attacked if higher_is_better else baseline_attacked - defended_attacked
     value = numerator / denominator
     return MetricEnvelope(
         name="recovery_rate",

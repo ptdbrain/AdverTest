@@ -16,9 +16,7 @@ def test_perturbation_stays_within_epsilon_ball(sample: Sample) -> None:
         ctx = AttackContext(rng=np.random.default_rng(42))
         attacked = attack.run(sample, severity, ctx)
         linf = float(np.max(np.abs(attacked.image - sample.image)))
-        assert linf <= epsilon + 1e-6, (
-            f"severity {severity}: L-inf {linf:.6f} exceeds ε = {epsilon:.6f}"
-        )
+        assert linf <= epsilon + 1e-6, f"severity {severity}: L-inf {linf:.6f} exceeds ε = {epsilon:.6f}"
 
 
 def test_mean_perturbation_is_roughly_zero(sample: Sample) -> None:
@@ -40,8 +38,7 @@ def test_perturbation_norm_grows_with_severity(sample: Sample) -> None:
         norms.append(float(np.linalg.norm(attacked.image - sample.image)))
     for i in range(len(norms) - 1):
         assert norms[i + 1] > norms[i], (
-            f"norm at severity {i + 2} ({norms[i + 1]:.4f}) should exceed "
-            f"severity {i + 1} ({norms[i]:.4f})"
+            f"norm at severity {i + 2} ({norms[i + 1]:.4f}) should exceed severity {i + 1} ({norms[i]:.4f})"
         )
 
 

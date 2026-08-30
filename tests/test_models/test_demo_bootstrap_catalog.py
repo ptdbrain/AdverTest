@@ -41,9 +41,7 @@ def test_bootstrap_demo_kitti_requires_and_materializes_anonymized_export(tmp_pa
     storage.put_bytes(f"{prefix}image_2/000000.png", b"demo-image", mime_type="image/png")
     storage.put_bytes(f"{prefix}label_2/000000.txt", b"", mime_type="text/plain")
 
-    root = ensure_demo_kitti(
-        enabled=True, storage=storage, storage_prefix=prefix, data_root=str(tmp_path / "data")
-    )
+    root = ensure_demo_kitti(enabled=True, storage=storage, storage_prefix=prefix, data_root=str(tmp_path / "data"))
 
     assert root == tmp_path / "data" / "anonymized" / "kitti-de"
     assert (root / "manifest.jsonl").is_file()

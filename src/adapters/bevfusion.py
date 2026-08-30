@@ -15,6 +15,7 @@ class BEVFusionAdapter(ModelAdapter):
     This class is intentionally not registered until ``predict`` supports a
     real checkpoint/config pair, so the model catalog stays executable.
     """
+
     name = "bevfusion"
     task = "detection3d"
     modality = "multi"

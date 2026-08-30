@@ -20,6 +20,19 @@ import { clsx } from "clsx";
 import { useLanguage } from "@/context/LanguageContext";
 import { getCanonicalAttackKey, getDescriptiveAttackName, SHORT_ATTACK_LABELS, ATTACK_LABELS } from "@/lib/attackNaming";
 
+function getIconForAttack(name = "") {
+  const lower = String(name).toLowerCase();
+  if (lower.includes("fog")) return "🌫️";
+  if (lower.includes("snow") || lower.includes("frost")) return "❄️";
+  if (lower.includes("rain")) return "🌧️";
+  if (lower.includes("noise") || lower.includes("gaussian")) return "⚡";
+  if (lower.includes("blur")) return "💫";
+  if (lower.includes("patch") || lower.includes("dpatch")) return "🎯";
+  if (lower.includes("dropout") || lower.includes("drop")) return "📉";
+  if (lower.includes("fgsm") || lower.includes("pgd")) return "⚔️";
+  return "🛡️";
+}
+
 // ─── colour helpers ────────────────────────────────────────────────────────
 
 /** Returns Tailwind-compatible inline colour tokens based on degradation %. */
@@ -84,7 +97,7 @@ function rowLabelFromCell(cell, report) {
  * }}
  */
 function buildPivotTable(report) {
-  const apClean = report?.ap_clean ?? 0;
+  const apClean = typeof report?.ap_clean === "number" ? report.ap_clean : null;
   const rawCells = report?.cells ?? [];
 
   if (rawCells.length === 0) {
@@ -138,7 +151,7 @@ function buildPivotTable(report) {
 
 // ─── sub-components ────────────────────────────────────────────────────────
 
-function BaselineCell({ ap }) {
+function BaselineCell({ ap, is3D }) {
   return (
     <td
       style={{
@@ -151,14 +164,14 @@ function BaselineCell({ ap }) {
         padding: "8px 12px",
         whiteSpace: "nowrap",
       }}
-      title={`AP clean: ${ap?.toFixed(4)}`}
+      title={`${is3D ? "BEV AP clean" : "AP clean"}: ${ap?.toFixed(4)}`}
     >
       {ap != null ? ap.toFixed(3) : "—"}
     </td>
   );
 }
 
-function AttackCell({ cell, apClean }) {
+function AttackCell({ cell, apClean, is3D }) {
   if (!cell) {
     return (
       <td
@@ -175,8 +188,8 @@ function AttackCell({ cell, apClean }) {
     );
   }
 
-  const ap = cell.ap ?? 0;
-  const degradationPct = apClean > 0 ? Math.max(0, ((apClean - ap) / apClean) * 100) : 0;
+  const ap = typeof cell.ap === "number" ? cell.ap : null;
+  const degradationPct = apClean > 0 && ap != null ? Math.max(0, ((apClean - ap) / apClean) * 100) : null;
   const tokens = degradationTokens(degradationPct);
 
   return (
@@ -191,12 +204,12 @@ function AttackCell({ cell, apClean }) {
         padding: "8px 12px",
         whiteSpace: "nowrap",
       }}
-      title={`AP: ${ap.toFixed(4)} | Degradation: ${degradationPct.toFixed(1)}%`}
+      title={ap == null ? "Không có metric đo được" : `${is3D ? "3D AP" : "AP"}: ${ap.toFixed(4)}${degradationPct == null ? "" : ` | Degradation: ${degradationPct.toFixed(1)}%`}`}
     >
-      <span style={{ display: "block" }}>{ap.toFixed(3)}</span>
-      <span style={{ display: "block", fontSize: "0.65rem", opacity: 0.8, marginTop: "1px" }}>
+      <span style={{ display: "block" }}>{ap == null ? "—" : ap.toFixed(3)}</span>
+      {degradationPct != null && <span style={{ display: "block", fontSize: "0.65rem", opacity: 0.8, marginTop: "1px" }}>
         ↓{degradationPct.toFixed(1)}%
-      </span>
+      </span>}
     </td>
   );
 }
@@ -221,6 +234,8 @@ export default function MethodComparisonTable({ report }) {
   }
 
   const attackColumnCount = columnDefs.filter((c) => !c.isBaseline).length;
+
+  const is3D = report?.metrics?.clean?.kitti_3d_ap != null;
 
   return (
     <div className="heatmap" style={{ overflowX: "auto" }}>
@@ -342,7 +357,7 @@ export default function MethodComparisonTable({ report }) {
                 {/* Attack name (sticky left column) */}
                 <td
                   style={{
-                    padding: "8px 14px",
+                    padding: "10px 14px",
                     fontWeight: 600,
                     fontSize: "0.8rem",
                     color: "var(--text-primary)",
@@ -354,11 +369,14 @@ export default function MethodComparisonTable({ report }) {
                     borderRight: "1px solid var(--border-subtle)",
                   }}
                 >
-                  {row.attackLabel}
+                  <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ fontSize: "1.1rem" }}>{getIconForAttack(row.attackLabel)}</span>
+                    {row.attackLabel}
+                  </span>
                 </td>
 
                 {/* Baseline column */}
-                <BaselineCell ap={row.baseline} />
+                <BaselineCell ap={row.baseline} is3D={is3D} />
 
                 {/* One cell per method–severity column */}
                 {columnDefs
@@ -368,6 +386,7 @@ export default function MethodComparisonTable({ report }) {
                       key={col.key}
                       cell={row.byColKey.get(col.key) ?? null}
                       apClean={apClean}
+                      is3D={is3D}
                     />
                   ))}
               </tr>

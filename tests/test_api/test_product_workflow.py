@@ -48,10 +48,15 @@ async def test_annotated_folder_import_creates_a_persisted_dataset_version(clien
     (root / "labels" / "frame.json").write_text("[]", encoding="utf-8")
     (root / "dataset.json").write_text('{"anonymized": true, "split": "test"}', encoding="utf-8")
 
-    response = await client.post("/api/v1/datasets/import", json={
-        "root": str(root), "name": "uploaded-detection", "logical_source_id": "upload-1",
-        "input_format": "advertest",
-    })
+    response = await client.post(
+        "/api/v1/datasets/import",
+        json={
+            "root": str(root),
+            "name": "uploaded-detection",
+            "logical_source_id": "upload-1",
+            "input_format": "advertest",
+        },
+    )
 
     assert response.status_code == 201
     assert response.json()["version_id"].startswith("dataset-")
@@ -59,7 +64,12 @@ async def test_annotated_folder_import_creates_a_persisted_dataset_version(clien
 
 @pytest.mark.asyncio
 async def test_defense_profile_is_persisted_for_retraining(client):
-    body = {"profile_id": "defense-fog", "recipe_ids": ["recipe-fog"], "clean_replay_ratio": 0.5, "generated_ratio": 0.5}
+    body = {
+        "profile_id": "defense-fog",
+        "recipe_ids": ["recipe-fog"],
+        "clean_replay_ratio": 0.5,
+        "generated_ratio": 0.5,
+    }
 
     created = await client.post("/api/v1/defense-profiles", json=body)
 
@@ -70,7 +80,9 @@ async def test_defense_profile_is_persisted_for_retraining(client):
 
 @pytest.mark.asyncio
 async def test_unknown_model_comparison_is_not_silently_created(client):
-    response = await client.post("/api/v1/model-comparisons", json={"baseline_run_id": "missing-a", "candidate_run_id": "missing-b"})
+    response = await client.post(
+        "/api/v1/model-comparisons", json={"baseline_run_id": "missing-a", "candidate_run_id": "missing-b"}
+    )
 
     assert response.status_code == 404
     assert "unknown run" in response.json()["detail"]

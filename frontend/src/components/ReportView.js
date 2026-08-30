@@ -7,46 +7,49 @@ import MetricsComparisonChart from "@/components/MetricsComparisonChart";
 import HeatmapMatrix from "@/components/HeatmapMatrix";
 import MethodComparisonTable from "@/components/MethodComparisonTable";
 import AccumulatedMetricsTable from "@/components/AccumulatedMetricsTable";
+import EvidenceBadge from "@/components/common/EvidenceBadge";
+import { exportReportAsJson, exportReportAsCsv, printReportAsPdf } from "@/lib/exportReport";
 import { triggerAutoFlag } from "@/lib/api";
 import { getDescriptiveAttackName } from "@/lib/attackNaming";
+import { buildRunDecisionView } from "@/lib/reportMetrics";
+import { Download, Printer, FileSpreadsheet, FileCode } from "lucide-react";
 
 export default function ReportView({ report, onClearHistory }) {
   const { t } = useLanguage();
   const [flagging, setFlagging] = React.useState(false);
   const [flagResult, setFlagResult] = React.useState(null);
+
   if (!report) {
     return (
       <div className="placeholder-view">
-        <div className="placeholder-view__title">No report yet</div>
+        <div className="placeholder-view__title">{t("report.emptyTitle")}</div>
         <div className="placeholder-view__subtitle">
-          Configure and run attacks to generate the robustness report.
+          {t("report.emptySubtitle")}
         </div>
       </div>
     );
   }
 
   const cells = report.cells || [];
-  const avgDegradation = cells.length > 0
-    ? cells.reduce((sum, c) => {
-        const deg = typeof report.degradation === "function"
-          ? report.degradation(c) * 100
-          : typeof c.degradation === "number"
-            ? c.degradation
-            : (report.ap_clean && c.ap != null ? ((report.ap_clean - c.ap) / report.ap_clean) * 100 : 0);
-        return sum + (deg || 0);
-      }, 0) / cells.length
-    : 0;
+  const decisionView = buildRunDecisionView(report);
+  const avgDegradation = decisionView.degradationPercent;
+  // ASR has attack-specific semantics. Only show it when the backend reports
+  // an explicit measured value; never reinterpret a degradation threshold as ASR.
+  const asrPct = report.metrics?.robustness?.attack_success_rate_percent
+    ?? (report.metrics?.robustness?.attack_success_rate != null
+      ? report.metrics.robustness.attack_success_rate * 100
+      : null);
 
-  // Attack Success Rate (ASR %): Fraction of cells where degradation >= 20%
-  const asrPct = cells.length > 0
-    ? (cells.filter((c) => (c.degradation || (report.ap_clean > 0 ? (report.ap_clean - c.ap) / report.ap_clean * 100 : 0)) >= 20).length / cells.length) * 100
-    : 0;
-
-  // Mean IoU estimates (Clean vs Attacked)
-  const cleanIoU = report.metrics?.clean?.mean_iou ?? 0.78;
-  const attackedIoU = cells.length > 0
-    ? (cleanIoU * (1 - Math.min(0.9, avgDegradation / 100 * 0.75))).toFixed(3)
-    : cleanIoU.toFixed(3);
+  const cleanIoU = report.metrics?.clean?.mean_iou ?? report.metrics?.clean?.mean_bev_iou;
+  const cleanIoUDisplay = cleanIoU != null ? cleanIoU.toFixed(3) : "—";
+  const iouKey = report.metrics?.clean?.mean_bev_iou != null ? "mean_bev_iou" : "mean_iou";
+  const attackedIoUValues = cells
+    .map((cell) => cell.metrics?.[iouKey])
+    .filter((value) => typeof value === "number" && Number.isFinite(value));
+  const attackedIoU = attackedIoUValues.length
+    ? attackedIoUValues.reduce((sum, value) => sum + value, 0) / attackedIoUValues.length
+    : null;
+  const attackedIoUDisplay = attackedIoU != null ? attackedIoU.toFixed(3) : "—";
 
   const handleAutoFlag = async () => {
     if (!report?.run_id) return;
@@ -87,7 +90,6 @@ export default function ReportView({ report, onClearHistory }) {
               <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "var(--accent, #38BDF8)" }}>
                 {t("report.multiRunTitle")}
               </div>
-              {/* eslint-disable-next-line react/no-danger */}
               <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)", marginTop: "2px" }} dangerouslySetInnerHTML={{ __html: t("report.multiRunDesc", { count: uniqueAttacks.length, attacks: uniqueAttacks.join(", "), dataset: report.dataset, runs: report.accumulated_runs?.length || 1 }) }} />
             </div>
           </div>
@@ -106,6 +108,71 @@ export default function ReportView({ report, onClearHistory }) {
         </div>
       )}
 
+      {/* Export Toolbar & Evidence State Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "12px",
+          padding: "12px 16px",
+          background: "#FFFFFF",
+          borderRadius: "8px",
+          border: "1px solid #E2E8F0",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <EvidenceBadge provenance={report.provenance} simulationOnly={report.simulation_only} />
+          <span style={{ fontSize: "0.8rem", color: "#64748B", fontWeight: 600 }}>
+            Run ID: <strong style={{ color: "#0F172A" }}>{report.run_id || "—"}</strong>
+          </span>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <button
+            type="button"
+            onClick={() => exportReportAsJson(report)}
+            className="action-button action-button--secondary"
+            style={{ fontSize: "0.75rem", padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+            title="Xuất dữ liệu gốc kèm toàn bộ Scientific Provenance"
+          >
+            <FileCode style={{ width: 14, height: 14 }} />
+            <span>JSON</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => exportReportAsCsv(report)}
+            className="action-button action-button--secondary"
+            style={{ fontSize: "0.75rem", padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+            title="Xuất bảng số liệu CSV chuẩn hóa advertest-export-v1"
+          >
+            <FileSpreadsheet style={{ width: 14, height: 14 }} />
+            <span>CSV</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => printReportAsPdf(report)}
+            className="action-button"
+            style={{
+              background: "#2563EB",
+              color: "#FFF",
+              fontSize: "0.75rem",
+              fontWeight: 700,
+              padding: "6px 14px",
+              borderRadius: "6px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+            title="In hoặc Lưu Báo cáo Thử nghiệm dạng PDF"
+          >
+            <Printer style={{ width: 14, height: 14 }} />
+            <span>In / PDF</span>
+          </button>
+        </div>
+      </div>
+
       {/* Summary Header - Complete 5-Metric Suite from TOPIC.md */}
       <div className="chart-container" style={{ padding: "var(--space-lg)", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "var(--space-md)", alignItems: "center", borderTop: "3px solid var(--accent)" }}>
         {/* Model & Dataset Details */}
@@ -121,9 +188,9 @@ export default function ReportView({ report, onClearHistory }) {
 
         {/* Baseline mAP */}
         <div style={{ padding: "0 var(--space-md)", borderLeft: "1px solid var(--border-subtle)" }}>
-          <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>Baseline mAP</div>
+          <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>{decisionView.primary.label} clean</div>
           <div className="text-mono" style={{ fontSize: "2rem", fontWeight: 800, color: "var(--success)", lineHeight: 1 }}>
-            {report.benchmark_metrics_available === false ? "—" : report.ap_clean?.toFixed(3)}
+            {decisionView.primary.clean == null ? "—" : decisionView.primary.clean.toFixed(3)}
           </div>
           <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: 4 }}>
             {t("report.cleanAccuracy")}
@@ -134,7 +201,7 @@ export default function ReportView({ report, onClearHistory }) {
         <div style={{ padding: "0 var(--space-md)", borderLeft: "1px solid var(--border-subtle)" }}>
           <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>Avg Degradation</div>
           <div className="text-mono" style={{ fontSize: "2rem", fontWeight: 800, color: "var(--danger)", lineHeight: 1 }}>
-            {report.benchmark_metrics_available === false ? "—" : `-${avgDegradation.toFixed(1)}%`}
+            {avgDegradation == null ? "—" : `-${avgDegradation.toFixed(1)}%`}
           </div>
           <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: 4 }}>
             {t("report.avgDegradation", { count: cells.length })}
@@ -144,8 +211,8 @@ export default function ReportView({ report, onClearHistory }) {
         {/* Attack Success Rate (ASR) */}
         <div style={{ padding: "0 var(--space-md)", borderLeft: "1px solid var(--border-subtle)" }}>
           <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>Attack Success (ASR)</div>
-          <div className="text-mono" style={{ fontSize: "2rem", fontWeight: 800, color: asrPct > 50 ? "var(--danger)" : "var(--warning)", lineHeight: 1 }}>
-            {asrPct.toFixed(1)}%
+          <div className="text-mono" style={{ fontSize: "2rem", fontWeight: 800, color: asrPct != null && asrPct > 50 ? "var(--danger)" : "var(--warning)", lineHeight: 1 }}>
+            {asrPct == null ? "—" : `${asrPct.toFixed(1)}%`}
           </div>
           <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: 4 }}>
             {t("report.asrLabel")}
@@ -156,9 +223,9 @@ export default function ReportView({ report, onClearHistory }) {
         <div style={{ padding: "0 var(--space-md)", borderLeft: "1px solid var(--border-subtle)" }}>
           <div className="config-panel__label" style={{ paddingBottom: 0, marginBottom: 2 }}>{t("report.meanIoU")}</div>
           <div className="text-mono" style={{ fontSize: "1.4rem", fontWeight: 800, color: "var(--text-primary)", lineHeight: 1, marginTop: 4 }}>
-            <span style={{ color: "var(--success)" }}>{Number(cleanIoU).toFixed(2)}</span>
+            <span style={{ color: "var(--success)" }}>{cleanIoUDisplay}</span>
             <span style={{ color: "var(--text-tertiary)", margin: "0 4px" }}>→</span>
-            <span style={{ color: "var(--danger)" }}>{Number(attackedIoU).toFixed(2)}</span>
+            <span style={{ color: "var(--danger)" }}>{attackedIoUDisplay}</span>
           </div>
           <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: 4 }}>
             {t("report.iouLabel")}
@@ -247,8 +314,8 @@ export default function ReportView({ report, onClearHistory }) {
       <MetricsComparisonChart report={report} />
 
       {/* Aggregate Robustness Accuracy Curve */}
-      {report.benchmark_metrics_available !== false && (
-        <RAChart cells={report.cells} apClean={report.ap_clean} report={report} />
+      {decisionView.dataState === "MEASURED" && (
+        <RAChart cells={report.cells} apClean={decisionView.primary.clean} report={report} />
       )}
 
       {/* Degradation Heatmap Matrix across attacks & severities */}

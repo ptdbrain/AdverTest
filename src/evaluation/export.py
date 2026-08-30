@@ -35,7 +35,9 @@ def export_comparison(comparison: dict[str, Any], format: ExportFormat) -> Expor
             writer.writerow({"metric": name, "value": metric.get("value"), "unit": metric.get("unit", "")})
         recovery = comparison.get("recovery_report", {}).get("recovery_rate")
         if recovery:
-            writer.writerow({"metric": "recovery_rate", "value": recovery.get("percent_value"), "unit": recovery.get("unit", "")})
+            writer.writerow(
+                {"metric": "recovery_rate", "value": recovery.get("percent_value"), "unit": recovery.get("unit", "")}
+            )
         return _artifact(output.getvalue(), "text/csv", f"{comparison_id}.csv")
     if format == "html":
         rows = "".join(
@@ -43,7 +45,7 @@ def export_comparison(comparison: dict[str, Any], format: ExportFormat) -> Expor
             for name, metric in sorted(comparison.get("metric_deltas", {}).items())
         )
         content = (
-            "<!doctype html><html><head><meta charset=\"utf-8\"><title>AdverTest comparison</title></head>"
+            '<!doctype html><html><head><meta charset="utf-8"><title>AdverTest comparison</title></head>'
             "<body><h1>AdverTest comparison</h1>"
             f"<p>Comparison: {html.escape(comparison_id)}</p>"
             f"<p>Paired: {html.escape(str(bool(comparison.get('paired'))))}</p>"

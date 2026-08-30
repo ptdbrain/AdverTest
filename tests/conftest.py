@@ -55,6 +55,7 @@ async def client(tmp_path, monkeypatch):
     import src.api.routers.catalog as catalog_module
     import src.api.routers.datasets as datasets_module
     import src.api.routers.defence as defence_module
+    import src.api.routers.risk_rubric as risk_rubric_module
     import src.api.routers.runs as runs_module
     import src.api.routes as routes_module
     import src.auth.dependencies as auth_deps_module
@@ -62,17 +63,17 @@ async def client(tmp_path, monkeypatch):
 
     deps_module.get_store.cache_clear()
     deps_module.get_worker.cache_clear()
-    if hasattr(deps_module, 'get_workflow_store'):
+    if hasattr(deps_module, "get_workflow_store"):
         deps_module.get_workflow_store.cache_clear()
-    if hasattr(deps_module, 'get_generated_datasets'):
+    if hasattr(deps_module, "get_generated_datasets"):
         deps_module.get_generated_datasets.cache_clear()
-    if hasattr(deps_module, 'get_training_jobs'):
+    if hasattr(deps_module, "get_training_jobs"):
         deps_module.get_training_jobs.cache_clear()
-    if hasattr(deps_module, 'get_checkpoint_validations'):
+    if hasattr(deps_module, "get_checkpoint_validations"):
         deps_module.get_checkpoint_validations.cache_clear()
-    if hasattr(deps_module, 'get_advisor_service') and hasattr(deps_module.get_advisor_service, 'cache_clear'):
+    if hasattr(deps_module, "get_advisor_service") and hasattr(deps_module.get_advisor_service, "cache_clear"):
         deps_module.get_advisor_service.cache_clear()
-    if hasattr(auth_deps_module, 'get_auth_service') and hasattr(auth_deps_module.get_auth_service, 'cache_clear'):
+    if hasattr(auth_deps_module, "get_auth_service") and hasattr(auth_deps_module.get_auth_service, "cache_clear"):
         auth_deps_module.get_auth_service.cache_clear()
 
     importlib.reload(deps_module)
@@ -86,6 +87,7 @@ async def client(tmp_path, monkeypatch):
     importlib.reload(advisor_module)
     importlib.reload(auth_module)
     importlib.reload(admin_module)
+    importlib.reload(risk_rubric_module)
     main_module = importlib.reload(main_module)
 
     app = main_module.app

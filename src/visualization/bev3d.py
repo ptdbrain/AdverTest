@@ -14,11 +14,13 @@ def _box3d_corners(box: Box3D) -> np.ndarray:
     z_corners = [0, 0, 0, 0, height, height, height, height]
     corners = np.vstack([x_corners, y_corners, z_corners])
 
-    rot_mat = np.array([
-        [np.cos(box.yaw), -np.sin(box.yaw), 0],
-        [np.sin(box.yaw),  np.cos(box.yaw), 0],
-        [0, 0, 1],
-    ])
+    rot_mat = np.array(
+        [
+            [np.cos(box.yaw), -np.sin(box.yaw), 0],
+            [np.sin(box.yaw), np.cos(box.yaw), 0],
+            [0, 0, 1],
+        ]
+    )
 
     corners = rot_mat @ corners
     corners[0, :] += box.x
@@ -47,8 +49,10 @@ def render_bev(
 
     if points.size > 0:
         valid_idx = (
-            (points[:, 0] >= x_range[0]) & (points[:, 0] <= x_range[1]) &
-            (points[:, 1] >= y_range[0]) & (points[:, 1] <= y_range[1])
+            (points[:, 0] >= x_range[0])
+            & (points[:, 0] <= x_range[1])
+            & (points[:, 1] >= y_range[0])
+            & (points[:, 1] <= y_range[1])
         )
         valid_pts = points[valid_idx]
 

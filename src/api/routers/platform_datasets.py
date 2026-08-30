@@ -29,25 +29,42 @@ class RegisterDatasetBundleIn(BaseModel):
 
 def _payload(record: DatasetVersionRecord) -> dict:
     return {
-        "id": record.id, "dataset_id": record.dataset_id, "project_id": record.project_id,
-        "artifact_id": record.artifact_id, "display_name": record.display_name, "task_id": record.task_id,
-        "status": record.status, "schema_hash": record.schema_hash, "sample_count": record.sample_count,
-        "manifest": json.loads(record.manifest_json), "created_at": record.created_at, "contract_version": "1.0.0",
+        "id": record.id,
+        "dataset_id": record.dataset_id,
+        "project_id": record.project_id,
+        "artifact_id": record.artifact_id,
+        "display_name": record.display_name,
+        "task_id": record.task_id,
+        "status": record.status,
+        "schema_hash": record.schema_hash,
+        "sample_count": record.sample_count,
+        "manifest": json.loads(record.manifest_json),
+        "created_at": record.created_at,
+        "contract_version": "1.0.0",
     }
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def register_dataset_bundle(
-    project_id: str, body: RegisterDatasetBundleIn, actor_id: str = Depends(require_platform_actor),
-    database=Depends(get_platform_database), artifacts: ArtifactService = Depends(get_platform_artifacts),
+    project_id: str,
+    body: RegisterDatasetBundleIn,
+    actor_id: str = Depends(require_platform_actor),
+    database=Depends(get_platform_database),
+    artifacts: ArtifactService = Depends(get_platform_artifacts),
 ) -> dict:
     with database.session() as session:
-        artifact = session.scalar(select(ArtifactRecord).where(ArtifactRecord.id == body.artifact_id, ArtifactRecord.project_id == project_id))
+        artifact = session.scalar(
+            select(ArtifactRecord).where(ArtifactRecord.id == body.artifact_id, ArtifactRecord.project_id == project_id)
+        )
         if artifact is None:
             raise HTTPException(status_code=404, detail="ARTIFACT_UNKNOWN")
         if artifact.kind != ArtifactKind.DATASET_BUNDLE.value or artifact.state != ArtifactState.QUARANTINED.value:
             raise HTTPException(status_code=409, detail="DATASET_ARTIFACT_NOT_QUARANTINED")
-        existing = session.scalar(select(DatasetVersionRecord).where(DatasetVersionRecord.project_id == project_id, DatasetVersionRecord.artifact_id == artifact.id))
+        existing = session.scalar(
+            select(DatasetVersionRecord).where(
+                DatasetVersionRecord.project_id == project_id, DatasetVersionRecord.artifact_id == artifact.id
+            )
+        )
         if existing:
             return _payload(existing)
     try:
@@ -66,9 +83,17 @@ def register_dataset_bundle(
         sample_count = None
     schema_hash = hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     record = DatasetVersionRecord(
-        id=str(uuid4()), dataset_id=str(uuid4()), project_id=project_id, created_by_user_id=actor_id,
-        artifact_id=body.artifact_id, display_name=body.display_name, task_id=body.task_id,
-        status="READY", schema_hash=schema_hash, sample_count=sample_count, manifest_json=json.dumps(manifest, sort_keys=True),
+        id=str(uuid4()),
+        dataset_id=str(uuid4()),
+        project_id=project_id,
+        created_by_user_id=actor_id,
+        artifact_id=body.artifact_id,
+        display_name=body.display_name,
+        task_id=body.task_id,
+        status="READY",
+        schema_hash=schema_hash,
+        sample_count=sample_count,
+        manifest_json=json.dumps(manifest, sort_keys=True),
     )
     with database.session() as session:
         session.add(record)
@@ -77,8 +102,14 @@ def register_dataset_bundle(
 
 
 @router.get("")
-def list_dataset_versions(project_id: str, actor_id: str = Depends(require_platform_actor), database=Depends(get_platform_database)) -> list[dict]:
+def list_dataset_versions(
+    project_id: str, actor_id: str = Depends(require_platform_actor), database=Depends(get_platform_database)
+) -> list[dict]:
     del actor_id
     with database.session() as session:
-        records = session.scalars(select(DatasetVersionRecord).where(DatasetVersionRecord.project_id == project_id).order_by(DatasetVersionRecord.created_at.desc())).all()
+        records = session.scalars(
+            select(DatasetVersionRecord)
+            .where(DatasetVersionRecord.project_id == project_id)
+            .order_by(DatasetVersionRecord.created_at.desc())
+        ).all()
     return [_payload(record) for record in records]

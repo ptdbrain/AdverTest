@@ -42,9 +42,7 @@ def test_at_least_one_pixel_dies_even_at_an_absurdly_small_fraction() -> None:
 
 
 def test_dead_masks_are_nested_across_severities() -> None:
-    masks = [
-        _changed(*reversed(_run(severity, n_bands_per_severity=(0,)))) for severity in SEVERITIES
-    ]
+    masks = [_changed(*reversed(_run(severity, n_bands_per_severity=(0,)))) for severity in SEVERITIES]
     for weaker, stronger in zip(masks, masks[1:], strict=False):
         assert np.array_equal(weaker & stronger, weaker)
 
@@ -66,9 +64,7 @@ def test_band_count_follows_the_severity_ladder() -> None:
 
 def test_perturbation_grows_at_every_step() -> None:
     sample = _flat_sample()
-    distances = [
-        float(np.linalg.norm(_run(severity)[1].image - sample.image)) for severity in SEVERITIES
-    ]
+    distances = [float(np.linalg.norm(_run(severity)[1].image - sample.image)) for severity in SEVERITIES]
     assert distances == sorted(distances)
 
 

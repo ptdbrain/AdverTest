@@ -84,9 +84,7 @@ class CompositionEngine:
     ) -> None:
         load_attacks()
         self.catalog = catalog or ATTACK_CATALOG
-        self.annotation_transformer = (
-            annotation_transformer or AnnotationTransformer()
-        )
+        self.annotation_transformer = annotation_transformer or AnnotationTransformer()
 
     def execute(
         self,
@@ -139,14 +137,10 @@ class CompositionEngine:
             try:
                 metadata = self.catalog.get(step.attack_name)
                 if metadata.implementation_version != step.implementation_version:
-                    raise ValueError(
-                        f"implementation version mismatch for {step.attack_name!r}"
-                    )
+                    raise ValueError(f"implementation version mismatch for {step.attack_name!r}")
                 reasons = exclusions.get(step.attack_name, ())
                 if reasons:
-                    raise ValueError(
-                        f"attack {step.attack_name!r} is incompatible: {', '.join(reasons)}"
-                    )
+                    raise ValueError(f"attack {step.attack_name!r} is incompatible: {', '.join(reasons)}")
                 attack_params = {
                     key: value
                     for key, value in step.parameters.items()
@@ -184,12 +178,8 @@ class CompositionEngine:
                     continue
 
                 if total_cost + step.expected_cost > context.max_cost:
-                    raise ValueError(
-                        f"composition cost would exceed {context.max_cost}"
-                    )
-                next_occlusion = cumulative_occlusion + float(
-                    step.parameters.get("occlusion_ratio", 0.0)
-                )
+                    raise ValueError(f"composition cost would exceed {context.max_cost}")
+                next_occlusion = cumulative_occlusion + float(step.parameters.get("occlusion_ratio", 0.0))
                 if next_occlusion > recipe.constraints.max_occlusion_ratio:
                     raise ValueError("cumulative occlusion ratio exceeded")
                 attack_context = AttackContext(
@@ -232,10 +222,7 @@ class CompositionEngine:
                 )
                 _append_intermediate(current.image, arrays, hashes)
             except Exception as exc:
-                message = (
-                    f"step {step.position} {step.attack_name}: "
-                    f"{type(exc).__name__}: {exc}"
-                )
+                message = f"step {step.position} {step.attack_name}: {type(exc).__name__}: {exc}"
                 errors.append(message)
                 records.append(
                     _step_record(
@@ -243,11 +230,7 @@ class CompositionEngine:
                         derived_seed,
                         applied=False,
                         status="failed",
-                        resolved=(
-                            resolved_parameters[-1]
-                            if len(resolved_parameters) > step.position
-                            else {}
-                        ),
+                        resolved=(resolved_parameters[-1] if len(resolved_parameters) > step.position else {}),
                         cost=0.0,
                         input_hash=input_hash,
                         error=message,
@@ -309,11 +292,7 @@ def _compatibility_context(
     Modality,
 ]:
     task: Task = (
-        model.metadata().task
-        if model is not None
-        else "segmentation"
-        if sample.mask is not None
-        else "detection2d"
+        model.metadata().task if model is not None else "segmentation" if sample.mask is not None else "detection2d"
     )
     capabilities = model.capabilities if model is not None else frozenset()
     annotations = frozenset(

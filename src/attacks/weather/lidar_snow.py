@@ -29,4 +29,6 @@ class LidarSnow(BaseAttack):
         frame = sample.lidar_frame
         if frame is None:
             raise ValueError("lidar_snow requires sample.lidar_frame")
-        return sample.with_lidar_frame(snow_frame(frame, self.level(severity, self.params.snowfall_rate_per_severity), ctx.rng))
+        return sample.with_lidar_frame(
+            snow_frame(frame, self.level(severity, self.params.snowfall_rate_per_severity), ctx.rng)
+        )

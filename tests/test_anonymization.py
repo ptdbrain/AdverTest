@@ -106,9 +106,7 @@ def test_anonymizer_blurs_regions_preserves_labels_and_resumes(tmp_path: Path) -
     assert first.plate_detections == 2
     assert second.resumed_samples == 2
     assert file_digest(source / "image_2" / "000000.png", length=64) == source_hash
-    assert (output / "label_2" / "000000.txt").read_bytes() == (
-        source / "label_2" / "000000.txt"
-    ).read_bytes()
+    assert (output / "label_2" / "000000.txt").read_bytes() == (source / "label_2" / "000000.txt").read_bytes()
     assert not np.array_equal(
         load_image(output / "image_2" / "000000.png"),
         load_image(source / "image_2" / "000000.png"),
@@ -166,9 +164,7 @@ def test_anonymizer_can_select_explicit_sample_ids(tmp_path: Path) -> None:
     source = tmp_path / "source"
     output = tmp_path / "output"
     _write_kitti(source, count=3)
-    config = _config(source, output).model_copy(
-        update={"sample_ids": ["000002", "000000"]}
-    )
+    config = _config(source, output).model_copy(update={"sample_ids": ["000002", "000000"]})
 
     report = DatasetAnonymizer(_detectors()).anonymize(config)  # type: ignore[arg-type]
 
@@ -199,8 +195,11 @@ def test_anonymizer_preserves_segmentation_annotations(
     Image.fromarray(pixels).save(image)
     Image.fromarray(np.full((24, 32), 26, dtype=np.uint8)).save(annotation)
     config = AnonymizationConfig(
-        input_dir=str(source), output_dir=str(output), input_format=dataset,
-        splits=["train"], face_detector=DetectorConfig(checkpoint="face.onnx", expansion=0),
+        input_dir=str(source),
+        output_dir=str(output),
+        input_format=dataset,
+        splits=["train"],
+        face_detector=DetectorConfig(checkpoint="face.onnx", expansion=0),
         plate_detector=DetectorConfig(checkpoint="plate.onnx", expansion=0),
     )
 

@@ -26,7 +26,6 @@ def test_openapi_schema_is_valid_and_contains_all_routes() -> None:
         "/api/v1/attack-recipes/randomize",
         "/api/v1/attack-recipes/sweep",
         "/api/v1/attack-recipes/preview",
-
         # Benchmark
         "/api/v1/benchmark/protocols",
         "/api/v1/benchmark/runs",
@@ -34,7 +33,6 @@ def test_openapi_schema_is_valid_and_contains_all_routes() -> None:
         "/api/v1/benchmark-runs/{run_id}/metrics",
         "/api/v1/benchmark-runs/{run_id}/failures",
         "/api/v1/benchmark-runs/{run_id}/cancel",
-
         # Training
         "/api/v1/training-runs",
         "/api/v1/training-runs/estimate",
@@ -42,14 +40,12 @@ def test_openapi_schema_is_valid_and_contains_all_routes() -> None:
         "/api/v1/training-runs/{job_id}/checkpoints",
         "/api/v1/training-runs/{job_id}/cancel",
         "/api/v1/training-dataset-manifests/{manifest_id}",
-
         # Models
         "/api/v1/model-versions",
         "/api/v1/model-versions/{version_id}",
         "/api/v1/model-versions/{version_id}/lineage",
         "/api/v1/model-versions/{version_id}/benchmark-history",
         "/api/v1/model-versions/{version_id}/gate-evidence",
-
         # Comparisons
         "/api/v1/model-comparisons",
         "/api/v1/model-comparisons/{comparison_id}",
@@ -57,28 +53,23 @@ def test_openapi_schema_is_valid_and_contains_all_routes() -> None:
         "/api/v1/model-comparisons/{comparison_id}/recovery-report",
         "/api/v1/model-comparisons/{comparison_id}/failures",
         "/api/v1/model-comparisons/{comparison_id}/export",
-
         # Failures / Review
         "/api/v1/failure-cases",
         "/api/v1/failure-clusters",
         "/api/v1/reviews",
         "/api/v1/defense-profiles",
-
         # Generated Datasets
         "/api/v1/generated-datasets",
         "/api/v1/generated-datasets/{job_id}/manifest",
         "/api/v1/generated-datasets/{job_id}/variants",
         "/api/v1/generated-datasets/{job_id}/events",
         "/api/v1/generated-datasets/{job_id}/validate",
-
         # Closed-Loop
         "/api/v1/closed-loop/start",
         "/api/v1/closed-loop/{loop_id}",
         "/api/v1/closed-loop/{loop_id}/advance",
-
         # Status / Evidence
         "/api/v1/status/evidence",
-
         # Legacy Transition Compatibility
         "/api/v1/runs",
         "/api/v1/runs/{run_id}",
@@ -112,7 +103,9 @@ def test_recipe_randomize_endpoint() -> None:
 
 def test_recipe_sweep_endpoint() -> None:
     """Verify POST /api/v1/attack-recipes/sweep generates severity sweep steps."""
-    response = client.post("/api/v1/attack-recipes/sweep", json={"attack_id": "gaussian_noise", "severity_range": [1, 2, 3]})
+    response = client.post(
+        "/api/v1/attack-recipes/sweep", json={"attack_id": "gaussian_noise", "severity_range": [1, 2, 3]}
+    )
     assert response.status_code == 201
     data = response.json()
     assert len(data["steps"]) == 3
@@ -151,4 +144,27 @@ def test_model_version_lineage_endpoint() -> None:
     data = response.json()
     assert data["version_id"] == version_id
     assert "children" in data
+
+
+def test_all_openapi_operation_ids_are_strictly_unique() -> None:
+    """P3.2: Verify that every endpoint in OpenAPI schema has a globally unique operationId."""
+    response = client.get("/openapi.json")
+    assert response.status_code == 200
+    schema = response.json()
+
+    operation_ids: dict[str, str] = {}
+    duplicates: list[str] = []
+
+    for path, methods in schema.get("paths", {}).items():
+        for method, details in methods.items():
+            if not isinstance(details, dict):
+                continue
+            op_id = details.get("operationId")
+            if op_id:
+                if op_id in operation_ids:
+                    duplicates.append(f"{op_id} (used by {operation_ids[op_id]} and {method.upper()} {path})")
+                else:
+                    operation_ids[op_id] = f"{method.upper()} {path}"
+
+    assert len(duplicates) == 0, "Duplicate OpenAPI operation IDs found:\n" + "\n".join(duplicates)
 

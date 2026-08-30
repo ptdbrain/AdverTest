@@ -31,6 +31,4 @@ def test_windows_hook_installer_writes_a_bomless_shebang(tmp_path: Path) -> None
         text=True,
     )
 
-    assert (tmp_path / ".git" / "hooks" / "pre-push").read_bytes().startswith(
-        b"#!/usr/bin/env bash"
-    )
+    assert (tmp_path / ".git" / "hooks" / "pre-push").read_bytes().startswith(b"#!/usr/bin/env bash")

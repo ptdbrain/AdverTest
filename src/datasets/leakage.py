@@ -106,13 +106,7 @@ class LeakageValidator:
             if len(unique_ids) < 2:
                 continue
             split_names = tuple(
-                sorted(
-                    {
-                        split_name
-                        for sample_id in unique_ids
-                        for split_name in membership.get(sample_id, set())
-                    }
-                )
+                sorted({split_name for sample_id in unique_ids for split_name in membership.get(sample_id, set())})
             )
             duplicate_groups.append(
                 DuplicateGroup(
@@ -154,16 +148,8 @@ class LeakageValidator:
             warnings.extend(split_report.warnings)
             duplicate_groups.extend(split_report.duplicate_groups)
 
-        record_index = {
-            record.sample_id: record
-            for version in config.versions
-            for record in version.records
-        }
-        locked_ids = {
-            sample_id
-            for manifest in config.splits
-            for sample_id in manifest.locked_test_ids
-        }
+        record_index = {record.sample_id: record for version in config.versions for record in version.records}
+        locked_ids = {sample_id for manifest in config.splits for sample_id in manifest.locked_test_ids}
         benchmark_ids = set(config.benchmark_artifact_ids)
         for sample_id in sorted(set(config.selected_sample_ids)):
             if sample_id in benchmark_ids:
@@ -207,8 +193,7 @@ class LeakageValidator:
                 sorted(
                     label
                     for label in record.class_labels
-                    if label not in CLASSES
-                    and config.class_mapping.get(label) not in CLASSES
+                    if label not in CLASSES and config.class_mapping.get(label) not in CLASSES
                 )
             )
             if invalid_labels:
@@ -224,9 +209,7 @@ class LeakageValidator:
         pairs: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
         for version in config.versions:
             for record in version.records:
-                pairs[(record.source_hash, record.ground_truth_hash)].append(
-                    (version.version_id, record.sample_id)
-                )
+                pairs[(record.source_hash, record.ground_truth_hash)].append((version.version_id, record.sample_id))
         for (source_hash, ground_truth_hash), members in sorted(pairs.items()):
             version_ids = {version_id for version_id, _ in members}
             if len(version_ids) < 2:
@@ -252,9 +235,7 @@ class LeakageValidator:
                 severity="warning" if explanation else "error",
                 sample_ids=sample_ids,
                 detail=(
-                    explanation
-                    if explanation
-                    else "identical image and ground truth appear across dataset versions"
+                    explanation if explanation else "identical image and ground truth appear across dataset versions"
                 ),
                 context={"dataset_version_ids": tuple(sorted(version_ids))},
             )
@@ -340,9 +321,7 @@ class LeakageValidator:
             "validator_version": self.version,
             "errors": [finding.model_dump(mode="json") for finding in ordered_errors],
             "warnings": [finding.model_dump(mode="json") for finding in ordered_warnings],
-            "duplicate_groups": [
-                group.model_dump(mode="json") for group in ordered_duplicates
-            ],
+            "duplicate_groups": [group.model_dump(mode="json") for group in ordered_duplicates],
         }
         return LeakageReport(
             validator_version=self.version,

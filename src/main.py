@@ -32,6 +32,7 @@ from src.api.routers import (
     jobs,
     live_inference,
     platform_datasets,
+    risk_rubric,
     runs,
     sessions,
     system,
@@ -52,6 +53,8 @@ SIMULATION_BANNER = "SIMULATION ONLY — chưa validate, không dùng để quy�
 async def lifespan(app: FastAPI):
     """Load every plugin once at start-up so the catalog is ready to serve."""
     settings = get_settings()
+    if settings.app_env == "production":
+        settings.validate_production_environment()
     storage = None
     if settings.bootstrap_demo_model:
         storage = get_platform_storage()
@@ -87,6 +90,7 @@ async def lifespan(app: FastAPI):
         print(f"Demo catalog ready: {catalog_root}")
     attacks, models, datasets = load_attacks(), load_adapters(), load_datasets()
     from src.auth.dependencies import get_auth_service
+
     get_auth_service().ensure_default_accounts()
     print(
         f"Starting {settings.app_name} in {settings.app_env} mode — "
@@ -134,6 +138,8 @@ app.include_router(advisor.router, prefix="/api/v1")
 app.include_router(system.router, prefix="/api/v1")
 app.include_router(live_inference.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
+app.include_router(settings_router.router, prefix="/api/v1")
+app.include_router(risk_rubric.router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")
 app.mount("/data", StaticFiles(directory=str(data_root)), name="data")
 

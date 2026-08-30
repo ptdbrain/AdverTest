@@ -111,7 +111,6 @@ def convert_kitti_to_yolo(
             except OSError:
                 shutil.copy2(img_path, dst_img)
 
-
         # Convert label
         src_lbl = label_dir / f"{stem}.txt"
         yolo_annotations: list[str] = []
@@ -178,7 +177,11 @@ def create_starter_kitti_dataset(
         (out_path / "labels" / split).mkdir(parents=True, exist_ok=True)
 
     yaml_path = out_path / "kitti.yaml"
-    if (out_path / "images" / "train").is_dir() and any((out_path / "images" / "train").iterdir()) and yaml_path.is_file():
+    if (
+        (out_path / "images" / "train").is_dir()
+        and any((out_path / "images" / "train").iterdir())
+        and yaml_path.is_file()
+    ):
         return yaml_path
 
     rng = random.Random(seed)
@@ -187,11 +190,7 @@ def create_starter_kitti_dataset(
     n_val = max(1, int(num_samples * 0.15))
     for i in range(num_samples):
         split = "val" if i < n_val else "train"
-        img = Image.new("RGB", (640, 640), color=(
-            rng.randint(30, 80),
-            rng.randint(40, 90),
-            rng.randint(50, 100)
-        ))
+        img = Image.new("RGB", (640, 640), color=(rng.randint(30, 80), rng.randint(40, 90), rng.randint(50, 100)))
         draw = ImageDraw.Draw(img)
         draw.rectangle([0, 320, 640, 640], fill=(50, 50, 50))
         draw.rectangle([0, 0, 640, 320], fill=(135, 206, 235))
@@ -482,5 +481,3 @@ names:
     yaml_path.write_text(yaml_content, encoding="utf-8")
     print(f"      Robust dataset manifest written to: {yaml_path}")
     return yaml_path
-
-

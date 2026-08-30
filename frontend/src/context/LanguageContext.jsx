@@ -3,7 +3,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { translate } from "@/lib/i18n";
 
-const LanguageContext = createContext(null);
+const DEFAULT_LANGUAGE_FALLBACK = {
+  lang: "vi",
+  setLang: () => {},
+  t: (key, params) => translate("vi", key, params),
+};
+
+const LanguageContext = createContext(DEFAULT_LANGUAGE_FALLBACK);
 
 /**
  * Ngôn ngữ hệ thống (vi/en) cho toàn bộ UI. Persist client-side ở

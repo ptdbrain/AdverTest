@@ -136,9 +136,7 @@ def test_training_validation_blocks_duplicate_image_gt_pairs_across_versions() -
         (_record("sample-b", source_hash="same-image", ground_truth_hash="same-gt"),),
     )
 
-    report = LeakageValidator().validate_training(
-        TrainingLeakageInput(versions=(first, second))
-    )
+    report = LeakageValidator().validate_training(TrainingLeakageInput(versions=(first, second)))
 
     assert "duplicate_image_gt_across_versions" in _codes(report)
 

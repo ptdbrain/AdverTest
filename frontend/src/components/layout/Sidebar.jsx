@@ -62,13 +62,39 @@ export default function Sidebar() {
     .slice(0, 2)
     .toUpperCase();
 
+  // Keyboard accessibility: Close drawer on Escape key
+  React.useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && !collapsed) {
+        toggleSidebar();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [collapsed, toggleSidebar]);
+
   return (
-    <aside
-      className={cn(
-        "fixed left-0 top-0 bottom-0 bg-white border-r border-slate-200 z-30 flex flex-col transition-all duration-300 select-none",
-        collapsed ? "w-[68px]" : "w-[220px]"
+    <>
+      {/* Mobile Backdrop Overlay */}
+      {!collapsed && (
+        <div
+          role="presentation"
+          aria-hidden="true"
+          onClick={toggleSidebar}
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-30 md:hidden transition-opacity"
+        />
       )}
-    >
+
+      <aside
+        role="navigation"
+        aria-label="Thanh điều hướng chính"
+        className={cn(
+          "fixed left-0 top-0 bottom-0 bg-white border-r border-slate-200 z-40 flex flex-col transition-all duration-300 select-none",
+          collapsed
+            ? "hidden md:flex md:w-[68px]"
+            : "w-[260px] md:w-[220px] shadow-2xl md:shadow-none"
+        )}
+      >
       {/* FLOATING EXPAND / COLLAPSE BUTTON ON THE BORDER (ALWAYS VISIBLE & ACCESSIBLE) */}
       <button
         type="button"
@@ -187,5 +213,6 @@ export default function Sidebar() {
         </div>
       </div>
     </aside>
+  </>
   );
 }

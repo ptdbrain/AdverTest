@@ -81,19 +81,24 @@ class WorkflowJobStore:
 
     def get_backlog(self, backlog_id: str) -> dict[str, Any] | None:
         with self._connection() as connection:
-            row = connection.execute(
-                "SELECT * FROM retraining_backlogs WHERE backlog_id=?", (backlog_id,)
-            ).fetchone()
+            row = connection.execute("SELECT * FROM retraining_backlogs WHERE backlog_id=?", (backlog_id,)).fetchone()
             if row is None:
                 return None
             items = connection.execute(
                 "SELECT failure_id FROM retraining_backlog_items WHERE backlog_id=? ORDER BY failure_id", (backlog_id,)
             ).fetchall()
-        return {"id": row["backlog_id"], "name": row["name"], "status": row["status"], "failure_ids": [item["failure_id"] for item in items]}
+        return {
+            "id": row["backlog_id"],
+            "name": row["name"],
+            "status": row["status"],
+            "failure_ids": [item["failure_id"] for item in items],
+        }
 
     def add_backlog_item(self, backlog_id: str, failure_id: str) -> dict[str, Any]:
         with self._lock, self._connection() as connection:
-            row = connection.execute("SELECT status FROM retraining_backlogs WHERE backlog_id=?", (backlog_id,)).fetchone()
+            row = connection.execute(
+                "SELECT status FROM retraining_backlogs WHERE backlog_id=?", (backlog_id,)
+            ).fetchone()
             if row is None:
                 raise KeyError("BACKLOG_UNKNOWN")
             if row["status"] != "DRAFT":
@@ -110,15 +115,22 @@ class WorkflowJobStore:
 
     def approve_backlog(self, backlog_id: str) -> dict[str, Any]:
         with self._lock, self._connection() as connection:
-            row = connection.execute("SELECT status FROM retraining_backlogs WHERE backlog_id=?", (backlog_id,)).fetchone()
+            row = connection.execute(
+                "SELECT status FROM retraining_backlogs WHERE backlog_id=?", (backlog_id,)
+            ).fetchone()
             if row is None:
                 raise KeyError("BACKLOG_UNKNOWN")
             if row["status"] != "DRAFT":
                 raise ValueError("BACKLOG_NOT_DRAFT")
-            count = connection.execute("SELECT COUNT(*) AS count FROM retraining_backlog_items WHERE backlog_id=?", (backlog_id,)).fetchone()["count"]
+            count = connection.execute(
+                "SELECT COUNT(*) AS count FROM retraining_backlog_items WHERE backlog_id=?", (backlog_id,)
+            ).fetchone()["count"]
             if count == 0:
                 raise ValueError("BACKLOG_EMPTY")
-            connection.execute("UPDATE retraining_backlogs SET status='APPROVED', updated_at=? WHERE backlog_id=?", (_now(), backlog_id))
+            connection.execute(
+                "UPDATE retraining_backlogs SET status='APPROVED', updated_at=? WHERE backlog_id=?",
+                (_now(), backlog_id),
+            )
         return self.get_backlog(backlog_id)  # type: ignore[return-value]
 
     def create_job(self, job_type: str, request: dict[str, Any]) -> str:
@@ -134,9 +146,7 @@ class WorkflowJobStore:
             self._append_event(connection, job_id, "QUEUED", {"progress_ratio": 0.0})
         return job_id
 
-    def append_event(
-        self, job_id: str, state: str, payload: dict[str, Any], *, update_status: bool = True
-    ) -> bool:
+    def append_event(self, job_id: str, state: str, payload: dict[str, Any], *, update_status: bool = True) -> bool:
         with self._lock, self._connection() as connection:
             if not self._exists(connection, job_id):
                 return False
@@ -150,9 +160,7 @@ class WorkflowJobStore:
 
     def request_cancel(self, job_id: str) -> bool:
         with self._lock, self._connection() as connection:
-            row = connection.execute(
-                "SELECT status FROM workflow_jobs WHERE job_id=?", (job_id,)
-            ).fetchone()
+            row = connection.execute("SELECT status FROM workflow_jobs WHERE job_id=?", (job_id,)).fetchone()
             if row is None:
                 return False
             if row["status"] not in TERMINAL_STATES:
@@ -197,9 +205,7 @@ class WorkflowJobStore:
 
     def get_job(self, job_id: str) -> dict[str, Any] | None:
         with self._connection() as connection:
-            row = connection.execute(
-                "SELECT * FROM workflow_jobs WHERE job_id=?", (job_id,)
-            ).fetchone()
+            row = connection.execute("SELECT * FROM workflow_jobs WHERE job_id=?", (job_id,)).fetchone()
         return _job(row) if row else None
 
     def jobs(self, job_type: str) -> list[dict[str, Any]]:
@@ -226,9 +232,7 @@ class WorkflowJobStore:
 
     def cancel_requested(self, job_id: str) -> bool:
         with self._connection() as connection:
-            row = connection.execute(
-                "SELECT cancel_requested FROM workflow_jobs WHERE job_id=?", (job_id,)
-            ).fetchone()
+            row = connection.execute("SELECT cancel_requested FROM workflow_jobs WHERE job_id=?", (job_id,)).fetchone()
         return bool(row and row["cancel_requested"])
 
     def recoverable(self, job_type: str) -> list[dict[str, Any]]:
@@ -254,14 +258,10 @@ class WorkflowJobStore:
 
     @staticmethod
     def _exists(connection: sqlite3.Connection, job_id: str) -> bool:
-        return connection.execute(
-            "SELECT 1 FROM workflow_jobs WHERE job_id=?", (job_id,)
-        ).fetchone() is not None
+        return connection.execute("SELECT 1 FROM workflow_jobs WHERE job_id=?", (job_id,)).fetchone() is not None
 
     @staticmethod
-    def _append_event(
-        connection: sqlite3.Connection, job_id: str, state: str, payload: dict[str, Any]
-    ) -> None:
+    def _append_event(connection: sqlite3.Connection, job_id: str, state: str, payload: dict[str, Any]) -> None:
         sequence = connection.execute(
             "SELECT COALESCE(MAX(sequence), -1) + 1 AS value FROM workflow_events WHERE job_id=?",
             (job_id,),
@@ -272,9 +272,7 @@ class WorkflowJobStore:
         )
 
     @staticmethod
-    def _append_checkpoint(
-        connection: sqlite3.Connection, job_id: str, payload: dict[str, Any]
-    ) -> None:
+    def _append_checkpoint(connection: sqlite3.Connection, job_id: str, payload: dict[str, Any]) -> None:
         sequence = connection.execute(
             "SELECT COALESCE(MAX(sequence), -1) + 1 AS value FROM workflow_checkpoints WHERE job_id=?",
             (job_id,),

@@ -294,9 +294,9 @@ async def create_model_comparison(
         "paired": paired,
         "baseline_signature": baseline_sig,
         "candidate_signature": candidate_sig,
-        "incompatibilities": [] if paired else [
-            key for key in baseline_sig if baseline_sig.get(key) != candidate_sig.get(key)
-        ],
+        "incompatibilities": []
+        if paired
+        else [key for key in baseline_sig if baseline_sig.get(key) != candidate_sig.get(key)],
         "metric_deltas": deltas,
         "recovery_report": {
             "baseline_clean": left.get("ap_clean", 0.0),
@@ -434,25 +434,31 @@ async def create_defence_run(
     if candidate.task != baseline_config.task_id or candidate.model_family_id != baseline_config.model_family_id:
         raise HTTPException(status_code=422, detail={"code": "DEFENCE_PROTOCOL_TASK_OR_FAMILY_MISMATCH"})
 
-    config = baseline_config.model_copy(update={
-        "checkpoint_id": candidate.id,
-        "model_version_id": candidate.id,
-        "model": candidate.model_name,
-        "adapter_params": {},
-        "execution_mode": "benchmark",
-    })
+    config = baseline_config.model_copy(
+        update={
+            "checkpoint_id": candidate.id,
+            "model_version_id": candidate.id,
+            "model": candidate.model_name,
+            "adapter_params": {},
+            "execution_mode": "benchmark",
+        }
+    )
     config = resolve_run_config(config, allow_defence=True, store=store)
     preflight = runner.preflight(config)
     if preflight.fatal_errors:
         raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
 
     run_id = store.create(config)
-    store.put_record("defence_evaluation", run_id, {
-        "run_id": run_id,
-        "baseline_run_id": body.baseline_run_id,
-        "checkpoint_id": candidate.id,
-        "protocol_config": baseline_config.model_dump(mode="json"),
-    })
+    store.put_record(
+        "defence_evaluation",
+        run_id,
+        {
+            "run_id": run_id,
+            "baseline_run_id": body.baseline_run_id,
+            "checkpoint_id": candidate.id,
+            "protocol_config": baseline_config.model_dump(mode="json"),
+        },
+    )
     worker.enqueue(run_id, config)
     return job_out(store.get(run_id))
 
@@ -503,12 +509,14 @@ async def get_model_version_benchmark_history(
     for run in store.list():
         report = run.get("report")
         if report and (report.get("model") == version_id or report.get("model_version_id") == version_id):
-            history.append({
-                "run_id": run["run_id"],
-                "created_at": run.get("created_at"),
-                "ap_clean": report.get("ap_clean"),
-                "n_samples": report.get("n_samples"),
-            })
+            history.append(
+                {
+                    "run_id": run["run_id"],
+                    "created_at": run.get("created_at"),
+                    "ap_clean": report.get("ap_clean"),
+                    "n_samples": report.get("n_samples"),
+                }
+            )
     return history
 
 
@@ -606,11 +614,7 @@ async def start_closed_loop(
         raise HTTPException(status_code=409, detail={"code": "RUN_NOT_COMPLETED", "run_id": body.run_id})
 
     reported_cases = item["report"].get("worst_cases", [])
-    failures = [
-        failure
-        for failure in reported_cases
-        if isinstance(failure, dict) and is_failure_case(failure)
-    ]
+    failures = [failure for failure in reported_cases if isinstance(failure, dict) and is_failure_case(failure)]
     if not failures:
         raise HTTPException(status_code=409, detail={"code": "NO_FAILURE_CASES", "run_id": body.run_id})
 
@@ -624,15 +628,17 @@ async def start_closed_loop(
             or f"failure-{stable_digest(failure_payload, length=20)}"
         )
         failure_ids.append(failure_id)
-        audit.append({
-            "step": index,
-            "state": "FAILURE_IDENTIFIED",
-            "artifact_id": failure_id,
-            "artifact_type": "failure_case",
-            "artifact_hash": stable_digest(failure_payload, length=64),
-            "parent_step": None,
-            "metadata": {"source_run_id": body.run_id},
-        })
+        audit.append(
+            {
+                "step": index,
+                "state": "FAILURE_IDENTIFIED",
+                "artifact_id": failure_id,
+                "artifact_type": "failure_case",
+                "artifact_hash": stable_digest(failure_payload, length=64),
+                "parent_step": None,
+                "metadata": {"source_run_id": body.run_id},
+            }
+        )
 
     loop_id = workflow_store.create_job("closed_loop", {"source_run_id": body.run_id})
     tracker = ClosedLoopTracker(loop_id=loop_id)
@@ -765,7 +771,12 @@ async def advance_closed_loop(
     if not valid_evidence:
         raise HTTPException(
             status_code=409,
-            detail={"code": "INVALID_CLOSED_LOOP_TRANSITION", "current": current_state, "target": body.target, "artifact_id": body.artifact_id},
+            detail={
+                "code": "INVALID_CLOSED_LOOP_TRANSITION",
+                "current": current_state,
+                "target": body.target,
+                "artifact_id": body.artifact_id,
+            },
         )
 
     audit_entries = []

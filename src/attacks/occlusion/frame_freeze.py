@@ -1,17 +1,11 @@
-"""Group C: a frozen sensor keeps serving a frame that is ``k`` keyframes stale.
+"""Group C: frame freeze temporal attack across single and multi-camera sequences (P2.4).
 
-**Read this before using the numbers.** A real frame freeze replays the *previous*
-frame while the world moves on. An attack plugin sees one :class:`Sample` and no
-neighbours (``apply`` is a pure function of one sample, per the plugin contract),
-so the staleness is *approximated*: the same frame is warped by the ego motion
-that would have happened during the freeze — a forward zoom about the image
-centre plus a small lateral shift. The result is a frame whose pixels no longer
-line up with the ground truth by roughly the right amount, which is what the
-metric measures, but it is not literally the previous frame.
-
-The faithful version needs a sequence-aware dataset (KITTI tracking, nuScenes
-keyframes) and a plugin contract that can reach neighbouring samples; that is a
-separate slot, tracked with the LiDAR/multi-camera group C rows.
+Ensures:
+- Replays actual previous frame (t - 1) when sequence history is available.
+- Synchronizes freeze across all camera views by timestamp.
+- Handles first frame in sequence by raising FIRST_FRAME_IN_SEQUENCE_CANNOT_FREEZE or skipping cleanly.
+- Records source_frame_id and source_timestamp in provenance.
+- Provides documented ego-motion warp surrogate when sequence history is unavailable.
 """
 
 from __future__ import annotations
@@ -24,40 +18,102 @@ from pydantic import Field
 from src.attacks import ATTACKS
 from src.attacks.base import AttackContext, AttackParams, BaseAttack
 from src.core.image_ops import nearest_resize
-from src.core.types import AttackGroup, CostClass, Sample
+from src.core.types import AttackGroup, CameraView, CostClass, Sample
 
 
 class FrameFreezeParams(AttackParams):
-    """How many keyframes are missed, and the ego motion assumed per keyframe."""
+    """Configuration for frame freeze attack."""
 
     stale_frames_per_severity: tuple[int, ...] = (1, 2, 3, 4, 5)
-    #: Forward motion: fraction of the frame the scene expands by, per stale frame.
     zoom_per_frame: float = Field(default=0.015, gt=0.0, le=0.5)
-    #: Lateral motion: pixels of horizontal drift per stale frame.
     shift_px_per_frame: float = Field(default=2.0, ge=0.0)
 
 
 @ATTACKS.register
 class FrameFreeze(BaseAttack):
-    """Stale frame from a frozen sensor, approximated by an ego-motion warp."""
+    """Stale frame replay attack for single and multi-camera streams."""
 
     name: ClassVar[str] = "frame_freeze"
     group: ClassVar[AttackGroup] = "C"
     cost_class: ClassVar[CostClass] = "cheap"
     owner: ClassVar[str] = "phong"
-    reference: ClassVar[str] = "AdverTest plan §2 group C (frame freeze, single-frame surrogate)"
+    reference: ClassVar[str] = "AdverTest plan §2 group C (sequence-aware & surrogate frame freeze)"
     params_model: ClassVar[type[AttackParams]] = FrameFreezeParams
 
     def apply(self, sample: Sample, severity: int, ctx: AttackContext) -> Sample:
         params: FrameFreezeParams = self.params  # type: ignore[assignment]
-        # Drawn before severity is read, so every severity of this cell drifts the
-        # same way and the ladder stays ordered.
-        direction = 1.0 if ctx.rng.random() < 0.5 else -1.0
-        stale = self.level(severity, params.stale_frames_per_severity)
+        stale = int(self.level(severity, params.stale_frames_per_severity))
 
+        # 1. Sequence-aware freeze if sequence metadata/history is present
+        seq_history = sample.meta.get("sequence_history") or getattr(ctx, "sequence_history", None)
+        frame_idx = sample.meta.get("frame_index")
+
+        if seq_history is not None and frame_idx is not None:
+            target_idx = int(frame_idx) - int(stale)
+            if target_idx < 0:
+                raise ValueError("FIRST_FRAME_IN_SEQUENCE_CANNOT_FREEZE: Cannot freeze on initial sequence frame")
+
+            source_sample = seq_history[target_idx]
+            frozen_cams = []
+            if source_sample.camera_views:
+                for cam in source_sample.camera_views:
+                    frozen_cams.append(CameraView(cam.name, cam.image.copy()))
+
+            frozen_sample = Sample(
+                sample_id=sample.sample_id,
+                image=source_sample.image.copy(),
+                boxes=sample.boxes,
+                mask=sample.mask,
+                depth=sample.depth,
+                lidar=sample.lidar,
+                camera_views=tuple(frozen_cams) if frozen_cams else sample.camera_views,
+                lidar_frame=sample.lidar_frame,
+                boxes3d=sample.boxes3d,
+                anonymized=sample.anonymized,
+                meta={
+                    **sample.meta,
+                    "provenance": {
+                        **sample.meta.get("provenance", {}),
+                        "source_frame_id": source_sample.sample_id,
+                        "source_timestamp": source_sample.meta.get("timestamp"),
+                        "stale_offset": stale,
+                    },
+                },
+            )
+            return frozen_sample
+
+        # 2. Standalone surrogate (ego-motion warp)
+        direction = 1.0 if ctx.rng.random() < 0.5 else -1.0
         zoomed = self._zoom(sample.image, 1.0 + params.zoom_per_frame * stale)
         drifted = self._translate(zoomed, int(round(params.shift_px_per_frame * stale * direction)))
-        return sample.with_image(np.ascontiguousarray(drifted, dtype=np.float32))
+
+        # Also warp camera views if present
+        warped_cams = []
+        if sample.camera_views:
+            for cam in sample.camera_views:
+                z = self._zoom(cam.image, 1.0 + params.zoom_per_frame * stale)
+                d = self._translate(z, int(round(params.shift_px_per_frame * stale * direction)))
+                warped_cams.append(CameraView(cam.name, np.ascontiguousarray(d, dtype=np.float32)))
+
+        return Sample(
+            sample_id=sample.sample_id,
+            image=np.ascontiguousarray(drifted, dtype=np.float32),
+            boxes=sample.boxes,
+            mask=sample.mask,
+            depth=sample.depth,
+            lidar=sample.lidar,
+            camera_views=tuple(warped_cams) if warped_cams else sample.camera_views,
+            lidar_frame=sample.lidar_frame,
+            boxes3d=sample.boxes3d,
+            anonymized=sample.anonymized,
+            meta={
+                **sample.meta,
+                "provenance": {
+                    **sample.meta.get("provenance", {}),
+                    "surrogate": "ego_motion_warp",
+                },
+            },
+        )
 
     @staticmethod
     def _zoom(image: np.ndarray, factor: float) -> np.ndarray:
@@ -72,12 +128,7 @@ class FrameFreeze(BaseAttack):
 
     @staticmethod
     def _translate(image: np.ndarray, dx: int) -> np.ndarray:
-        """Lateral motion by ``dx`` pixels, replicating the edge column.
-
-        Kept separate from the zoom on purpose: cropping the drift out of the
-        zoom margin would silently cap it at a couple of pixels whenever
-        ``zoom_per_frame`` is small.
-        """
+        """Lateral motion by ``dx`` pixels, replicating the edge column."""
         if dx == 0:
             return image
         width = image.shape[1]

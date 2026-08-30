@@ -212,14 +212,10 @@ class RecipeBuilder:
             if item.implementation_version != step.implementation_version:
                 errors.append(f"implementation_version_mismatch:{step.attack_name}")
             errors.extend(
-                f"incompatible:{step.attack_name}:{reason}"
-                for reason in exclusions.get(step.attack_name, ())
+                f"incompatible:{step.attack_name}:{reason}" for reason in exclusions.get(step.attack_name, ())
             )
             transform = step.parameters.get("spatial_transform")
-            if (
-                transform is not None
-                and transform not in recipe.constraints.supported_spatial_transforms
-            ):
+            if transform is not None and transform not in recipe.constraints.supported_spatial_transforms:
                 errors.append(f"unsupported_spatial_transform:{transform}")
 
         white_box_count = sum(item.group == "D" for item in metadata)
@@ -235,8 +231,7 @@ class RecipeBuilder:
         occlusion_ratio = sum(
             float(step.parameters.get("occlusion_ratio", 0.0))
             for step in recipe.steps
-            if (item := metadata_by_name.get(step.attack_name)) is not None
-            and item.group == "C"
+            if (item := metadata_by_name.get(step.attack_name)) is not None and item.group == "C"
         )
         if occlusion_ratio > recipe.constraints.max_occlusion_ratio:
             errors.append("occlusion_ratio_exceeded")
@@ -272,14 +267,8 @@ class RecipeBuilder:
         requested_variants: int,
         bytes_per_variant: int,
     ) -> RecipeEstimate:
-        cost = sum(
-            step.expected_cost * step.probability for step in recipe.steps
-        ) * requested_variants
-        gpu_cost = sum(
-            step.expected_cost * step.probability
-            for step in recipe.steps
-            if step.expected_cost >= 4.0
-        )
+        cost = sum(step.expected_cost * step.probability for step in recipe.steps) * requested_variants
+        gpu_cost = sum(step.expected_cost * step.probability for step in recipe.steps if step.expected_cost >= 4.0)
         return RecipeEstimate(
             variant_count=requested_variants,
             estimated_bytes=requested_variants * bytes_per_variant,
@@ -344,8 +333,7 @@ class RecipeBuilder:
     ) -> list[AttackRecipe]:
         candidates = _candidate_metadata(request, catalog)
         grouped: dict[AttackGroup, list[AttackMetadata]] = {
-            group: [item for item in candidates if item.group == group]
-            for group in request.group_quotas
+            group: [item for item in candidates if item.group == group] for group in request.group_quotas
         }
         for group, quota in request.group_quotas.items():
             if len(grouped[group]) < quota:
@@ -378,9 +366,7 @@ class RecipeBuilder:
                 online=request.online,
             )
             if not validation.valid:
-                raise ValueError(
-                    f"stratified recipe violates constraints: {validation.errors}"
-                )
+                raise ValueError(f"stratified recipe violates constraints: {validation.errors}")
             if recipe.recipe_hash in hashes:
                 raise ValueError("stratified builder produced a duplicate recipe")
             hashes.add(recipe.recipe_hash)
@@ -425,9 +411,7 @@ def _candidate_metadata(request: Any, catalog: AttackCatalog) -> list[AttackMeta
     allowlist = set(request.allowlist)
     blocklist = set(request.blocklist)
     return [
-        item
-        for item in result.selected
-        if (not allowlist or item.name in allowlist) and item.name not in blocklist
+        item for item in result.selected if (not allowlist or item.name in allowlist) and item.name not in blocklist
     ]
 
 

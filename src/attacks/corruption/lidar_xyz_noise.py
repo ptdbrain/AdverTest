@@ -1,4 +1,5 @@
 """Group A: Gaussian coordinate noise on LiDAR XYZ channels."""
+
 from typing import ClassVar
 
 from src.attacks import ATTACKS
@@ -8,6 +9,7 @@ from src.core.types import AttackGroup, CostClass, LidarFrame, SensorKind
 
 class LidarXYZNoiseParams(AttackParams):
     sigma_per_severity: tuple[float, ...] = (0.01, 0.02, 0.05, 0.10, 0.20)
+
 
 @ATTACKS.register
 class LidarXYZNoise(BaseAttack):
@@ -28,6 +30,4 @@ class LidarXYZNoise(BaseAttack):
         points = frame.points.copy()
         noise = ctx.rng.normal(loc=0.0, scale=sigma, size=points[:, :3].shape)
         points[:, :3] += noise.astype(points.dtype)
-        return sample.with_lidar_frame(
-            LidarFrame(points, frame.fields, frame.sensor_model)
-        )
+        return sample.with_lidar_frame(LidarFrame(points, frame.fields, frame.sensor_model))

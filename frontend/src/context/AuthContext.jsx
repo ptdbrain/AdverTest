@@ -3,7 +3,25 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { loginGoogleSSO, getGoogleAuthConfig, getAuthMe, loginUser, registerUser } from "@/lib/api";
 
-const AuthContext = createContext(null);
+const DEFAULT_AUTH_FALLBACK = {
+  user: null,
+  token: null,
+  isAuthenticated: false,
+  role: "ENGINEER",
+  isLoading: false,
+  googleConfig: { client_id: "", configured: false, demo_profiles: [] },
+  isAuthModalOpen: false,
+  openAuthModal: () => {},
+  closeAuthModal: () => {},
+  loginWithGoogle: async () => {},
+  loginWithDemoProfile: async () => {},
+  loginWithCredentials: async () => {},
+  registerWithCredentials: async () => {},
+  logout: () => {},
+  switchRole: () => {},
+};
+
+const AuthContext = createContext(DEFAULT_AUTH_FALLBACK);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -143,24 +161,6 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   );
 }
-
-const DEFAULT_AUTH_FALLBACK = {
-  user: null,
-  token: null,
-  isAuthenticated: false,
-  role: "ENGINEER",
-  isLoading: false,
-  googleConfig: { client_id: "", configured: false, demo_profiles: [] },
-  isAuthModalOpen: false,
-  openAuthModal: () => {},
-  closeAuthModal: () => {},
-  loginWithGoogle: async () => {},
-  loginWithDemoProfile: async () => {},
-  loginWithCredentials: async () => {},
-  registerWithCredentials: async () => {},
-  logout: () => {},
-  switchRole: () => {},
-};
 
 export function useAuth() {
   const context = useContext(AuthContext);
