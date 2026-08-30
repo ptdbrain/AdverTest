@@ -9,11 +9,8 @@ Covers:
 
 from __future__ import annotations
 
-import io
-import json
 import time
 import uuid
-import zipfile
 
 import numpy as np
 import pytest
@@ -138,6 +135,7 @@ def test_journey_b_benchmark_and_export(client) -> None:
     run_res = client.post(
         "/api/v1/runs",
         json={"attacks": ["gaussian_noise"], "severities": [1], "limit": 1, "seed": 42},
+        params={"project_id": client.headers["X-Project-Id"]},
     )
     assert run_res.status_code == 202
     run_id = run_res.json()["run_id"]
@@ -145,7 +143,7 @@ def test_journey_b_benchmark_and_export(client) -> None:
     # 3 & 4. Poll until terminal state
     completed = False
     for _ in range(50):
-        status_res = client.get(f"/api/v1/runs/{run_id}")
+        status_res = client.get(f"/api/v1/runs/{run_id}", params={"project_id": client.headers["X-Project-Id"]})
         assert status_res.status_code == 200
         status_data = status_res.json()
         if status_data["status"] in {"COMPLETED", "FAILED"}:
@@ -157,7 +155,7 @@ def test_journey_b_benchmark_and_export(client) -> None:
     assert completed, "Benchmark run did not reach COMPLETED within timeout"
 
     # 5. Fetch report
-    report_res = client.get(f"/api/v1/runs/{run_id}/report")
+    report_res = client.get(f"/api/v1/runs/{run_id}/report", params={"project_id": client.headers["X-Project-Id"]})
     assert report_res.status_code == 200
     report = report_res.json()
     assert report["run_id"] == run_id
@@ -165,22 +163,14 @@ def test_journey_b_benchmark_and_export(client) -> None:
     assert "cells" in report
     assert "provenance" in report
 
-    # 6. Real HTTP ZIP Download and verification
-    zip_res = client.get(f"/api/v1/runs/{run_id}/download-zip")
-    assert zip_res.status_code == 200
-    assert zip_res.headers["content-type"] == "application/zip"
-
-    # Inspect downloaded zip archive
-    zip_buffer = io.BytesIO(zip_res.content)
-    with zipfile.ZipFile(zip_buffer, "r") as zf:
-        namelist = zf.namelist()
-        assert "metrics_report.json" in namelist
-        assert "summary.csv" in namelist
-        unzipped_report = json.loads(zf.read("metrics_report.json").decode("utf-8"))
-        assert unzipped_report["run_id"] == run_id
-        assert unzipped_report["ap_clean"] == report["ap_clean"]
-        summary_csv = zf.read("summary.csv").decode("utf-8")
-        assert run_id in summary_csv
+    # 6. A simulation report remains visible for diagnostics but cannot be
+    # exported as a scientific ZIP conclusion.
+    zip_res = client.get(
+        f"/api/v1/runs/{run_id}/download-zip",
+        params={"project_id": client.headers["X-Project-Id"]},
+    )
+    assert zip_res.status_code == 409
+    assert zip_res.json()["detail"]["code"] == "NOT_ELIGIBLE_FOR_CONCLUSION_EXPORT"
 
 
 # =========================================================================
@@ -200,18 +190,24 @@ def test_journey_c_defense_workflow(client) -> None:
     run_res = client.post(
         "/api/v1/runs",
         json={"attacks": ["gaussian_noise"], "severities": [1], "limit": 1},
+        params={"project_id": client.headers["X-Project-Id"]},
     )
     assert run_res.status_code == 202
     baseline_run_id = run_res.json()["run_id"]
 
     for _ in range(50):
-        status_res = client.get(f"/api/v1/runs/{baseline_run_id}")
+        status_res = client.get(
+            f"/api/v1/runs/{baseline_run_id}", params={"project_id": client.headers["X-Project-Id"]}
+        )
         if status_res.json()["status"] == "COMPLETED":
             break
         time.sleep(0.1)
 
     # 2. Query available defence candidates
-    candidates_res = client.get(f"/api/v1/runs/{baseline_run_id}/defence-candidates")
+    candidates_res = client.get(
+        f"/api/v1/runs/{baseline_run_id}/defence-candidates",
+        params={"project_id": client.headers["X-Project-Id"]},
+    )
     assert candidates_res.status_code == 200
 
     # 3. Defense run attempt with non-existent or role-invalid checkpoint is rejected
@@ -221,6 +217,7 @@ def test_journey_c_defense_workflow(client) -> None:
             "baseline_run_id": baseline_run_id,
             "checkpoint_id": "non-existent-checkpoint-id",
         },
+        params={"project_id": client.headers["X-Project-Id"]},
     )
     assert invalid_def_res.status_code in (404, 422)
 
@@ -228,10 +225,13 @@ def test_journey_c_defense_workflow(client) -> None:
     candidate_res = client.post(
         "/api/v1/runs",
         json={"attacks": ["gaussian_noise"], "severities": [1], "limit": 1},
+        params={"project_id": client.headers["X-Project-Id"]},
     )
     candidate_run_id = candidate_res.json()["run_id"]
     for _ in range(50):
-        status_res = client.get(f"/api/v1/runs/{candidate_run_id}")
+        status_res = client.get(
+            f"/api/v1/runs/{candidate_run_id}", params={"project_id": client.headers["X-Project-Id"]}
+        )
         if status_res.json()["status"] == "COMPLETED":
             break
         time.sleep(0.1)
@@ -239,11 +239,13 @@ def test_journey_c_defense_workflow(client) -> None:
     comp_res = client.post(
         "/api/v1/model-comparisons",
         json={"baseline_run_id": baseline_run_id, "candidate_run_id": candidate_run_id},
+        params={"project_id": client.headers["X-Project-Id"]},
     )
     assert comp_res.status_code == 201
     comp_data = comp_res.json()
     assert "comparison_id" in comp_data
-    assert "recovery_report" in comp_data
+    assert comp_data["eligibility"]["status"] == "NOT_ELIGIBLE"
+    assert "recovery" in comp_data
     assert "metric_deltas" in comp_data
 
 

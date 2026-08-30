@@ -60,10 +60,7 @@ export function filterCompletedRuns(runs = [], query = "") {
 
 export function primaryMetricForCell(report = {}, cell = {}, taskId = resolveReportTask(report), metricKey = null) {
   const key = metricKey || metricCatalogForTask(taskId)[0].key;
-  const measured = finite(cell?.metrics?.[key]);
-  if (measured != null) return measured;
-  const hasExplicitCleanMetric = finite(report?.metrics?.clean?.[key]) != null;
-  return !hasExplicitCleanMetric && taskId !== "segmentation" ? finite(cell?.ap) : null;
+  return finite(cell?.metrics?.[key]);
 }
 
 export function buildRunDecisionView(report = {}) {
@@ -74,9 +71,7 @@ export function buildRunDecisionView(report = {}) {
   const benchmarkAvailable = report?.evidence?.status === "VERIFIED";
   const cleanMetrics = metrics.clean || {};
   const explicitPrimary = finite(cleanMetrics[primary.key]);
-  const allowLegacyPrimary = explicitPrimary == null && taskId !== "segmentation";
-  const legacyPrimary = allowLegacyPrimary ? finite(report.ap_clean) : null;
-  const clean = benchmarkAvailable ? (explicitPrimary ?? legacyPrimary) : null;
+  const clean = benchmarkAvailable ? explicitPrimary : null;
   const cellValues = (report.cells || [])
     .map((cell) => primaryMetricForCell(report, cell, taskId, primary.key))
     .filter((value) => value != null);

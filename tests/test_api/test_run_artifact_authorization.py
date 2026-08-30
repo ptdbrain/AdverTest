@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import io
-import json
 import uuid
-import zipfile
 
 from fastapi.testclient import TestClient
 
@@ -65,7 +62,7 @@ def _completed_report(run_id: str) -> dict:
     }
 
 
-def test_ineligible_run_exports_are_diagnostic_only_and_cannot_be_promoted() -> None:
+def test_ineligible_run_cannot_export_or_be_promoted() -> None:
     client = TestClient(main_module.app)
     owner_id, owner_token = _register(client, "run-owner")
     _, outsider_token = _register(client, "run-outsider")
@@ -95,22 +92,24 @@ def test_ineligible_run_exports_are_diagnostic_only_and_cannot_be_promoted() -> 
         params={"project_id": project_id},
         headers={"Authorization": f"Bearer {owner_token}"},
     )
-    assert response.status_code == 200, response.text
-    assert response.headers["content-type"] == "application/zip"
-    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-        assert {"diagnostic_report.json", "run_config.json"} <= set(archive.namelist())
-        assert "summary.csv" not in archive.namelist()
-        diagnostic = json.loads(archive.read("diagnostic_report.json"))
-        assert diagnostic["evidence"]["status"] == "NOT_ELIGIBLE"
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "NOT_ELIGIBLE_FOR_CONCLUSION_EXPORT"
 
     pdf_response = client.get(
         f"/api/v1/runs/{run_id}/download-pdf",
         params={"project_id": project_id},
         headers={"Authorization": f"Bearer {owner_token}"},
     )
-    assert pdf_response.status_code == 200, pdf_response.text
-    assert pdf_response.content.startswith(b"%PDF-1.4")
-    assert b"NOT ELIGIBLE - NO BENCHMARK CONCLUSION" in pdf_response.content
+    assert pdf_response.status_code == 409, pdf_response.text
+    assert pdf_response.json()["detail"]["code"] == "NOT_ELIGIBLE_FOR_CONCLUSION_EXPORT"
+
+    json_response = client.get(
+        f"/api/v1/runs/{run_id}/export",
+        params={"project_id": project_id, "format": "json"},
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert json_response.status_code == 409, json_response.text
+    assert json_response.json()["detail"]["code"] == "NOT_ELIGIBLE_FOR_CONCLUSION_EXPORT"
 
     promotion_response = client.post(
         f"/api/v1/runs/{run_id}/promote",

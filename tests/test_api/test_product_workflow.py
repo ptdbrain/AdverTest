@@ -85,4 +85,4 @@ async def test_unknown_model_comparison_is_not_silently_created(client):
     )
 
     assert response.status_code == 404
-    assert "unknown run" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "RUN_NOT_FOUND_IN_PROJECT"

@@ -27,48 +27,14 @@ async def _create_completed_benchmark_run(client, attack_name: str = "gaussian_n
 
 
 @pytest.mark.asyncio
-async def test_run_analytics_endpoints(client) -> None:
-    """Test all 5 single-run analytics endpoints."""
+async def test_simulation_run_analytics_is_not_presented_as_measured(client) -> None:
+    """Synthetic completed runs cannot produce scientific analytics."""
     run_id = await _create_completed_benchmark_run(client)
 
-    # 1. Summary
-    summary_resp = await client.get(f"/api/v1/analytics/runs/{run_id}/summary")
-    assert summary_resp.status_code == 200
-    summary_data = summary_resp.json()
-    assert summary_data["run_id"] == run_id
-    assert "ap_clean" in summary_data
-    assert "mean_attack_ap" in summary_data
-    assert "robust_score" in summary_data
-
-    # 2. Attacks
-    attacks_resp = await client.get(f"/api/v1/analytics/runs/{run_id}/attacks")
-    assert attacks_resp.status_code == 200
-    attacks_data = attacks_resp.json()
-    assert isinstance(attacks_data, list)
-    assert len(attacks_data) >= 1
-    assert attacks_data[0]["attack"] == "gaussian_noise"
-
-    # 3. Severities
-    sev_resp = await client.get(f"/api/v1/analytics/runs/{run_id}/severities")
-    assert sev_resp.status_code == 200
-    sev_data = sev_resp.json()
-    assert isinstance(sev_data, list)
-    assert len(sev_data) >= 1
-    assert "severity" in sev_data[0]
-
-    # 4. Classes
-    classes_resp = await client.get(f"/api/v1/analytics/runs/{run_id}/classes")
-    assert classes_resp.status_code == 200
-    classes_data = classes_resp.json()
-    assert isinstance(classes_data, list)
-
-    # 5. Samples
-    samples_resp = await client.get(f"/api/v1/analytics/runs/{run_id}/samples?limit=10")
-    assert samples_resp.status_code == 200
-    samples_data = samples_resp.json()
-    assert "total_samples" in samples_data
-    assert "items" in samples_data
-    assert isinstance(samples_data["items"], list)
+    for suffix in ("summary", "attacks", "severities", "classes", "samples?limit=10", "distance"):
+        response = await client.get(f"/api/v1/analytics/runs/{run_id}/{suffix}")
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "NOT_ELIGIBLE"
 
 
 @pytest.mark.asyncio

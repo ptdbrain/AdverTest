@@ -3,7 +3,7 @@ import hmac
 import json
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from src.api.dependencies import get_runner, get_store, get_worker
 from src.api.jobs import LocalRunWorker, SqliteRunStore
@@ -186,26 +186,27 @@ async def download_run_artifacts_zip(
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
 
+    report = record.get("report")
+    if not report:
+        raise HTTPException(status_code=409, detail={"code": "REPORT_NOT_READY"})
+    evidence = _report_evidence(report)
+    if evidence["status"] != "VERIFIED":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "NOT_ELIGIBLE_FOR_CONCLUSION_EXPORT", "evidence": evidence},
+        )
+
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        report = record.get("report") or {}
-        evidence = _report_evidence(report)
-        if report:
-            if evidence["status"] == "VERIFIED":
-                zf.writestr("metrics_report.json", json.dumps(report, indent=2))
-                model_name = report.get("model", "unknown")
-                dataset_name = report.get("dataset", "unknown")
-                ap_clean = report.get("ap_clean", "")
-                csv_lines = [
-                    "run_id,model,dataset,ap_clean,status,evidence_status",
-                    f"{run_id},{model_name},{dataset_name},{ap_clean},{record.get('status', 'COMPLETED')},VERIFIED",
-                ]
-                zf.writestr("summary.csv", "\n".join(csv_lines) + "\n")
-            else:
-                zf.writestr(
-                    "diagnostic_report.json",
-                    json.dumps(_diagnostic_export(run_id, report, evidence), indent=2),
-                )
+        zf.writestr("metrics_report.json", json.dumps(report, indent=2))
+        model_name = report.get("model", "unknown")
+        dataset_name = report.get("dataset", "unknown")
+        ap_clean = report.get("ap_clean", "")
+        csv_lines = [
+            "run_id,model,dataset,ap_clean,status,evidence_status",
+            f"{run_id},{model_name},{dataset_name},{ap_clean},{record.get('status', 'COMPLETED')},VERIFIED",
+        ]
+        zf.writestr("summary.csv", "\n".join(csv_lines) + "\n")
 
         config = record.get("config") or {}
         if config:
@@ -216,7 +217,7 @@ async def download_run_artifacts_zip(
             zf.writestr("events.json", json.dumps(events, indent=2))
 
         cells = report.get("cells", [])
-        if cells and evidence["status"] == "VERIFIED":
+        if cells:
             zf.writestr("samples_diagnostics.json", json.dumps(cells, indent=2))
 
         for artifact in artifacts.list_for_run(project_id, run_id, actor_id=actor_id):
@@ -256,6 +257,12 @@ async def download_run_report_pdf(
     report = record.get("report")
     if not report:
         raise HTTPException(status_code=404, detail="Report not ready")
+    evidence = _report_evidence(report)
+    if evidence["status"] != "VERIFIED":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "NOT_ELIGIBLE_FOR_CONCLUSION_EXPORT", "evidence": evidence},
+        )
 
     pdf_bytes = generate_run_report_pdf(report, run_id=run_id)
     return Response(
@@ -263,6 +270,53 @@ async def download_run_report_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=advertest_report_{run_id}.pdf"},
     )
+
+
+@router.get("/{run_id}/export")
+async def export_run_report_data(
+    run_id: str,
+    format: str,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
+    store: SqliteRunStore = Depends(get_store),
+) -> Response:
+    """Export canonical JSON or CSV only when the server verifies evidence."""
+    del actor_id
+    record = store.get_scoped(run_id, project_id=project_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Run not found")
+    report = record.get("report")
+    if not report:
+        raise HTTPException(status_code=409, detail={"code": "REPORT_NOT_READY"})
+    evidence = _report_evidence(report)
+    if evidence["status"] != "VERIFIED":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "NOT_ELIGIBLE_FOR_CONCLUSION_EXPORT", "evidence": evidence},
+        )
+    if format == "json":
+        return Response(
+            json.dumps(report, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename=advertest_report_{run_id}.json"},
+        )
+    if format == "csv":
+        model_name = report.get("model", "unknown")
+        dataset_name = report.get("dataset", "unknown")
+        ap_clean = report.get("ap_clean", "")
+        csv_payload = "\n".join(
+            [
+                "run_id,model,dataset,ap_clean,status,evidence_status",
+                f"{run_id},{model_name},{dataset_name},{ap_clean},{record.get('status', 'COMPLETED')},VERIFIED",
+                "",
+            ]
+        )
+        return Response(
+            csv_payload,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=advertest_report_{run_id}.csv"},
+        )
+    raise HTTPException(status_code=422, detail={"code": "EXPORT_FORMAT_UNSUPPORTED", "format": format})
 
 
 @router.post("/{run_id}/promote", status_code=201)
@@ -314,18 +368,6 @@ def _report_evidence(report: dict) -> dict:
     ).as_dict()
 
 
-def _diagnostic_export(run_id: str, report: dict, evidence: dict) -> dict:
-    """Non-eligible exports carry audit context, never a benchmark conclusion."""
-    return {
-        "run_id": run_id,
-        "classification": "NOT_ELIGIBLE - NO BENCHMARK CONCLUSION",
-        "model": report.get("model"),
-        "model_version": report.get("model_version"),
-        "dataset": report.get("dataset"),
-        "n_samples": report.get("n_samples"),
-        "evidence": evidence,
-        "provenance": report.get("provenance") or {},
-    }
 
 
 def _safe_zip_filename(value: object) -> str:

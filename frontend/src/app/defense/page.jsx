@@ -19,6 +19,7 @@ import Button from "@/components/common/Button";
 import Card from "@/components/common/Card";
 import DefenseTargetSelector from "@/components/DefenseTargetSelector";
 import PageHeader from "@/components/layout/PageHeader";
+import { useProjectContext } from "@/context/ProjectContext";
 import {
   createModelComparison,
   createDefenceRun,
@@ -42,6 +43,7 @@ function messageOf(error, fallback) {
 }
 
 export default function DefensePage() {
+  const { projectId } = useProjectContext();
   const [sessions, setSessions] = useState([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [sessionsError, setSessionsError] = useState("");
@@ -120,22 +122,47 @@ export default function DefensePage() {
     : "Chọn phiên và attack run để sinh lệnh huấn luyện.";
 
   const loadSessions = useCallback(async () => {
+    if (!projectId) {
+      setSessions([]);
+      setSessionsError("Chọn project trước khi chọn mục tiêu phòng thủ.");
+      setSessionsLoading(false);
+      return;
+    }
     setSessionsLoading(true);
     setSessionsError("");
     try {
       const items = await listSessions();
-      setSessions(Array.isArray(items) ? items : []);
+      const nextSessions = Array.isArray(items) ? items : [];
+      setSessions(nextSessions);
+      const requestedRunId = new URLSearchParams(window.location.search).get("run_id");
+      if (requestedRunId) {
+        const target = nextSessions
+          .map((session) => ({ session, run: session.runs?.find((run) => run.backend_run_id === requestedRunId) }))
+          .find((item) => item.run);
+        if (target) {
+          setSelectedSessionId(target.session.id);
+          setSelectedRunId(target.run.id);
+        } else {
+          setSessionsError("Run trong deep-link không thuộc project hiện tại hoặc không còn tồn tại.");
+        }
+      }
     } catch (error) {
       setSessions([]);
       setSessionsError(messageOf(error, "Không thể tải danh sách phiên thử nghiệm."));
     } finally {
       setSessionsLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     loadSessions();
   }, [loadSessions]);
+
+  useEffect(() => {
+    setSelectedSessionId("");
+    setSelectedRunId("");
+    clearDownstreamState();
+  }, [projectId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -318,7 +345,9 @@ export default function DefensePage() {
     <div className="space-y-5 animate-fade-in">
       <PageHeader
         title="Huấn luyện phòng thủ & Đánh giá đối kháng"
-        subtitle="Chọn đúng phiên và attack run trước khi cấu hình phòng thủ, sau đó đánh giá checkpoint mới trên cùng locked protocol."
+        subtitle={projectId
+          ? "Chọn đúng phiên và attack run trước khi cấu hình phòng thủ, sau đó đánh giá checkpoint mới trên cùng locked protocol."
+          : "Chọn project trong thanh điều hướng trước; hệ thống không hiển thị hay suy diễn evidence ngoài phạm vi project."}
         breadcrumb={[
           { label: "Trang chủ", href: "/dashboard" },
           { label: "Huấn luyện phòng thủ" },

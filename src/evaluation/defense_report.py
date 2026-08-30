@@ -106,8 +106,10 @@ def _rejection_reasons(
         for field in sorted(required_protocol_fields(task, dataset)):
             if not provenance.get(field):
                 reasons.append(f"{field.upper()}_MISSING")
-        if report.get("simulation_only") is True:
-            reasons.append("SIMULATION_ONLY")
+        if report.get("simulation_only") is not False:
+            reasons.append(
+                "SIMULATION_ONLY" if report.get("simulation_only") is True else "SIMULATION_STATUS_UNDECLARED"
+            )
         if _text(report.get("source_kind") or provenance.get("source_kind")).lower() == "demo":
             reasons.append("DEMO_SOURCE")
     if not definitions:

@@ -115,9 +115,10 @@ def test_reviews_authorization_and_cross_project_isolation(client, auth_service)
     reviewer, reviewer_token = _create_user_with_role(auth_service, "REVIEWER", "reviewer")
     researcher, researcher_token = _create_user_with_role(auth_service, "RESEARCHER", "researcher")
 
-    # Both authenticated users can view the catalog of recipes / reviews
+    # Project-scoped routes refuse even authenticated callers until a project
+    # context has passed membership validation.
     res = client.get("/api/v1/catalog/recipes/presets", headers={"Authorization": f"Bearer {researcher_token}"})
-    assert res.status_code == 200
+    assert res.status_code == 422
 
     # Ensure anonymous requests to protected admin actions fail
     res_anon = client.get("/api/v1/admin/users")
@@ -136,7 +137,7 @@ def test_checkpoint_and_dataset_security_matrix(client, auth_service) -> None:
 
     # GET /api/v1/model-versions
     res_models = client.get("/api/v1/model-versions", headers=headers)
-    assert res_models.status_code == 200
+    assert res_models.status_code == 422
 
 
 def test_suspended_user_is_strictly_blocked(client, auth_service) -> None:

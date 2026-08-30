@@ -85,6 +85,13 @@ _checkpoint_validations = _DynamicDependencyProxy(get_checkpoint_validations)
 _dataset_import_workers = _DynamicDependencyProxy(get_dataset_import_workers)
 
 
+def _require_project_record(record_type: str, record_id: str, *, project_id: str) -> dict[str, Any]:
+    record = _store.get_record(record_type, record_id)
+    if record is None or record.get("project_id") != project_id:
+        raise HTTPException(status_code=404, detail={"code": "RECORD_NOT_FOUND_IN_PROJECT", "record_id": record_id})
+    return record
+
+
 def _validate_uploaded_image(payload: bytes) -> tuple[str, tuple[int, int]]:
     try:
         with Image.open(BytesIO(payload)) as image:
@@ -231,12 +238,12 @@ async def workflow_job_events(job_id: str, websocket: WebSocket) -> None:
         return
 
 
-@router.post("/defense-profiles", status_code=201, include_in_schema=False)
+@router.post("/_deprecated/defense-profiles", status_code=410, include_in_schema=False)
 async def create_defense_profile(body: DefenseProfile) -> dict[str, Any]:
     return _store.put_record("defense_profile", body.profile_id, body.model_dump(mode="json"))
 
 
-@router.get("/defense-profiles/{profile_id}", include_in_schema=False)
+@router.get("/_deprecated/defense-profiles/{profile_id}", status_code=410, include_in_schema=False)
 async def get_defense_profile(profile_id: str) -> dict[str, Any]:
     profile = _store.get_record("defense_profile", profile_id)
     if profile is None:
@@ -244,7 +251,7 @@ async def get_defense_profile(profile_id: str) -> dict[str, Any]:
     return profile
 
 
-@router.post("/training-runs/estimate", include_in_schema=False)
+@router.post("/_deprecated/training-runs/estimate", status_code=410, include_in_schema=False)
 async def estimate_training_run(body: TrainingRunIn) -> dict[str, Any]:
     """Estimate a registered trainer without scheduling external training."""
     config = TrainingRunConfig(run_id=f"estimate-{uuid.uuid4().hex}", **body.model_dump(mode="json"))
@@ -254,7 +261,7 @@ async def estimate_training_run(body: TrainingRunIn) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=f"TRAINER_NOT_AVAILABLE: {exc}") from exc
 
 
-@router.post("/training-runs", status_code=202, include_in_schema=False)
+@router.post("/_deprecated/training-runs", status_code=410, include_in_schema=False)
 async def start_training_run(body: TrainingRunIn) -> dict[str, Any]:
     """Queue training only after the requested parent checkpoint is runnable."""
     version = next(
@@ -271,12 +278,12 @@ async def start_training_run(body: TrainingRunIn) -> dict[str, Any]:
     return _training_jobs.get(job_id) or {"id": job_id, "status": "QUEUED"}
 
 
-@router.get("/training-runs", include_in_schema=False)
+@router.get("/_deprecated/training-runs", status_code=410, include_in_schema=False)
 async def list_training_runs() -> list[dict[str, Any]]:
     return _training_jobs.list()
 
 
-@router.get("/training-runs/{job_id}", include_in_schema=False)
+@router.get("/_deprecated/training-runs/{job_id}", status_code=410, include_in_schema=False)
 async def get_training_run(job_id: str) -> dict[str, Any]:
     job = _training_jobs.get(job_id)
     if job is None:
@@ -284,7 +291,7 @@ async def get_training_run(job_id: str) -> dict[str, Any]:
     return job
 
 
-@router.post("/training-runs/{job_id}/cancel", include_in_schema=False)
+@router.post("/_deprecated/training-runs/{job_id}/cancel", status_code=410, include_in_schema=False)
 async def cancel_training_run(job_id: str) -> dict[str, Any]:
     if _training_jobs.get(job_id) is None:
         raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
@@ -292,21 +299,21 @@ async def cancel_training_run(job_id: str) -> dict[str, Any]:
     return _training_jobs.get(job_id) or {"id": job_id, "status": "CANCEL_REQUESTED"}
 
 
-@router.get("/training-runs/{job_id}/checkpoints", include_in_schema=False)
+@router.get("/_deprecated/training-runs/{job_id}/checkpoints", status_code=410, include_in_schema=False)
 async def get_training_checkpoints(job_id: str) -> list[dict[str, Any]]:
     if _training_jobs.get(job_id) is None:
         raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
     return _workflow_store.checkpoints(job_id)
 
 
-@router.get("/training-runs/{job_id}/events", include_in_schema=False)
+@router.get("/_deprecated/training-runs/{job_id}/events", status_code=410, include_in_schema=False)
 async def get_training_events(job_id: str) -> list[dict[str, Any]]:
     if _training_jobs.get(job_id) is None:
         raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
     return _workflow_store.events(job_id)
 
 
-@router.get("/training-dataset-manifests/{manifest_id}", include_in_schema=False)
+@router.get("/_deprecated/training-dataset-manifests/{manifest_id}", status_code=410, include_in_schema=False)
 async def get_training_dataset_manifest(manifest_id: str) -> dict[str, Any]:
     """Retrieve a training dataset manifest record with lineage details."""
     manifest = _store.get_record("training_dataset_manifest", manifest_id)
@@ -315,35 +322,19 @@ async def get_training_dataset_manifest(manifest_id: str) -> dict[str, Any]:
     return manifest
 
 
-@router.websocket("/training-runs/{job_id}/events/ws")
+@router.websocket("/_deprecated/training-runs/{job_id}/events/ws")
 async def training_run_events(job_id: str, websocket: WebSocket) -> None:
-    """WebSocket stream for background training job events."""
-    await websocket.accept()
-    if _training_jobs.get(job_id) is None:
-        await websocket.send_json({"error": "unknown training run"})
-        await websocket.close(code=4404)
-        return
-    cursor = 0
-    try:
-        while True:
-            events = _workflow_store.events(job_id)
-            for event in events[cursor:]:
-                cursor += 1
-                await websocket.send_json(event)
-            job = _training_jobs.get(job_id)
-            if job and job["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
-                return
-            await asyncio.sleep(0.25)
-    except WebSocketDisconnect:
-        return
+    """Retired unscoped WebSocket endpoint; clients must use the scoped route."""
+    del job_id
+    await websocket.close(code=4404)
 
 
-@router.post("/retraining-backlogs", status_code=201, include_in_schema=False)
+@router.post("/_deprecated/retraining-backlogs", status_code=410, include_in_schema=False)
 async def create_retraining_backlog(body: RetrainingBacklogIn) -> dict[str, Any]:
     return _workflow_store.create_backlog(body.name)
 
 
-@router.get("/retraining-backlogs/{backlog_id}", include_in_schema=False)
+@router.get("/_deprecated/retraining-backlogs/{backlog_id}", status_code=410, include_in_schema=False)
 async def get_retraining_backlog(backlog_id: str) -> dict[str, Any]:
     backlog = _workflow_store.get_backlog(backlog_id)
     if backlog is None:
@@ -351,7 +342,7 @@ async def get_retraining_backlog(backlog_id: str) -> dict[str, Any]:
     return backlog
 
 
-@router.post("/retraining-backlogs/{backlog_id}/items", status_code=201, include_in_schema=False)
+@router.post("/_deprecated/retraining-backlogs/{backlog_id}/items", status_code=410, include_in_schema=False)
 async def add_retraining_backlog_item(backlog_id: str, body: RetrainingBacklogItemIn) -> dict[str, Any]:
     try:
         return _workflow_store.add_backlog_item(backlog_id, body.failure_id)
@@ -361,7 +352,7 @@ async def add_retraining_backlog_item(backlog_id: str, body: RetrainingBacklogIt
         raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
 
 
-@router.post("/retraining-backlogs/{backlog_id}/approve", include_in_schema=False)
+@router.post("/_deprecated/retraining-backlogs/{backlog_id}/approve", status_code=410, include_in_schema=False)
 async def approve_retraining_backlog(backlog_id: str) -> dict[str, Any]:
     try:
         return _workflow_store.approve_backlog(backlog_id)
@@ -375,45 +366,6 @@ async def approve_retraining_backlog(backlog_id: str) -> dict[str, Any]:
 async def create_model_comparison(body: ModelComparisonIn) -> dict[str, Any]:
     del body
     raise HTTPException(status_code=410, detail="PROJECT_SCOPED_ROUTE_REQUIRED")
-
-
-def _comparison_metric_deltas(left: dict[str, Any], right: dict[str, Any]) -> dict[str, dict[str, float | str]]:
-    """Keep base/candidate metric families explicit rather than one blended score."""
-    output: dict[str, dict[str, float | str]] = {
-        # Compatibility alias retained for one API cycle.  New consumers use
-        # clean_ap50 / clean_ap75 / clean_map50_95 below.
-        "clean_detection_score": {
-            "value": float(right.get("ap_clean", 0.0)) - float(left.get("ap_clean", 0.0)),
-            "unit": "ratio",
-        },
-    }
-    for input_name, payload in (("clean", left), ("attacked", right)):
-        # ``attacked`` here is intentionally filled below from each run's final
-        # attack cell; no clean/attacked result is silently combined.
-        if input_name == "attacked":
-            continue
-        for metric in ("ap50", "ap75", "map50_95"):
-            before = _metric_value(payload, metric, attacked=False)
-            after = _metric_value(right, metric, attacked=False)
-            output[f"clean_{metric}"] = {"value": after - before, "unit": "ratio"}
-    for metric in ("ap50", "ap75", "map50_95"):
-        before = _metric_value(left, metric, attacked=True)
-        after = _metric_value(right, metric, attacked=True)
-        output[f"attacked_{metric}"] = {"value": after - before, "unit": "ratio"}
-    return output
-
-
-def _metric_value(report: dict[str, Any], metric: str, *, attacked: bool) -> float:
-    if not attacked:
-        values = (report.get("metrics") or {}).get("clean") or {}
-        if metric == "ap50":
-            return float(values.get(metric, report.get("ap_clean", 0.0)))
-        return float(values.get(metric, report.get("ap_clean", 0.0)))
-    cells = report.get("cells") or []
-    if not cells:
-        return 0.0
-    values = cells[-1].get("metrics") or {}
-    return float(values.get(metric, cells[-1].get("ap", 0.0)))
 
 
 @router.get("/_deprecated/model-comparisons/{comparison_id}", include_in_schema=False)
@@ -447,16 +399,15 @@ async def get_model_comparison_failures(comparison_id: str) -> dict[str, Any]:
 
 
 @router.post("/attack-recipes", status_code=201)
-async def create_recipe(body: RecipeRecordIn) -> dict[str, Any]:
-    return _store.put_record("attack_recipe", body.id, body.model_dump(mode="json"))
+async def create_recipe(body: RecipeRecordIn, project_id: str = Query(...)) -> dict[str, Any]:
+    payload = body.model_dump(mode="json")
+    payload["project_id"] = project_id
+    return _store.put_record("attack_recipe", body.id, payload)
 
 
 @router.get("/attack-recipes/{recipe_id}")
-async def get_recipe(recipe_id: str) -> dict[str, Any]:
-    recipe = _store.get_record("attack_recipe", recipe_id)
-    if recipe is None:
-        raise HTTPException(status_code=404, detail=f"unknown recipe {recipe_id!r}")
-    return recipe
+async def get_recipe(recipe_id: str, project_id: str = Query(...)) -> dict[str, Any]:
+    return _require_project_record("attack_recipe", recipe_id, project_id=project_id)
 
 
 @router.get("/catalog/recipes/presets")
@@ -493,7 +444,7 @@ async def list_recipe_presets() -> list[dict[str, Any]]:
 
 
 @router.post("/attack-recipes/randomize", status_code=201)
-async def randomize_recipe(body: RecipeRandomizeIn) -> dict[str, Any]:
+async def randomize_recipe(body: RecipeRandomizeIn, project_id: str = Query(...)) -> dict[str, Any]:
     """Generate a randomized attack recipe with N steps or filtered by group."""
     import random
 
@@ -513,12 +464,13 @@ async def randomize_recipe(body: RecipeRandomizeIn) -> dict[str, Any]:
         "name": f"Randomized Recipe ({len(steps)} steps)",
         "seed": body.seed,
         "steps": steps,
+        "project_id": project_id,
     }
     return _store.put_record("attack_recipe", recipe_id, payload)
 
 
 @router.post("/attack-recipes/sweep", status_code=201)
-async def sweep_recipe(body: RecipeSweepIn) -> dict[str, Any]:
+async def sweep_recipe(body: RecipeSweepIn, project_id: str = Query(...)) -> dict[str, Any]:
     """Generate a parameter sweep recipe across a range of severities."""
     attacks = load_attacks()
     if body.attack_id not in attacks:
@@ -529,16 +481,17 @@ async def sweep_recipe(body: RecipeSweepIn) -> dict[str, Any]:
         "id": recipe_id,
         "name": f"Severity Sweep: {body.attack_id}",
         "steps": steps,
+        "project_id": project_id,
     }
     return _store.put_record("attack_recipe", recipe_id, payload)
 
 
 @router.post("/attack-recipes/preview")
-async def preview_recipe(body: RecipePreviewIn) -> dict[str, Any]:
+async def preview_recipe(body: RecipePreviewIn, project_id: str = Query(...)) -> dict[str, Any]:
     """Preview recipe step details and estimated resource cost."""
     recipe_data = None
     if body.recipe_id:
-        recipe_data = _store.get_record("attack_recipe", body.recipe_id)
+        recipe_data = _require_project_record("attack_recipe", body.recipe_id, project_id=project_id)
         if recipe_data is None:
             raise HTTPException(status_code=404, detail=f"unknown recipe {body.recipe_id!r}")
     elif body.recipe:
@@ -561,7 +514,7 @@ async def preview_recipe(body: RecipePreviewIn) -> dict[str, Any]:
 
 
 @router.post("/benchmark/protocols", status_code=201)
-async def create_benchmark_protocol(body: dict[str, Any]) -> dict[str, Any]:
+async def create_benchmark_protocol(body: dict[str, Any], project_id: str = Query(...)) -> dict[str, Any]:
     """Create a typed benchmark protocol from request body.
 
     Generates a content-addressable protocol ID from metric-affecting inputs.
@@ -599,18 +552,17 @@ async def create_benchmark_protocol(body: dict[str, Any]) -> dict[str, Any]:
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail={"code": "INVALID_PROTOCOL", "message": str(exc)}) from exc
     payload = protocol.model_dump(mode="json")
+    payload["project_id"] = project_id
     payload["identity_hash"] = protocol.identity_hash()
     return _store.put_record("benchmark_protocol", protocol_id, payload)
 
 
 @router.post("/benchmark/protocols/{protocol_id}/lock")
-async def lock_benchmark_protocol(protocol_id: str) -> dict[str, Any]:
+async def lock_benchmark_protocol(protocol_id: str, project_id: str = Query(...)) -> dict[str, Any]:
     """Advance a VALIDATED protocol to LOCKED state."""
     from src.evaluation.benchmark_protocol import validate_protocol_transition
 
-    record = _store.get_record("benchmark_protocol", protocol_id)
-    if record is None:
-        raise HTTPException(status_code=404, detail=f"unknown protocol {protocol_id!r}")
+    record = _require_project_record("benchmark_protocol", protocol_id, project_id=project_id)
     current_state = record.get("state", "DRAFT")
     if not validate_protocol_transition(current_state, "LOCKED"):
         raise HTTPException(
@@ -640,19 +592,16 @@ async def lock_benchmark_protocol(protocol_id: str) -> dict[str, Any]:
 
 
 @router.get("/benchmark/protocols/{protocol_id}")
-async def get_benchmark_protocol(protocol_id: str) -> dict[str, Any]:
-    protocol = _store.get_record("benchmark_protocol", protocol_id)
-    if protocol is None:
-        raise HTTPException(status_code=404, detail=f"unknown protocol {protocol_id!r}")
-    return protocol
+async def get_benchmark_protocol(protocol_id: str, project_id: str = Query(...)) -> dict[str, Any]:
+    return _require_project_record("benchmark_protocol", protocol_id, project_id=project_id)
 
 
 @router.post("/benchmark/runs", status_code=202, response_model=RunJobOut)
-async def create_benchmark_run(config: RunConfig, protocol_id: str = Query(...)) -> RunJobOut:
+async def create_benchmark_run(
+    config: RunConfig, protocol_id: str = Query(...), project_id: str = Query(...)
+) -> RunJobOut:
     """Execute a locked protocol through the same durable async run worker."""
-    protocol = _store.get_record("benchmark_protocol", protocol_id)
-    if protocol is None:
-        raise HTTPException(status_code=404, detail=f"unknown protocol {protocol_id!r}")
+    protocol = _require_project_record("benchmark_protocol", protocol_id, project_id=project_id)
     if protocol.get("state") != "LOCKED":
         raise HTTPException(
             status_code=409,
@@ -757,7 +706,7 @@ async def list_base_checkpoints(
     ]
 
 
-@router.get("/defence-checkpoints", response_model=list[ModelVersionOut], include_in_schema=False)
+@router.get("/_deprecated/defence-checkpoints", response_model=list[ModelVersionOut], include_in_schema=False)
 async def list_defence_checkpoints(task_id: str = Query(...)) -> list[ModelVersionOut]:
     return [
         ModelVersionOut.from_domain(version)
@@ -776,7 +725,7 @@ async def get_model_version(version_id: str) -> ModelVersionOut:
     return ModelVersionOut.from_domain(version)
 
 
-@router.get("/model-versions/{version_id}/lineage", response_model=LineageGraphOut)
+@router.get("/_deprecated/model-versions/{version_id}/lineage", response_model=LineageGraphOut, include_in_schema=False)
 async def get_model_version_lineage(version_id: str) -> LineageGraphOut:
     """Return parent lineage chain and child model versions."""
     versions = _registered_model_versions()
@@ -792,7 +741,7 @@ async def get_model_version_lineage(version_id: str) -> LineageGraphOut:
     )
 
 
-@router.get("/model-versions/{version_id}/benchmark-history", include_in_schema=False)
+@router.get("/_deprecated/model-versions/{version_id}/benchmark-history", status_code=410, include_in_schema=False)
 async def get_model_version_benchmark_history(version_id: str) -> list[dict[str, Any]]:
     """Return historical benchmark run reports for a model version."""
     history = []
@@ -810,7 +759,7 @@ async def get_model_version_benchmark_history(version_id: str) -> list[dict[str,
     return history
 
 
-@router.get("/model-versions/{version_id}/gate-evidence", include_in_schema=False)
+@router.get("/_deprecated/model-versions/{version_id}/gate-evidence", status_code=410, include_in_schema=False)
 async def get_model_version_gate_evidence(version_id: str) -> dict[str, Any]:
     """Return checkpoint gate outcome and evidence records for a model version."""
     gate = _store.get_record("checkpoint_gate", version_id)
@@ -899,7 +848,7 @@ async def validate_recipe(body: RecipeValidationIn) -> RecipeValidationOut:
     )
 
 
-@router.post("/defence-runs", status_code=202, response_model=RunJobOut, include_in_schema=False)
+@router.post("/_deprecated/defence-runs", status_code=410, response_model=RunJobOut, include_in_schema=False)
 async def create_defence_run(body: DefenceRunIn) -> RunJobOut:
     """Run a reviewed Defence candidate on the baseline's immutable protocol."""
     baseline = _store.get(body.baseline_run_id)
@@ -982,7 +931,7 @@ async def create_inference_experiment(body: QuickInferenceIn) -> RunJobOut:
     return _job_out(_store.get(run_id))
 
 
-@router.get("/runs/{run_id}/defence-candidates", response_model=list[ModelVersionOut], include_in_schema=False)
+@router.get("/_deprecated/runs/{run_id}/defence-candidates", response_model=list[ModelVersionOut], include_in_schema=False)
 async def run_defence_candidates(run_id: str) -> list[ModelVersionOut]:
     """Fine-tuned/repaired weights are visible only after an attack run."""
     run = _require_run(run_id)
@@ -1052,21 +1001,23 @@ async def run_events(run_id: str, websocket: WebSocket) -> None:
 
 
 @router.get("/reviews", response_model=list[ReviewOut])
-async def list_reviews(status: str | None = Query(default=None)) -> list[ReviewOut]:
-    rows = _store.list_reviews(status=status)
+async def list_reviews(status: str | None = Query(default=None), project_id: str = Query(...)) -> list[ReviewOut]:
+    rows = [row for row in _store.list_reviews(status=status) if _store.get_scoped(row["run_id"], project_id=project_id)]
     return [ReviewOut(**row) for row in rows]
 
 
 @router.get("/reviews/{review_id}", response_model=ReviewOut)
-async def get_review(review_id: str) -> ReviewOut:
+async def get_review(review_id: str, project_id: str = Query(...)) -> ReviewOut:
     row = _store.get_review(review_id)
-    if row is None:
+    if row is None or not _store.get_scoped(row["run_id"], project_id=project_id):
         raise HTTPException(status_code=404, detail=f"unknown review {review_id!r}")
     return ReviewOut(**row)
 
 
 @router.post("/reviews", status_code=201, response_model=ReviewOut)
-async def create_review(body: CreateReviewIn) -> ReviewOut:
+async def create_review(body: CreateReviewIn, project_id: str = Query(...)) -> ReviewOut:
+    if _store.get_scoped(body.run_id, project_id=project_id) is None:
+        raise HTTPException(status_code=404, detail="RUN_NOT_FOUND_IN_PROJECT")
     review_id = _store.create_review(
         run_id=body.run_id,
         attack=body.attack,
@@ -1082,9 +1033,12 @@ async def create_review(body: CreateReviewIn) -> ReviewOut:
 
 
 @router.patch("/reviews/{review_id}", response_model=ReviewOut)
-async def resolve_review(review_id: str, body: ResolveReviewIn) -> ReviewOut:
+async def resolve_review(review_id: str, body: ResolveReviewIn, project_id: str = Query(...)) -> ReviewOut:
     from src.api.downstream_actions import trigger_downstream_actions
 
+    existing = _store.get_review(review_id)
+    if existing is None or not _store.get_scoped(existing["run_id"], project_id=project_id):
+        raise HTTPException(status_code=404, detail=f"unknown review {review_id!r}")
     success = _store.resolve_review(review_id, body.decision, body.decision_note, body.resolved_by)
     if not success:
         raise HTTPException(status_code=404, detail=f"unknown review {review_id!r}")
@@ -1095,21 +1049,23 @@ async def resolve_review(review_id: str, body: ResolveReviewIn) -> ReviewOut:
     # Batch resolve for all cluster members if requested
     if body.batch_cluster_id:
         cluster = _store.get_record("failure_cluster", body.batch_cluster_id)
-        if cluster:
+        if cluster and cluster.get("project_id") == project_id:
             member_ids = cluster.get("member_ids") or cluster.get("member_review_ids") or []
             for member_id in member_ids:
                 if member_id != review_id:
-                    _store.resolve_review(
-                        member_id,
-                        body.decision,
-                        f"[Batch Cụm] {body.decision_note}",
-                        body.resolved_by,
-                    )
+                    member = _store.get_review(member_id)
+                    if member and _store.get_scoped(member["run_id"], project_id=project_id):
+                        _store.resolve_review(
+                            member_id,
+                            body.decision,
+                            f"[Batch Cụm] {body.decision_note}",
+                            body.resolved_by,
+                        )
 
     return ReviewOut(**row)
 
 
-@router.get("/failure-cases", include_in_schema=False)
+@router.get("/_deprecated/failure-cases", status_code=410, include_in_schema=False)
 async def list_failure_cases(run_id: str | None = Query(default=None)) -> list[dict[str, Any]]:
     """Aggregate failure cases across completed benchmark runs or query by run_id."""
     failures = []
@@ -1123,14 +1079,14 @@ async def list_failure_cases(run_id: str | None = Query(default=None)) -> list[d
     return failures
 
 
-@router.get("/failure-clusters", include_in_schema=False)
+@router.get("/_deprecated/failure-clusters", status_code=410, include_in_schema=False)
 async def list_failure_clusters() -> list[dict[str, Any]]:
     """List all persisted failure clusters."""
     records = _store.list_records("failure_cluster")
     return records
 
 
-@router.post("/failure-clusters", status_code=201, include_in_schema=False)
+@router.post("/_deprecated/failure-clusters", status_code=410, include_in_schema=False)
 async def create_failure_cluster(body: FailureClusterCreateIn) -> dict[str, Any]:
     """Persist a failure cluster grouping related failure cases."""
     cluster_id = body.cluster_id or f"cluster-{uuid.uuid4().hex[:8]}"
@@ -1144,7 +1100,7 @@ async def create_failure_cluster(body: FailureClusterCreateIn) -> dict[str, Any]
     return _store.put_record("failure_cluster", cluster_id, payload)
 
 
-@router.post("/failure-clusters/auto-group", include_in_schema=False)
+@router.post("/_deprecated/failure-clusters/auto-group", status_code=410, include_in_schema=False)
 async def auto_group_failure_clusters(run_id: str | None = Query(default=None)) -> list[dict[str, Any]]:
     """Automatically cluster pending review items using SmartFailureClusterer."""
     from src.evaluation.smart_clustering import SmartFailureClusterer
@@ -1185,7 +1141,7 @@ async def auto_group_failure_clusters(run_id: str | None = Query(default=None)) 
     return results
 
 
-@router.get("/failure-clusters/{cluster_id}", include_in_schema=False)
+@router.get("/_deprecated/failure-clusters/{cluster_id}", status_code=410, include_in_schema=False)
 async def get_failure_cluster(cluster_id: str) -> dict[str, Any]:
     """Get detail for a specific failure cluster."""
     cluster = _store.get_record("failure_cluster", cluster_id)
@@ -1197,7 +1153,7 @@ async def get_failure_cluster(cluster_id: str) -> dict[str, Any]:
 # ---- Closed-Loop Training ----
 
 
-@router.post("/closed-loop/start", status_code=201, response_model=ClosedLoopSnapshotOut, include_in_schema=False)
+@router.post("/_deprecated/closed-loop/start", status_code=410, response_model=ClosedLoopSnapshotOut, include_in_schema=False)
 async def start_closed_loop(body: ClosedLoopStartIn) -> dict[str, Any]:
     """Start a closed-loop retraining pipeline from a completed benchmark run."""
     from src.training.closed_loop import ClosedLoopTracker
@@ -1269,7 +1225,7 @@ async def start_closed_loop(body: ClosedLoopStartIn) -> dict[str, Any]:
     return payload
 
 
-@router.get("/closed-loop/{loop_id}", response_model=ClosedLoopSnapshotOut, include_in_schema=False)
+@router.get("/_deprecated/closed-loop/{loop_id}", status_code=410, response_model=ClosedLoopSnapshotOut, include_in_schema=False)
 async def get_closed_loop(loop_id: str) -> dict[str, Any]:
     """Get current state of a closed-loop pipeline."""
     job = _workflow_store.get_job(loop_id)
@@ -1287,7 +1243,7 @@ async def get_closed_loop(loop_id: str) -> dict[str, Any]:
     return checkpoints[-1]["payload"]
 
 
-@router.post("/closed-loop/{loop_id}/advance", response_model=ClosedLoopSnapshotOut, include_in_schema=False)
+@router.post("/_deprecated/closed-loop/{loop_id}/advance", status_code=410, response_model=ClosedLoopSnapshotOut, include_in_schema=False)
 async def advance_closed_loop(loop_id: str, body: ClosedLoopAdvanceIn) -> dict[str, Any]:
     """Advance a recovery loop to a target state if supported by valid persisted evidence."""
     from src.training.closed_loop import ClosedLoopAuditEntry, ClosedLoopTracker, validate_transition
@@ -1810,44 +1766,9 @@ def _resolve_run_config(config: RunConfig, *, allow_defence: bool = False) -> Ru
     )
 
 
-def _comparison_signature(report: dict[str, Any]) -> dict[str, Any]:
-    """Identity needed for a paired recovery claim; model identity is deliberately excluded."""
-    provenance = report.get("provenance") or {}
-    run_config = provenance.get("run_config") or {}
-    samples = report.get("sample_results") or []
-    return {
-        "dataset_version_id": provenance.get("dataset_version_id")
-        or run_config.get("dataset_version_id")
-        or report.get("dataset"),
-        "benchmark_protocol_id": provenance.get("benchmark_protocol_id") or run_config.get("benchmark_protocol_id"),
-        "recipe_hash": (provenance.get("recipe") or {}).get("recipe_hash"),
-        "sample_ids": sorted(str(item.get("sample_id")) for item in samples if item.get("sample_id")),
-        "seed": run_config.get("seed"),
-        "limit": run_config.get("limit"),
-        "iou_threshold": run_config.get("iou_threshold"),
-        "confidence_threshold": run_config.get("confidence_threshold"),
-        "preprocessing": run_config.get("preprocessing_version"),
-        "image_size": run_config.get("image_size"),
-    }
-
-
 def _is_failure_case(payload: dict[str, Any]) -> bool:
-    """Accept only benchmark samples carrying an explicit failure signal."""
-    degradation = payload.get("degradation_hint")
-    has_positive_degradation = (
-        isinstance(degradation, (int, float)) and not isinstance(degradation, bool) and degradation > 0.0
-    )
-    has_reason = any(
-        isinstance(payload.get(field), str) and bool(payload[field].strip()) for field in ("reason", "failure_reason")
-    )
-    return has_positive_degradation or has_reason or payload.get("failed") is True
-
-
-def _mean_attack_score(report: dict[str, Any]) -> float:
-    cells = report.get("cells", [])
-    if not cells:
-        return float(report["ap_clean"])
-    return sum(float(cell["ap"]) for cell in cells) / len(cells)
+    """Legacy helper retained for non-Defence routes; requires an explicit evaluator flag."""
+    return payload.get("failed") is True
 
 
 def _require_run(run_id: str) -> dict[str, Any]:

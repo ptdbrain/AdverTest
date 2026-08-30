@@ -310,80 +310,9 @@ def attack_catalog_availability(
     return None, exclusions
 
 
-def comparison_signature(report: dict[str, Any]) -> dict[str, Any]:
-    """Identity needed for a paired recovery claim; model identity is deliberately excluded."""
-    provenance = report.get("provenance") or {}
-    run_config = provenance.get("run_config") or {}
-    samples = report.get("sample_results") or []
-    return {
-        "dataset_version_id": provenance.get("dataset_version_id")
-        or run_config.get("dataset_version_id")
-        or report.get("dataset"),
-        "benchmark_protocol_id": provenance.get("benchmark_protocol_id") or run_config.get("benchmark_protocol_id"),
-        "recipe_hash": (provenance.get("recipe") or {}).get("recipe_hash"),
-        "sample_ids": sorted(str(item.get("sample_id")) for item in samples if item.get("sample_id")),
-        "seed": run_config.get("seed"),
-        "limit": run_config.get("limit"),
-        "iou_threshold": run_config.get("iou_threshold"),
-        "confidence_threshold": run_config.get("confidence_threshold"),
-        "preprocessing": run_config.get("preprocessing_version"),
-        "image_size": run_config.get("image_size"),
-    }
-
-
-def comparison_metric_deltas(left: dict[str, Any], right: dict[str, Any]) -> dict[str, dict[str, float | str]]:
-    """Keep base/candidate metric families explicit rather than one blended score."""
-    output: dict[str, dict[str, float | str]] = {
-        "clean_detection_score": {
-            "value": float(right.get("ap_clean", 0.0)) - float(left.get("ap_clean", 0.0)),
-            "unit": "ratio",
-        },
-    }
-    for input_name, payload in (("clean", left), ("attacked", right)):
-        if input_name == "attacked":
-            continue
-        for metric in ("ap50", "ap75", "map50_95"):
-            before = _metric_value(payload, metric, attacked=False)
-            after = _metric_value(right, metric, attacked=False)
-            output[f"clean_{metric}"] = {"value": after - before, "unit": "ratio"}
-    for metric in ("ap50", "ap75", "map50_95"):
-        before = _metric_value(left, metric, attacked=True)
-        after = _metric_value(right, metric, attacked=True)
-        output[f"attacked_{metric}"] = {"value": after - before, "unit": "ratio"}
-    return output
-
-
-def _metric_value(report: dict[str, Any], metric: str, *, attacked: bool) -> float:
-    if not attacked:
-        values = (report.get("metrics") or {}).get("clean") or {}
-        if metric == "ap50":
-            return float(values.get(metric, report.get("ap_clean", 0.0)))
-        return float(values.get(metric, report.get("ap_clean", 0.0)))
-    cells = report.get("cells") or []
-    if not cells:
-        return 0.0
-    values = cells[-1].get("metrics") or {}
-    return float(values.get(metric, cells[-1].get("ap", 0.0)))
-
-
-def mean_attack_score(report: dict[str, Any]) -> float:
-    """Compute average AP across evaluated attack cells."""
-    cells = report.get("cells", [])
-    if not cells:
-        return float(report.get("ap_clean", 0.0))
-    return sum(float(cell["ap"]) for cell in cells) / len(cells)
-
-
 def is_failure_case(payload: dict[str, Any]) -> bool:
-    """Accept only benchmark samples carrying an explicit failure signal."""
-    degradation = payload.get("degradation_hint")
-    has_positive_degradation = (
-        isinstance(degradation, (int, float)) and not isinstance(degradation, bool) and degradation > 0.0
-    )
-    has_reason = any(
-        isinstance(payload.get(field), str) and bool(payload[field].strip()) for field in ("reason", "failure_reason")
-    )
-    return has_positive_degradation or has_reason or payload.get("failed") is True
+    """Accept a recovery-loop failure only when the evaluator persisted it explicitly."""
+    return payload.get("failed") is True
 
 
 def require_run(store: SqliteRunStore, run_id: str) -> dict[str, Any]:
@@ -426,9 +355,6 @@ _sample_with_artifact_urls = sample_with_artifact_urls
 _registered_model_versions = registered_model_versions
 _resolve_run_config = resolve_run_config
 _attack_catalog_availability = attack_catalog_availability
-_comparison_signature = comparison_signature
-_comparison_metric_deltas = comparison_metric_deltas
-_mean_attack_score = mean_attack_score
 _is_failure_case = is_failure_case
 _require_run = require_run
 _require_completed_report = require_completed_report

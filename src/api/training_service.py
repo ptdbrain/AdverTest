@@ -19,8 +19,11 @@ class TrainingJobService:
         self.registry = registry
         self.pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="advertest-training")
 
-    def enqueue(self, request: TrainingRunConfig) -> str:
-        job_id = self.store.create_job("training", request.model_dump(mode="json"))
+    def enqueue(self, request: TrainingRunConfig, *, project_id: str | None = None) -> str:
+        payload = request.model_dump(mode="json")
+        if project_id:
+            payload["project_id"] = project_id
+        job_id = self.store.create_job("training", payload)
         config = request.model_copy(update={"run_id": job_id})
         self.pool.submit(self._execute, job_id, config)
         return job_id
@@ -28,8 +31,11 @@ class TrainingJobService:
     def get(self, job_id: str) -> dict | None:
         return self.store.get_job(job_id)
 
-    def list(self) -> list[dict]:
-        return self.store.jobs("training")
+    def list(self, *, project_id: str | None = None) -> list[dict]:
+        jobs = self.store.jobs("training")
+        if project_id is None:
+            return jobs
+        return [job for job in jobs if job.get("request", {}).get("project_id") == project_id]
 
     def cancel(self, job_id: str) -> bool:
         return self.store.request_cancel(job_id)
@@ -41,7 +47,9 @@ class TrainingJobService:
     def recover(self) -> list[str]:
         recovered: list[str] = []
         for job in self.store.recoverable("training"):
-            config = TrainingRunConfig(**job["request"]).model_copy(update={"run_id": job["id"]})
+            payload = dict(job["request"])
+            payload.pop("project_id", None)
+            config = TrainingRunConfig(**payload).model_copy(update={"run_id": job["id"]})
             self.pool.submit(self._execute, job["id"], config)
             recovered.append(job["id"])
         return recovered

@@ -7,6 +7,8 @@ import uuid
 from fastapi.testclient import TestClient
 
 import src.main as main_module
+from src.api.dependencies import get_store
+from src.pipeline.runner import RunConfig
 
 
 def _register_actor(client: TestClient, label: str) -> tuple[str, str]:
@@ -87,3 +89,43 @@ def test_session_evidence_requires_active_project_membership() -> None:
         ).status_code
         == 403
     )
+
+
+def test_session_cannot_attach_a_backend_run_from_another_project() -> None:
+    client = TestClient(main_module.app)
+    owner_id, owner_token = _register_actor(client, "session-link-owner")
+    foreign_owner_id, foreign_token = _register_actor(client, "session-link-foreign")
+    project_id = _create_owned_project(client, owner_token)
+    foreign_project_id = _create_owned_project(client, foreign_token)
+    foreign_run_id = get_store().create(
+        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1),
+        project_id=foreign_project_id,
+        owner_user_id=foreign_owner_id,
+    )
+    payload = _session_payload(f"session-{uuid.uuid4().hex[:16]}")
+    payload["runs"] = [
+        {
+            "id": "linked-run",
+            "name": "Forged verified run",
+            "timestamp": "2026-08-30T00:00:00Z",
+            "attack_type": "fog",
+            "attack_name": "Fog",
+            "severity": 3,
+            "clean_map": 0.9,
+            "attacked_map": 0.1,
+            "map_drop_pct": 88.9,
+            "clean_conf": 0.9,
+            "attacked_conf": 0.1,
+            "backend_run_id": foreign_run_id,
+            "evidence_status": "VERIFIED",
+        }
+    ]
+
+    response = client.post(
+        "/api/v1/sessions",
+        params={"project_id": project_id},
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json=payload,
+    )
+
+    assert response.status_code == 404

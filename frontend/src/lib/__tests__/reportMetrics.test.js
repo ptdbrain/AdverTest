@@ -43,6 +43,21 @@ describe("task-aware report metrics", () => {
     expect(primaryMetricForCell(report, report.cells[0], view.taskId, view.primary.key)).toBeNull();
   });
 
+  it("does not use legacy AP fields even when a report claims verified evidence", () => {
+    const report = {
+      ap_clean: 0.9,
+      cells: [{ ap: 0.4 }],
+      provenance: { run_config: { task_id: "detection2d" } },
+      evidence: { status: "VERIFIED" },
+    };
+
+    const view = buildRunDecisionView(report);
+
+    expect(view.primary.clean).toBeNull();
+    expect(view.primary.attacked).toBeNull();
+    expect(primaryMetricForCell(report, report.cells[0], view.taskId, view.primary.key)).toBeNull();
+  });
+
   it("uses measured cell metrics and carries protocol provenance", () => {
     const view = buildRunDecisionView({
       run_id: "run-3d",

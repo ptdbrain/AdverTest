@@ -41,7 +41,9 @@ async def test_attack_catalog_separates_task_families_base_and_defence_checkpoin
     assert all(item["model_family_id"] == "yolo11" for item in base)
 
     defence = (await client.get("/api/v1/defence-checkpoints", params={"task_id": "detection2d"})).json()
-    assert defence and {item["checkpoint_role"] for item in defence} >= {"defence_baseline", "fine_tuned", "repaired"}
+    # Defence checkpoints are project-owned artifacts. A new project sees an
+    # honest empty state rather than global placeholder candidates.
+    assert defence == []
     assert not {item["id"] for item in base} & {item["id"] for item in defence}
 
 

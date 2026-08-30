@@ -201,29 +201,21 @@ def test_api_get_risk_rubric(client: TestClient):
 
 def test_api_risk_session_summary(client: TestClient):
     res = client.get("/api/v1/risk-rubric/session-summary")
-    assert res.status_code == 200
-    data = res.json()
-    assert "total_reviews" in data
-    assert "critical_count" in data
-    assert "dominant_risk_level" in data
+    # Aggregate review data is project-scoped evidence, never public telemetry.
+    assert res.status_code == 401
 
 
 def test_api_auto_group_clusters_empty_or_valid(client: TestClient):
     res = client.post("/api/v1/failure-clusters/auto-group")
-    assert res.status_code == 200
-    assert isinstance(res.json(), list)
+    assert res.status_code == 401
 
 
 def test_api_resolve_review_with_new_decisions(client: TestClient):
-    import uuid
-
-    unique_run_id = f"test-run-hitl-{uuid.uuid4().hex[:8]}"
-
-    # 1. Create a manual review with unique run_id
+    # Unauthenticated callers cannot create or resolve a review record.
     create_res = client.post(
         "/api/v1/reviews",
         json={
-            "run_id": unique_run_id,
+            "run_id": "test-run-hitl",
             "attack": "fog",
             "severity": 4,
             "degradation": 0.45,
@@ -233,25 +225,4 @@ def test_api_resolve_review_with_new_decisions(client: TestClient):
             "notes": "Test review case",
         },
     )
-    assert create_res.status_code == 201
-    rev = create_res.json()
-    review_id = rev["review_id"]
-
-    # 2. Assess risk
-    assess_res = client.post(f"/api/v1/risk-rubric/assess?review_id={review_id}")
-    assert assess_res.status_code == 200
-    assert "recommended_decision" in assess_res.json()
-
-    # 3. Resolve with BLOCK_DEPLOY
-    resolve_res = client.patch(
-        f"/api/v1/reviews/{review_id}",
-        json={
-            "decision": "BLOCK_DEPLOY",
-            "decision_note": "Chặn triển khai do sụt giảm nghiêm trọng",
-            "resolved_by": "Staff Reviewer",
-        },
-    )
-    assert resolve_res.status_code == 200
-    resolved = resolve_res.json()
-    assert resolved["status"] == "RESOLVED"
-    assert resolved["decision"] == "BLOCK_DEPLOY"
+    assert create_res.status_code == 401

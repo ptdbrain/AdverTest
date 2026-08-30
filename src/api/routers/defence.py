@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
@@ -21,7 +20,6 @@ from src.api.helpers import (
     is_failure_case,
     job_out,
     registered_model_versions,
-    require_run,
     resolve_run_config,
 )
 from src.api.jobs import LocalRunWorker, SqliteRunStore
@@ -42,15 +40,23 @@ from src.api.schemas import (
 )
 from src.api.training_service import TrainingJobService
 from src.api.workflow_store import WorkflowJobStore
-from src.config import get_settings
 from src.core.hashing import stable_digest
 from src.evaluation.defense_report import build_defense_report
 from src.evaluation.export import export_comparison
-from src.models import scan_model_artifacts
 from src.pipeline.runner import RunConfig, TestRunner
 from src.training.contracts import DefenseProfile, TrainingRunConfig
 
 router = APIRouter(tags=["Defence"])
+
+
+def _project_defence_versions(store: SqliteRunStore, *, project_id: str) -> list[Any]:
+    """Return only fine-tuned/repaired checkpoints explicitly owned by the project."""
+    owned_ids = {
+        str(record.get("checkpoint_id", record.get("id", "")))
+        for record in store.list_records("checkpoint")
+        if record.get("project_id") == project_id and record.get("checkpoint_role") != "base"
+    }
+    return [version for version in registered_model_versions(store) if version.id in owned_ids]
 
 
 # ---- Defense Profiles ----
@@ -59,22 +65,27 @@ router = APIRouter(tags=["Defence"])
 @router.post("/defense-profiles", status_code=201)
 async def create_defense_profile(
     body: DefenseProfile,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Persist a defense profile defining dataset mixing ratios and recipe IDs."""
-    return store.put_record("defense_profile", body.profile_id, body.model_dump(mode="json"))
+    del actor_id
+    payload = body.model_dump(mode="json")
+    payload["project_id"] = project_id
+    return store.put_record("defense_profile", body.profile_id, payload)
 
 
 @router.get("/defense-profiles/{profile_id}")
 async def get_defense_profile(
     profile_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Retrieve a stored defense profile by ID."""
-    profile = store.get_record("defense_profile", profile_id)
-    if profile is None:
-        raise HTTPException(status_code=404, detail=f"unknown defense profile {profile_id!r}")
-    return profile
+    del actor_id
+    return require_scoped_record(store, record_type="defense_profile", record_id=profile_id, project_id=project_id)
 
 
 # ---- Training Runs & Manifests ----
@@ -83,9 +94,12 @@ async def get_defense_profile(
 @router.post("/training-runs/estimate")
 async def estimate_training_run(
     body: TrainingRunIn,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     training_jobs: TrainingJobService = Depends(get_training_jobs),
 ) -> dict[str, Any]:
     """Estimate a registered trainer without scheduling external training."""
+    del project_id, actor_id
     config = TrainingRunConfig(run_id=f"estimate-{uuid.uuid4().hex}", **body.model_dump(mode="json"))
     try:
         return training_jobs.estimate(config)
@@ -96,18 +110,20 @@ async def estimate_training_run(
 @router.post("/training-runs", status_code=202)
 async def start_training_run(
     body: TrainingRunIn,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     training_jobs: TrainingJobService = Depends(get_training_jobs),
 ) -> dict[str, Any]:
     """Queue training only after the requested parent checkpoint is runnable."""
-    version = next(
-        (item for item in scan_model_artifacts(Path(get_settings().runs_root)) if item.id == body.model_version),
-        None,
-    )
+    allowed_versions = [
+        version for version in registered_model_versions(get_store()) if version.checkpoint_role == "base"
+    ] + _project_defence_versions(get_store(), project_id=project_id)
+    version = next((item for item in allowed_versions if item.id == body.model_version), None)
     if version is None or not version.runnable:
         raise HTTPException(status_code=409, detail="WAITING_FOR_ARTIFACTS")
     config = TrainingRunConfig(run_id=f"queued-{uuid.uuid4().hex}", **body.model_dump(mode="json"))
     try:
-        job_id = training_jobs.enqueue(config)
+        job_id = training_jobs.enqueue(config, project_id=project_id)
     except KeyError as exc:
         raise HTTPException(status_code=422, detail=f"TRAINER_NOT_AVAILABLE: {exc}") from exc
     return training_jobs.get(job_id) or {"id": job_id, "status": "QUEUED"}
@@ -115,20 +131,26 @@ async def start_training_run(
 
 @router.get("/training-runs")
 async def list_training_runs(
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     training_jobs: TrainingJobService = Depends(get_training_jobs),
 ) -> list[dict[str, Any]]:
     """List all training run jobs."""
-    return training_jobs.list()
+    del actor_id
+    return training_jobs.list(project_id=project_id)
 
 
 @router.get("/training-runs/{job_id}")
 async def get_training_run(
     job_id: str,
-    training_jobs: TrainingJobService = Depends(get_training_jobs),
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
+    workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> dict[str, Any]:
     """Get training job detail and current status."""
-    job = training_jobs.get(job_id)
-    if job is None:
+    del actor_id
+    job = require_scoped_workflow_job(workflow_store, job_id=job_id, project_id=project_id)
+    if job.get("job_type") != "training":
         raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
     return job
 
@@ -136,10 +158,15 @@ async def get_training_run(
 @router.post("/training-runs/{job_id}/cancel")
 async def cancel_training_run(
     job_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     training_jobs: TrainingJobService = Depends(get_training_jobs),
+    workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> dict[str, Any]:
     """Cancel an active or queued training run."""
-    if training_jobs.get(job_id) is None:
+    del actor_id
+    job = require_scoped_workflow_job(workflow_store, job_id=job_id, project_id=project_id)
+    if job.get("job_type") != "training":
         raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
     training_jobs.cancel(job_id)
     return training_jobs.get(job_id) or {"id": job_id, "status": "CANCEL_REQUESTED"}
@@ -148,11 +175,14 @@ async def cancel_training_run(
 @router.get("/training-runs/{job_id}/checkpoints")
 async def get_training_run_checkpoints(
     job_id: str,
-    training_jobs: TrainingJobService = Depends(get_training_jobs),
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> list[dict[str, Any]]:
     """Retrieve saved model checkpoints for a training job."""
-    if training_jobs.get(job_id) is None:
+    del actor_id
+    job = require_scoped_workflow_job(workflow_store, job_id=job_id, project_id=project_id)
+    if job.get("job_type") != "training":
         raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
     return workflow_store.checkpoints(job_id)
 
@@ -161,11 +191,14 @@ async def get_training_run_checkpoints(
 async def get_training_run_events(
     job_id: str,
     cursor: int = Query(default=0, ge=0),
-    training_jobs: TrainingJobService = Depends(get_training_jobs),
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> list[dict[str, Any]]:
     """Retrieve log events emitted by the training job."""
-    if training_jobs.get(job_id) is None:
+    del actor_id
+    job = require_scoped_workflow_job(workflow_store, job_id=job_id, project_id=project_id)
+    if job.get("job_type") != "training":
         raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
     return workflow_store.events(job_id, cursor=cursor)
 
@@ -173,27 +206,32 @@ async def get_training_run_events(
 @router.get("/training-dataset-manifests/{manifest_id}")
 async def get_training_dataset_manifest(
     manifest_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Retrieve an immutable training dataset manifest."""
-    manifest = store.get_record("training_dataset_manifest", manifest_id)
-    if manifest is None:
-        raise HTTPException(status_code=404, detail=f"unknown training dataset manifest {manifest_id!r}")
-    return manifest
+    del actor_id
+    return require_scoped_record(
+        store, record_type="training_dataset_manifest", record_id=manifest_id, project_id=project_id
+    )
 
 
 @router.websocket("/training-runs/{job_id}/events/ws")
 async def training_run_events_ws(
     job_id: str,
     websocket: WebSocket,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> None:
     """Stream training progress events via WebSocket."""
-    await websocket.accept()
-    if workflow_store.get_job(job_id) is None:
-        await websocket.send_json({"error": "unknown training run"})
+    del actor_id
+    job = workflow_store.get_job(job_id)
+    if job is None or job.get("job_type") != "training" or job.get("request", {}).get("project_id") != project_id:
         await websocket.close(code=4404)
         return
+    await websocket.accept()
     cursor = 0
     try:
         while True:
@@ -214,20 +252,26 @@ async def training_run_events_ws(
 @router.post("/retraining-backlogs", status_code=201)
 async def create_retraining_backlog(
     body: RetrainingBacklogIn,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> dict[str, Any]:
     """Create a curated retraining backlog to organize failure fixes."""
-    return workflow_store.create_backlog(body.name)
+    del actor_id
+    return workflow_store.create_backlog(body.name, project_id=project_id)
 
 
 @router.get("/retraining-backlogs/{backlog_id}")
 async def get_retraining_backlog(
     backlog_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> dict[str, Any]:
     """Retrieve retraining backlog contents and approval state."""
+    del actor_id
     backlog = workflow_store.get_backlog(backlog_id)
-    if backlog is None:
+    if backlog is None or backlog.get("project_id") != project_id:
         raise HTTPException(status_code=404, detail="BACKLOG_UNKNOWN")
     return backlog
 
@@ -236,9 +280,15 @@ async def get_retraining_backlog(
 async def add_retraining_backlog_item(
     backlog_id: str,
     body: RetrainingBacklogItemIn,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> dict[str, Any]:
     """Add a targeted failure or recipe item to a retraining backlog."""
+    del actor_id
+    backlog = workflow_store.get_backlog(backlog_id)
+    if backlog is None or backlog.get("project_id") != project_id:
+        raise HTTPException(status_code=404, detail={"code": "BACKLOG_UNKNOWN"})
     try:
         return workflow_store.add_backlog_item(backlog_id, body.failure_id)
     except KeyError as exc:
@@ -250,9 +300,15 @@ async def add_retraining_backlog_item(
 @router.post("/retraining-backlogs/{backlog_id}/approve")
 async def approve_retraining_backlog(
     backlog_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     workflow_store: WorkflowJobStore = Depends(get_workflow_store),
 ) -> dict[str, Any]:
     """Human gate: approve a retraining backlog for downstream training."""
+    del actor_id
+    backlog = workflow_store.get_backlog(backlog_id)
+    if backlog is None or backlog.get("project_id") != project_id:
+        raise HTTPException(status_code=404, detail={"code": "BACKLOG_UNKNOWN"})
     try:
         return workflow_store.approve_backlog(backlog_id)
     except KeyError as exc:
@@ -396,28 +452,37 @@ async def get_model_comparison_failures(
 
 @router.get("/defence-checkpoints", response_model=list[ModelVersionOut])
 async def list_defence_checkpoints(
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> list[ModelVersionOut]:
     """List all fine-tuned/repaired defence checkpoints."""
-    versions = registered_model_versions(store)
-    return [ModelVersionOut.from_domain(v) for v in versions if v.checkpoint_role != "base"]
+    del actor_id
+    return [ModelVersionOut.from_domain(version) for version in _project_defence_versions(store, project_id=project_id)]
 
 
 @router.post("/defence-runs", status_code=202, response_model=RunJobOut)
 async def create_defence_run(
     body: DefenceRunIn,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
     runner: TestRunner = Depends(get_runner),
     worker: LocalRunWorker = Depends(get_worker),
 ) -> RunJobOut:
     """Run a reviewed Defence candidate against baseline's locked protocol."""
-    baseline = store.get(body.baseline_run_id)
-    if baseline is None:
-        raise HTTPException(status_code=404, detail={"code": "BASELINE_RUN_UNKNOWN"})
+    try:
+        baseline = require_scoped_run(store, run_id=body.baseline_run_id, project_id=project_id)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise HTTPException(status_code=404, detail={"code": "BASELINE_RUN_UNKNOWN"}) from exc
+        raise
     if baseline.get("status") != "COMPLETED" or baseline.get("report") is None:
         raise HTTPException(status_code=409, detail={"code": "BASELINE_RUN_NOT_COMPLETED"})
 
-    candidate = next((item for item in registered_model_versions(store) if item.id == body.checkpoint_id), None)
+    candidate = next(
+        (item for item in _project_defence_versions(store, project_id=project_id) if item.id == body.checkpoint_id), None
+    )
     if candidate is None:
         raise HTTPException(status_code=404, detail={"code": "CHECKPOINT_UNKNOWN"})
     if candidate.checkpoint_role == "base":
@@ -444,11 +509,12 @@ async def create_defence_run(
     if preflight.fatal_errors:
         raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
 
-    run_id = store.create(config)
+    run_id = store.create(config, project_id=project_id, owner_user_id=actor_id)
     store.put_record(
         "defence_evaluation",
         run_id,
         {
+            "project_id": project_id,
             "run_id": run_id,
             "baseline_run_id": body.baseline_run_id,
             "checkpoint_id": candidate.id,
@@ -462,15 +528,18 @@ async def create_defence_run(
 @router.get("/runs/{run_id}/defence-candidates", response_model=list[ModelVersionOut])
 async def run_defence_candidates(
     run_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> list[ModelVersionOut]:
     """Retrieve fine-tuned/repaired checkpoints matching the benchmark run task."""
-    run = require_run(store, run_id)
+    del actor_id
+    run = require_scoped_run(store, run_id=run_id, project_id=project_id)
     task_id = (run.get("config") or {}).get("task_id", "detection2d")
     return [
         ModelVersionOut.from_domain(version)
-        for version in registered_model_versions(store)
-        if version.task == task_id and version.checkpoint_role != "base"
+        for version in _project_defence_versions(store, project_id=project_id)
+        if version.task == task_id
     ]
 
 
@@ -480,9 +549,14 @@ async def run_defence_candidates(
 @router.get("/model-versions/{version_id}/lineage", response_model=LineageGraphOut)
 async def get_model_lineage(
     version_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> LineageGraphOut:
-    versions = registered_model_versions(store)
+    del actor_id
+    versions = [
+        version for version in registered_model_versions(store) if version.checkpoint_role == "base"
+    ] + _project_defence_versions(store, project_id=project_id)
     version = next((v for v in versions if v.id == version_id), None)
     if version is None:
         raise HTTPException(status_code=404, detail=f"unknown model version {version_id!r}")
@@ -498,11 +572,14 @@ async def get_model_lineage(
 @router.get("/model-versions/{version_id}/benchmark-history")
 async def get_model_version_benchmark_history(
     version_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> list[dict[str, Any]]:
     """Return historical benchmark run reports for a model version."""
     history = []
-    for run in store.list():
+    del actor_id
+    for run in store.list_scoped(project_id=project_id):
         report = run.get("report")
         if report and (report.get("model") == version_id or report.get("model_version_id") == version_id):
             history.append(
@@ -519,12 +596,19 @@ async def get_model_version_benchmark_history(
 @router.get("/model-versions/{version_id}/gate-evidence")
 async def get_model_version_gate_evidence(
     version_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Return checkpoint gate outcome and evidence records for a model version."""
+    del actor_id
     gate = store.get_record("checkpoint_gate", version_id)
+    if gate is not None and gate.get("project_id") != project_id:
+        gate = None
     if gate is None:
         for record in store.list_records("checkpoint_gate"):
+            if record.get("project_id") != project_id:
+                continue
             if record.get("model_version_id") == version_id or record.get("id") == version_id:
                 gate = record
                 break
@@ -539,11 +623,14 @@ async def get_model_version_gate_evidence(
 @router.get("/failure-cases")
 async def list_failure_cases(
     run_id: str | None = Query(default=None),
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> list[dict[str, Any]]:
     """Aggregate failure cases across completed benchmark runs or query by run_id."""
+    del actor_id
     failures = []
-    runs = [require_run(store, run_id)] if run_id else store.list()
+    runs = [require_scoped_run(store, run_id=run_id, project_id=project_id)] if run_id else store.list_scoped(project_id=project_id)
     for run in runs:
         report = run.get("report")
         if report and isinstance(report.get("worst_cases"), list):
@@ -555,20 +642,26 @@ async def list_failure_cases(
 
 @router.get("/failure-clusters")
 async def list_failure_clusters(
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> list[dict[str, Any]]:
     """List all persisted failure clusters."""
-    return store.list_records("failure_cluster")
+    del actor_id
+    return [record for record in store.list_records("failure_cluster") if record.get("project_id") == project_id]
 
 
 @router.post("/failure-clusters", status_code=201)
 async def create_failure_cluster(
     body: FailureClusterCreateIn,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Persist a failure cluster grouping related failure cases."""
     cluster_id = body.cluster_id or f"cluster-{uuid.uuid4().hex[:8]}"
     payload = {
+        "project_id": project_id,
         "id": cluster_id,
         "cluster_id": cluster_id,
         "name": body.name,
@@ -576,19 +669,67 @@ async def create_failure_cluster(
         "defense_profile_id": body.defense_profile_id,
         "selection_allowed": True,
     }
+    del actor_id
     return store.put_record("failure_cluster", cluster_id, payload)
 
 
 @router.get("/failure-clusters/{cluster_id}")
 async def get_failure_cluster(
     cluster_id: str,
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Get detail for a specific failure cluster."""
-    cluster = store.get_record("failure_cluster", cluster_id)
-    if cluster is None:
-        raise HTTPException(status_code=404, detail=f"unknown failure cluster {cluster_id!r}")
-    return cluster
+    del actor_id
+    return require_scoped_record(store, record_type="failure_cluster", record_id=cluster_id, project_id=project_id)
+
+
+@router.post("/failure-clusters/auto-group")
+async def auto_group_failure_clusters(
+    run_id: str | None = Query(default=None),
+    project_id: str = Query(..., min_length=1),
+    actor_id: str = Depends(require_project_member),
+    store: SqliteRunStore = Depends(get_store),
+) -> list[dict[str, Any]]:
+    """Cluster only reviews whose backing run belongs to the active project."""
+    from src.evaluation.smart_clustering import SmartFailureClusterer
+
+    del actor_id
+    if run_id:
+        require_scoped_run(store, run_id=run_id, project_id=project_id)
+    reviews = []
+    for review in store.list_reviews(status="PENDING"):
+        review_run_id = str(review.get("run_id", ""))
+        if (not run_id or review_run_id == run_id) and store.get_scoped(review_run_id, project_id=project_id):
+            reviews.append(review)
+    if not reviews:
+        return []
+    clusters = SmartFailureClusterer(max_clusters=8, distance_threshold=0.4).cluster(reviews)
+    payloads = []
+    for cluster in clusters:
+        payload = {
+            "project_id": project_id,
+            "id": cluster.cluster_id,
+            "cluster_id": cluster.cluster_id,
+            "name": cluster.label,
+            "label": cluster.label,
+            "member_ids": list(cluster.member_review_ids),
+            "member_review_ids": list(cluster.member_review_ids),
+            "member_count": cluster.member_count,
+            "representative_review_id": cluster.representative_review_id,
+            "mean_degradation": cluster.mean_degradation,
+            "max_degradation": cluster.max_degradation,
+            "severity_distribution": cluster.severity_distribution,
+            "affected_classes": list(cluster.affected_classes),
+            "dominant_attack_group": cluster.dominant_attack_group,
+            "dominant_risk_level": cluster.dominant_risk_level,
+            "recommended_action": cluster.recommended_action,
+            "selection_allowed": True,
+        }
+        store.put_record("failure_cluster", cluster.cluster_id, payload)
+        payloads.append(payload)
+    return payloads
 
 
 # ---- Closed-Loop Retraining ----
@@ -744,25 +885,25 @@ async def advance_closed_loop(
     valid_evidence = True
     if body.target == "CLUSTER_FORMED":
         cluster = store.get_record("failure_cluster", body.artifact_id)
-        if not cluster:
+        if not cluster or cluster.get("project_id") != project_id:
             valid_evidence = False
     elif body.target in {"BACKLOG_CREATED", "BACKLOG_APPROVED"}:
         backlog = workflow_store.get_backlog(body.artifact_id)
-        if not backlog:
+        if not backlog or backlog.get("project_id") != project_id:
             valid_evidence = False
         elif body.target == "BACKLOG_APPROVED" and backlog.get("status") != "APPROVED":
             valid_evidence = False
     elif body.target == "DEFENSE_PROFILED":
         profile = store.get_record("defense_profile", body.artifact_id)
-        if not profile:
+        if not profile or profile.get("project_id") != project_id:
             valid_evidence = False
     elif body.target == "DATASET_MANIFEST_CREATED":
         manifest = store.get_record("training_dataset_manifest", body.artifact_id)
-        if not manifest:
+        if not manifest or manifest.get("project_id") != project_id:
             valid_evidence = False
     elif body.target in {"TRAINING_STARTED", "TRAINING_COMPLETED"}:
         tr_job = workflow_store.get_job(body.artifact_id)
-        if not tr_job:
+        if not tr_job or tr_job.get("request", {}).get("project_id") != project_id:
             valid_evidence = False
         elif body.target == "TRAINING_COMPLETED" and tr_job.get("status") != "COMPLETED":
             valid_evidence = False
@@ -771,20 +912,20 @@ async def advance_closed_loop(
             valid_evidence = False
     elif body.target == "GATE_EVALUATED":
         gate = store.get_record("checkpoint_gate", body.artifact_id)
-        if not gate:
+        if not gate or gate.get("project_id") != project_id:
             valid_evidence = False
     elif body.target == "MODEL_REGISTERED":
         if not body.artifact_id:
             valid_evidence = False
     elif body.target in {"RE_BENCHMARK_STARTED", "RE_BENCHMARK_COMPLETED"}:
-        bm_run = store.get(body.artifact_id)
+        bm_run = store.get_scoped(body.artifact_id, project_id=project_id)
         if not bm_run:
             valid_evidence = False
         elif body.target == "RE_BENCHMARK_COMPLETED" and (not bm_run.get("report")):
             valid_evidence = False
     elif body.target == "RECOVERY_REPORTED":
         comparison = store.get_record("model_comparison", body.artifact_id)
-        if not comparison:
+        if not comparison or comparison.get("project_id") != project_id:
             valid_evidence = False
 
     if not valid_evidence:

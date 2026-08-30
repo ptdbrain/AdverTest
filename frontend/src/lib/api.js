@@ -76,6 +76,35 @@ export async function apiFetch(path, options = {}) {
   return res.json();
 }
 
+export async function downloadRunExport(runId, format) {
+  const path = format === "pdf" || format === "zip"
+    ? `/api/v1/runs/${encodeURIComponent(runId)}/download-${format}`
+    : `/api/v1/runs/${encodeURIComponent(runId)}/export?format=${encodeURIComponent(format)}`;
+  let authHeaders = {};
+  if (typeof window !== "undefined") {
+    try {
+      const token = localStorage.getItem("advertest_auth_token");
+      if (token) authHeaders.Authorization = `Bearer ${token}`;
+    } catch {}
+  }
+  const res = await fetch(`${getApiBase()}${withActiveProjectScope(path)}`, { headers: authHeaders });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const detail = typeof body.detail === "string" ? body.detail : body.detail ? JSON.stringify(body.detail) : `API error ${res.status}`;
+    throw new Error(detail);
+  }
+  const blob = await res.blob();
+  const extension = format === "zip" ? "zip" : format;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `advertest_report_${runId}.${extension}`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export function loginUser(credentialsOrEmail, passwordArg) {
   const payload =
     typeof credentialsOrEmail === "object"

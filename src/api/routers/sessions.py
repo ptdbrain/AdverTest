@@ -13,11 +13,24 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from src.api.dependencies import get_store
 from src.api.platform_dependencies import get_platform_database, require_project_member
 from src.persistence.database import PlatformDatabase
 from src.persistence.models import ExperimentSessionRecord, SessionRunRecord
 
 router = APIRouter(prefix="/sessions", tags=["Experiment Sessions"])
+
+
+def _verified_backend_evidence_status(backend_run_id: str, *, project_id: str) -> str:
+    """Only a project-scoped benchmark run may mark a session row as verified."""
+    if not backend_run_id:
+        return "NOT_ELIGIBLE"
+    backend_run = get_store().get_scoped(backend_run_id, project_id=project_id)
+    if backend_run is None:
+        raise HTTPException(status_code=404, detail={"code": "RUN_NOT_FOUND_IN_PROJECT", "run_id": backend_run_id})
+    report = backend_run.get("report") or {}
+    evidence = report.get("evidence") or {}
+    return "VERIFIED" if evidence.get("status") == "VERIFIED" else "NOT_ELIGIBLE"
 
 
 class RunRecord(BaseModel):
@@ -196,6 +209,8 @@ async def create_or_update_session(
     db: PlatformDatabase = Depends(get_platform_database),
 ) -> SessionRecord:
     """Create a new experiment session or update existing."""
+    for run in session_data.runs:
+        run.evidence_status = _verified_backend_evidence_status(run.backend_run_id, project_id=project_id)
     with db.session() as session:
         existing = (
             session.query(ExperimentSessionRecord)
@@ -351,6 +366,7 @@ async def add_run_to_session(
 ) -> SessionRecord:
     """Append a new attack execution run record to the session."""
     del actor_id
+    run.evidence_status = _verified_backend_evidence_status(run.backend_run_id, project_id=project_id)
     with db.session() as session:
         s_row = (
             session.query(ExperimentSessionRecord)

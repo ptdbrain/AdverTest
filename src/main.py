@@ -139,7 +139,12 @@ async def add_simulation_banner(
     request: Request,
     call_next: Callable[[Request], Awaitable[JSONResponse]],
 ) -> JSONResponse:
-    """Stamp every response, so no client can forget what these numbers are."""
+    """Reject retired routes and stamp every remaining response as simulation-only."""
+    if request.url.path.startswith("/api/v1/_deprecated/"):
+        return JSONResponse(
+            status_code=410,
+            content={"detail": {"code": "PROJECT_SCOPED_ROUTE_REQUIRED"}},
+        )
     response = await call_next(request)
     response.headers["X-Simulation-Only"] = "true"
     return response

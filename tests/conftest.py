@@ -57,6 +57,7 @@ async def client(tmp_path, monkeypatch):
     import src.api.routers.catalog as catalog_module
     import src.api.routers.datasets as datasets_module
     import src.api.routers.defence as defence_module
+    import src.api.routers.live_inference as live_inference_module
     import src.api.routers.projects as projects_module
     import src.api.routers.risk_rubric as risk_rubric_module
     import src.api.routers.runs as runs_module
@@ -99,6 +100,7 @@ async def client(tmp_path, monkeypatch):
     importlib.reload(runs_module)
     importlib.reload(datasets_module)
     importlib.reload(defence_module)
+    importlib.reload(live_inference_module)
     importlib.reload(analytics_module)
     importlib.reload(advisor_module)
     importlib.reload(auth_module)

@@ -7,14 +7,13 @@ import Button from "@/components/common/Button";
 import Card from "@/components/common/Card";
 import EvidenceBadge from "@/components/common/EvidenceBadge";
 import {
-  getApiBase,
+  downloadRunExport,
   getRunAnalyticsAttacks,
   getRunAnalyticsClasses,
   getRunAnalyticsDistance,
   getRunAnalyticsSummary,
   listRuns,
 } from "@/lib/api";
-import { exportReportAsCsv, exportReportAsJson } from "@/lib/exportReport";
 import { buildRunDecisionView, filterCompletedRuns, formatNumber, formatRatio, primaryMetricForCell } from "@/lib/reportMetrics";
 
 function valueDelta(clean, attacked) {
@@ -38,7 +37,18 @@ function ProtocolValue({ label, value }) {
 
 export function RunMetricsContent({ report, mode = "benchmark", analytics = {} }) {
   const view = useMemo(() => (report ? buildRunDecisionView(report) : null), [report]);
+  const [exportError, setExportError] = useState("");
   if (!report || !view) return <NoData />;
+  const exportEligible = report?.evidence?.status === "VERIFIED";
+
+  const handleServerExport = async (format) => {
+    setExportError("");
+    try {
+      await downloadRunExport(report.run_id, format);
+    } catch (error) {
+      setExportError(error?.message || "Không thể xuất report evidence.");
+    }
+  };
 
   const cells = report.cells || [];
   const worstAttack = analytics.summary?.worst_attack || analytics.attacks?.[0] || null;
@@ -64,12 +74,10 @@ export function RunMetricsContent({ report, mode = "benchmark", analytics = {} }
             <p className="mt-1 text-sm text-slate-300">{view.taskId} · {report.n_samples ?? "—"} samples · {cells.length} attack cells · {formatNumber(report.seconds, 2, " s")}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button className="min-h-11" variant="secondary" icon={Download} onClick={() => exportReportAsJson(report)}>JSON</Button>
-            <Button className="min-h-11" variant="secondary" icon={Download} onClick={() => exportReportAsCsv(report)}>CSV</Button>
-            <Button className="min-h-11" variant="secondary" icon={Download} onClick={() => window.open(`${getApiBase()}/api/v1/runs/${report.run_id}/download-pdf`, "_blank")}>PDF</Button>
-            <Button className="min-h-11" variant="secondary" icon={Download} onClick={() => window.open(`${getApiBase()}/api/v1/runs/${report.run_id}/download-zip`, "_blank")}>ZIP</Button>
+            {['json', 'csv', 'pdf', 'zip'].map((format) => <Button key={format} className="min-h-11" variant="secondary" icon={Download} disabled={!exportEligible} title={exportEligible ? undefined : "Cần benchmark evidence VERIFIED trước khi export"} onClick={() => handleServerExport(format)}>{format.toUpperCase()}</Button>)}
           </div>
         </div>
+        {exportError && <p role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">{exportError}</p>}
       </section>
 
       {view.dataState !== "MEASURED" && <div role="alert" className="flex gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" /><div><strong>Không đủ dữ liệu benchmark.</strong> Các giá trị thiếu được giữ là “—”, không quy đổi thành 0 hoặc điểm tốt giả.</div></div>}

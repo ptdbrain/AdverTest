@@ -27,6 +27,7 @@ def _completed_report(run_id: str) -> dict:
                 "attack": "fog",
                 "severity": 4,
                 "degradation_hint": 0.4,
+                "failed": True,
             }
         ],
         "skipped": [],
@@ -68,8 +69,12 @@ async def test_closed_loop_start_is_durable_and_retrievable(client) -> None:
 
     routes = importlib.reload(routes)
     main_module = importlib.reload(main_module)
-    async with AsyncClient(transport=ASGITransport(app=main_module.app), base_url="http://reopened") as reopened_client:
-        fetched = await reopened_client.get(f"/api/v1/closed-loop/{payload['loop_id']}")
+    async with AsyncClient(
+        transport=ASGITransport(app=main_module.app), base_url="http://reopened", headers=dict(client.headers)
+    ) as reopened_client:
+        fetched = await reopened_client.get(
+            f"/api/v1/closed-loop/{payload['loop_id']}", params={"project_id": client.default_project_id}
+        )
     assert fetched.status_code == 200
     assert fetched.json() == payload
 
@@ -111,9 +116,11 @@ async def test_closed_loop_rejects_unknown_or_failure_free_source(client) -> Non
     assert failure_free.status_code == 409
     assert failure_free.json()["detail"]["code"] == "NO_FAILURE_CASES"
 
-    zero_run_id = routes._store.create(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1))
+    zero_run_id = routes._store.create(
+        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1), project_id=client.default_project_id
+    )
     zero_report = _completed_report(zero_run_id)
-    zero_report["worst_cases"][0]["degradation_hint"] = 0.0
+    zero_report["worst_cases"][0]["failed"] = False
     routes._store.complete(zero_run_id, zero_report)
 
     zero_degradation = await client.post("/api/v1/closed-loop/start", json={"run_id": zero_run_id})
@@ -125,7 +132,7 @@ async def test_closed_loop_rejects_unknown_or_failure_free_source(client) -> Non
 async def test_closed_loop_get_rejects_another_workflow_type(client) -> None:
     import src.api.routes as routes
 
-    foreign_id = routes._workflow_store.create_job("training", {"seed": 17})
+    foreign_id = routes._workflow_store.create_job("training", {"seed": 17, "project_id": client.default_project_id})
     response = await client.get(f"/api/v1/closed-loop/{foreign_id}")
 
     assert response.status_code == 404

@@ -22,6 +22,7 @@ def _report(run_id: str, *, model_version: str = "yolo-b0") -> dict:
                 "attack": "fog",
                 "severity": 4,
                 "degradation_hint": 0.4,
+                "failed": True,
             }
         ],
         "skipped": [],
@@ -58,6 +59,7 @@ async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> No
         "failure_cluster",
         "cluster-001",
         {
+            "project_id": client.default_project_id,
             "cluster_id": "cluster-001",
             "member_ids": ["failure-fog-001"],
             "selection_allowed": True,
@@ -65,19 +67,22 @@ async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> No
     )
     await _advance(client, loop_id, "CLUSTER_FORMED", "cluster-001")
 
-    backlog = routes._workflow_store.create_backlog("fog recovery")
+    backlog = routes._workflow_store.create_backlog("fog recovery", project_id=client.default_project_id)
     routes._workflow_store.add_backlog_item(backlog["id"], "failure-fog-001")
     await _advance(client, loop_id, "BACKLOG_CREATED", backlog["id"])
     routes._workflow_store.approve_backlog(backlog["id"])
     await _advance(client, loop_id, "BACKLOG_APPROVED", backlog["id"])
 
-    routes._store.put_record("defense_profile", "defense-001", {"profile_id": "defense-001"})
+    routes._store.put_record(
+        "defense_profile", "defense-001", {"profile_id": "defense-001", "project_id": client.default_project_id}
+    )
     await _advance(client, loop_id, "DEFENSE_PROFILED", "defense-001")
 
     routes._store.put_record(
         "training_dataset_manifest",
         "manifest-001",
         {
+            "project_id": client.default_project_id,
             "manifest_id": "manifest-001",
             "defense_profile_id": "defense-001",
             "leakage_report_hash": "leakage-sha256",
@@ -89,6 +94,7 @@ async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> No
     training_id = routes._workflow_store.create_job(
         "training",
         {
+            "project_id": client.default_project_id,
             "defense_profile_id": "defense-001",
             "metadata": {"training_dataset_manifest_id": "manifest-001"},
         },
@@ -115,6 +121,7 @@ async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> No
         "checkpoint_gate",
         "gate-001",
         {
+            "project_id": client.default_project_id,
             "gate_id": "gate-001",
             "passed": True,
             "paired": True,
@@ -124,7 +131,9 @@ async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> No
     await _advance(client, loop_id, "GATE_EVALUATED", "gate-001")
     await _advance(client, loop_id, "MODEL_REGISTERED", "yolo-r1")
 
-    candidate_run_id = routes._store.create(RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1))
+    candidate_run_id = routes._store.create(
+        RunConfig(attacks=["gaussian_noise"], severities=[1], limit=1), project_id=client.default_project_id
+    )
     await _advance(client, loop_id, "RE_BENCHMARK_STARTED", candidate_run_id)
     routes._store.complete(candidate_run_id, _report(candidate_run_id, model_version="yolo-r1"))
     await _advance(client, loop_id, "RE_BENCHMARK_COMPLETED", candidate_run_id)
@@ -133,6 +142,7 @@ async def test_closed_loop_binds_the_full_persisted_artifact_chain(client) -> No
         "model_comparison",
         "comparison-001",
         {
+            "project_id": client.default_project_id,
             "comparison_id": "comparison-001",
             "baseline_run_id": source_run_id,
             "candidate_run_id": candidate_run_id,

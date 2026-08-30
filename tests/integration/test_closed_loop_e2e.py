@@ -38,10 +38,12 @@ async def test_closed_loop_preserves_evidence_and_blocks_unverified_training(cli
     assert comparison.status_code == 201
     comparison_id = comparison.json()["comparison_id"]
 
-    assert (await client.get(f"/api/v1/model-comparisons/{comparison_id}/metric-deltas")).status_code == 200
+    metric_deltas = await client.get(f"/api/v1/model-comparisons/{comparison_id}/metric-deltas")
+    assert metric_deltas.status_code == 200
+    assert comparison.json()["eligibility"]["status"] == "NOT_ELIGIBLE"
     export = await client.get(f"/api/v1/model-comparisons/{comparison_id}/export?format=json")
-    assert export.status_code == 200
-    assert export.headers["x-content-sha256"]
+    assert export.status_code == 409
+    assert export.json()["detail"]["code"] == "NOT_ELIGIBLE_FOR_CONCLUSION_EXPORT"
 
     created = await client.post("/api/v1/retraining-backlogs", json={"name": f"recovery-{baseline_run_id}"})
     assert created.status_code == 201

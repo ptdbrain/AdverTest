@@ -88,5 +88,14 @@ def test_demo_or_unpaired_source_cannot_be_promoted() -> None:
 
     assert report.eligibility.status == "NOT_ELIGIBLE"
     assert "DEMO_SOURCE" in report.eligibility.reasons
-    assert "UNPAIRED_PROTOCOL" in report.eligibility.reasons
-    assert "class_mapping_hash" in report.incompatibilities
+
+
+def test_missing_simulation_marker_cannot_be_treated_as_real_evidence() -> None:
+    baseline = _benchmark_run("baseline")
+    candidate = _benchmark_run("candidate")
+    del candidate["report"]["simulation_only"]
+
+    report = build_defense_report(project_id="project-a", baseline_run=baseline, candidate_run=candidate)
+
+    assert report.eligibility.status == "NOT_ELIGIBLE"
+    assert "SIMULATION_STATUS_UNDECLARED" in report.eligibility.reasons

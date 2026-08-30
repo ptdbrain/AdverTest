@@ -195,7 +195,9 @@ class ModelVersionOut(BaseModel):
             id=version.id,
             model_name=version.model_name,
             task=version.task,
-            checkpoint_path=version.checkpoint_path,
+            # Filesystem paths are internal execution details and must never
+            # cross the API boundary.
+            checkpoint_path=None,
             checkpoint_hash=version.checkpoint_hash,
             parent_id=version.parent_id,
             training_metadata=dict(version.training_metadata),
@@ -597,6 +599,7 @@ class ClosedLoopSnapshotOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     loop_id: str
+    project_id: str
     source_run_id: str
     state: str
     audit: list[dict[str, Any]] = Field(default_factory=list)

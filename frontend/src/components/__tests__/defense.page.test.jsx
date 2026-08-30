@@ -23,6 +23,10 @@ vi.mock("@/lib/api", () => ({
   uploadCheckpoint: vi.fn(),
 }));
 
+vi.mock("@/context/ProjectContext", () => ({
+  useProjectContext: () => ({ projectId: "project-a" }),
+}));
+
 const sessions = [
   {
     id: "session-a",

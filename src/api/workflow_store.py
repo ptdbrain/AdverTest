@@ -55,6 +55,7 @@ class WorkflowJobStore:
                 );
                 CREATE TABLE IF NOT EXISTS retraining_backlogs (
                     backlog_id TEXT PRIMARY KEY,
+                    project_id TEXT,
                     name TEXT NOT NULL,
                     status TEXT NOT NULL,
                     created_at TEXT NOT NULL,
@@ -68,14 +69,18 @@ class WorkflowJobStore:
                 );
                 """
             )
+            try:
+                connection.execute("ALTER TABLE retraining_backlogs ADD COLUMN project_id TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists.
 
-    def create_backlog(self, name: str) -> dict[str, Any]:
+    def create_backlog(self, name: str, *, project_id: str | None = None) -> dict[str, Any]:
         backlog_id = f"backlog-{uuid.uuid4().hex}"
         now = _now()
         with self._lock, self._connection() as connection:
             connection.execute(
-                "INSERT INTO retraining_backlogs(backlog_id, name, status, created_at, updated_at) VALUES (?, ?, 'DRAFT', ?, ?)",
-                (backlog_id, name, now, now),
+                "INSERT INTO retraining_backlogs(backlog_id, project_id, name, status, created_at, updated_at) VALUES (?, ?, ?, 'DRAFT', ?, ?)",
+                (backlog_id, project_id, name, now, now),
             )
         return self.get_backlog(backlog_id)  # type: ignore[return-value]
 
@@ -89,6 +94,7 @@ class WorkflowJobStore:
             ).fetchall()
         return {
             "id": row["backlog_id"],
+            "project_id": row["project_id"],
             "name": row["name"],
             "status": row["status"],
             "failure_ids": [item["failure_id"] for item in items],
