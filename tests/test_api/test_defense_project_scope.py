@@ -96,3 +96,15 @@ async def test_comparison_read_hides_another_projects_record(client) -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "RECORD_NOT_FOUND_IN_PROJECT"
+
+
+def test_analytics_comparison_loader_is_project_scoped(tmp_path) -> None:
+    from src.api.routers.analytics import _require_comparison
+
+    store = SqliteRunStore(f"sqlite:///{(tmp_path / 'analytics.db').as_posix()}")
+    store.put_record("model_comparison", "comparison-a", {"project_id": "project-a"})
+
+    with pytest.raises(HTTPException) as error:
+        _require_comparison(store, "comparison-a", project_id="project-b")
+
+    assert error.value.status_code == 404

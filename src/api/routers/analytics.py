@@ -21,6 +21,7 @@ from src.analytics.run_analytics import (
     compute_run_summary,
 )
 from src.api.dependencies import get_store
+from src.api.defense_scope import require_scoped_record
 from src.api.jobs import SqliteRunStore
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
@@ -38,11 +39,13 @@ def _require_completed_run(store: SqliteRunStore, run_id: str) -> dict[str, Any]
     return item
 
 
-def _require_comparison(store: SqliteRunStore, comparison_id: str) -> dict[str, Any]:
-    comparison = store.get_record("model_comparison", comparison_id)
-    if comparison is None:
-        raise HTTPException(status_code=404, detail=f"unknown comparison {comparison_id!r}")
-    return comparison
+def _require_comparison(store: SqliteRunStore, comparison_id: str, *, project_id: str) -> dict[str, Any]:
+    return require_scoped_record(
+        store,
+        record_type="model_comparison",
+        record_id=comparison_id,
+        project_id=project_id,
+    )
 
 
 # ---- Single Run Analytics ----
@@ -126,10 +129,11 @@ async def get_run_analytics_distance(
 @router.get("/comparisons/{comparison_id}/summary")
 async def get_comparison_analytics_summary(
     comparison_id: str,
+    project_id: str = Query(..., min_length=1),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Get executive comparison summary, score deltas, and promotion gate verdict."""
-    comparison = _require_comparison(store, comparison_id)
+    comparison = _require_comparison(store, comparison_id, project_id=project_id)
     base_run = store.get(comparison.get("baseline_run_id", ""))
     cand_run = store.get(comparison.get("candidate_run_id", ""))
     return compute_comparison_summary(comparison, base_run, cand_run)
@@ -138,10 +142,11 @@ async def get_comparison_analytics_summary(
 @router.get("/comparisons/{comparison_id}/recovery")
 async def get_comparison_analytics_recovery(
     comparison_id: str,
+    project_id: str = Query(..., min_length=1),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Get granular recovery curves broken down per attack and severity level."""
-    comparison = _require_comparison(store, comparison_id)
+    comparison = _require_comparison(store, comparison_id, project_id=project_id)
     base_run = store.get(comparison.get("baseline_run_id", ""))
     cand_run = store.get(comparison.get("candidate_run_id", ""))
     return compute_comparison_recovery(comparison, base_run, cand_run)
@@ -150,10 +155,11 @@ async def get_comparison_analytics_recovery(
 @router.get("/comparisons/{comparison_id}/classes")
 async def get_comparison_analytics_classes(
     comparison_id: str,
+    project_id: str = Query(..., min_length=1),
     store: SqliteRunStore = Depends(get_store),
 ) -> list[dict[str, Any]]:
     """Get class-level accuracy shifts and per-class recovery comparisons."""
-    comparison = _require_comparison(store, comparison_id)
+    comparison = _require_comparison(store, comparison_id, project_id=project_id)
     base_run = store.get(comparison.get("baseline_run_id", ""))
     cand_run = store.get(comparison.get("candidate_run_id", ""))
     return compute_comparison_classes(comparison, base_run, cand_run)
@@ -162,10 +168,11 @@ async def get_comparison_analytics_classes(
 @router.get("/comparisons/{comparison_id}/failures")
 async def get_comparison_analytics_failures(
     comparison_id: str,
+    project_id: str = Query(..., min_length=1),
     store: SqliteRunStore = Depends(get_store),
 ) -> dict[str, Any]:
     """Get failure transitions (FAILED->RECOVERED, FAILED->STILL_FAILED, CORRECT->FAILED)."""
-    comparison = _require_comparison(store, comparison_id)
+    comparison = _require_comparison(store, comparison_id, project_id=project_id)
     base_run = store.get(comparison.get("baseline_run_id", ""))
     cand_run = store.get(comparison.get("candidate_run_id", ""))
     return compute_comparison_failures(comparison, base_run, cand_run)
