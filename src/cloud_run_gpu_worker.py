@@ -6,6 +6,7 @@ import base64
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
+from threading import Lock
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -21,6 +22,8 @@ from src.demo_bootstrap import (
     ensure_demo_kitti,
 )
 from src.pipeline.runner import RunConfig, TestRunner
+
+_bootstrap_lock = Lock()
 
 
 def _bootstrap_demo_assets() -> None:
@@ -113,10 +116,16 @@ class CloudRunBenchmarkWorker:
         self._runner = TestRunner()
 
     def process(self, job_id: str) -> None:
-        job = self._control.claim(job_id)
-        if job is None:  # duplicate Pub/Sub delivery or a cancelled job
-            return
         try:
+            # Large reviewed bundles must not be materialized in the FastAPI
+            # lifespan: Cloud Run's startup probe would time out before the
+            # service can become healthy.  A job already has a visible queue
+            # state while this one-time cold-start preparation runs.
+            with _bootstrap_lock:
+                _bootstrap_demo_assets()
+            job = self._control.claim(job_id)
+            if job is None:  # duplicate Pub/Sub delivery or a cancelled job
+                return
             config = RunConfig.model_validate(job["request"])
             settings = get_settings()
             evidence_root = Path(settings.runs_root).expanduser().resolve() / "platform-evidence" / job_id
@@ -185,7 +194,6 @@ def _put_gcs_bytes(bucket: str, key: str, content: bytes) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    _bootstrap_demo_assets()
     app.state.worker = CloudRunBenchmarkWorker()
     yield
 
