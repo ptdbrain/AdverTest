@@ -181,8 +181,9 @@ export function getRunAnalyticsDistance(runId) {
   return apiFetch(`/api/v1/analytics/runs/${encodeURIComponent(runId)}/distance`);
 }
 
-export function cancelRun(runId) {
-  return apiFetch(`/api/v1/runs/${runId}/cancel`, { method: "POST" });
+export function cancelRun(runId, projectId) {
+  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  return apiFetch(`/api/v1/runs/${encodeURIComponent(runId)}/cancel${query}`, { method: "POST" });
 }
 
 export function connectRunWebSocket(runId, onEvent) {

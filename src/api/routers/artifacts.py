@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
-from src.api.platform_dependencies import get_platform_artifacts, require_platform_actor
+from src.api.platform_dependencies import get_platform_artifacts, require_project_member
 from src.api.schemas.platform import CreateArtifactUploadSessionIn, FinalizeArtifactUploadIn
 from src.storage.service import ArtifactService
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/projects/{project_id}", tags=["Artifacts"])
 async def create_upload_session(
     project_id: str,
     body: CreateArtifactUploadSessionIn,
-    actor_id: str = Depends(require_platform_actor),
+    actor_id: str = Depends(require_project_member),
     artifacts: ArtifactService = Depends(get_platform_artifacts),
 ) -> dict:
     return artifacts.begin_upload(project_id=project_id, actor_id=actor_id, **body.model_dump())
@@ -26,7 +26,7 @@ async def upload_local_content(
     project_id: str,
     session_id: str,
     request: Request,
-    actor_id: str = Depends(require_platform_actor),
+    actor_id: str = Depends(require_project_member),
     artifacts: ArtifactService = Depends(get_platform_artifacts),
 ) -> Response:
     try:
@@ -45,7 +45,7 @@ async def complete_upload(
     project_id: str,
     session_id: str,
     body: FinalizeArtifactUploadIn,
-    actor_id: str = Depends(require_platform_actor),
+    actor_id: str = Depends(require_project_member),
     artifacts: ArtifactService = Depends(get_platform_artifacts),
 ) -> dict:
     try:
@@ -64,7 +64,7 @@ async def complete_upload(
 async def get_artifact(
     project_id: str,
     artifact_id: str,
-    actor_id: str = Depends(require_platform_actor),
+    actor_id: str = Depends(require_project_member),
     artifacts: ArtifactService = Depends(get_platform_artifacts),
 ) -> dict:
     try:
@@ -80,7 +80,7 @@ async def get_artifact(
 async def create_download_url(
     project_id: str,
     artifact_id: str,
-    actor_id: str = Depends(require_platform_actor),
+    actor_id: str = Depends(require_project_member),
     artifacts: ArtifactService = Depends(get_platform_artifacts),
 ) -> dict:
     try:
@@ -98,7 +98,7 @@ async def create_download_url(
 async def download_local_content(
     project_id: str,
     artifact_id: str,
-    actor_id: str = Depends(require_platform_actor),
+    actor_id: str = Depends(require_project_member),
     artifacts: ArtifactService = Depends(get_platform_artifacts),
 ) -> Response:
     try:

@@ -11,7 +11,7 @@ export default function ProjectAssetPicker({ projectId, taskId, kind, modelFamil
     if (!file || !projectId) return;
     setIsUploading(true); setMessage("");
     try {
-      const artifact = await uploadProjectArtifact(projectId, file, kind === "model" ? "CHECKPOINT" : "DATASET_BUNDLE");
+      const artifact = await uploadProjectArtifact(projectId, file, kind === "model" ? "checkpoint" : "dataset_bundle");
       const registered = kind === "model" ? await registerProjectCheckpoint(projectId, artifact.id, taskId, modelFamilyId) : await registerProjectDataset(projectId, artifact.id, file.name, taskId);
       setMessage(kind === "model" ? "Đang chờ xác thực" : "Dataset đã được đăng ký");
       onComplete?.(registered);

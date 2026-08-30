@@ -8,7 +8,7 @@ from src.api.checkpoint_service import PlatformCheckpointService
 from src.api.platform_dependencies import (
     get_platform_checkpoints,
     get_platform_compute,
-    require_platform_actor,
+    require_project_member,
 )
 from src.api.schemas.platform import ImportUltralyticsIn, RegisterCheckpointIn
 from src.compute.backends import ComputeBackend
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/projects/{project_id}/checkpoints", tags=["Checkpoin
 async def register_checkpoint(
     project_id: str,
     body: RegisterCheckpointIn,
-    actor_id: str = Depends(require_platform_actor),
+    actor_id: str = Depends(require_project_member),
     checkpoints: PlatformCheckpointService = Depends(get_platform_checkpoints),
     compute: ComputeBackend = Depends(get_platform_compute),
 ) -> dict:
@@ -44,7 +44,7 @@ async def register_checkpoint(
 async def import_ultralytics(
     project_id: str,
     body: ImportUltralyticsIn,
-    actor_id: str = Depends(require_platform_actor),
+    actor_id: str = Depends(require_project_member),
     checkpoints: PlatformCheckpointService = Depends(get_platform_checkpoints),
     compute: ComputeBackend = Depends(get_platform_compute),
 ) -> dict:
@@ -60,7 +60,7 @@ async def import_ultralytics(
 async def get_checkpoint(
     project_id: str,
     checkpoint_id: str,
-    actor_id: str = Depends(require_platform_actor),
+    actor_id: str = Depends(require_project_member),
     checkpoints: PlatformCheckpointService = Depends(get_platform_checkpoints),
 ) -> dict:
     del actor_id
@@ -74,7 +74,7 @@ async def get_checkpoint(
 async def checkpoint_validation_history(
     project_id: str,
     checkpoint_id: str,
-    actor_id: str = Depends(require_platform_actor),
+    actor_id: str = Depends(require_project_member),
     checkpoints: PlatformCheckpointService = Depends(get_platform_checkpoints),
 ) -> dict:
     del actor_id

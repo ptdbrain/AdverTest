@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { loginGoogleSSO, getGoogleAuthConfig, getAuthMe, loginUser, logoutUser, registerUser } from "@/lib/api";
+import * as api from "@/lib/api";
 
 const DEFAULT_AUTH_FALLBACK = {
   user: null,
@@ -31,7 +31,8 @@ export function AuthProvider({ children }) {
   // Load active user session on mount
   useEffect(() => {
     let active = true;
-    Promise.all([getAuthMe().catch(() => null), getGoogleAuthConfig().catch(() => null)]).then(([sessionUser, config]) => {
+    const readSession = api.getAuthMe || api.getCurrentUser || (() => Promise.resolve(null));
+    Promise.all([readSession().catch(() => null), (api.getGoogleAuthConfig || (() => Promise.resolve(null)))().catch(() => null)]).then(([sessionUser, config]) => {
       if (!active) return;
       setUser(sessionUser);
       if (config) setGoogleConfig(config);
@@ -53,7 +54,7 @@ export function AuthProvider({ children }) {
   const loginWithGoogle = useCallback(async (googleCredential) => {
     setIsLoading(true);
     try {
-      const res = await loginGoogleSSO({ credential: googleCredential });
+      const res = await api.loginGoogleSSO({ credential: googleCredential });
       handleAuthSuccess(res);
       return res;
     } finally {
@@ -64,7 +65,7 @@ export function AuthProvider({ children }) {
   const loginWithDemoProfile = useCallback(async (profile) => {
     setIsLoading(true);
     try {
-      const res = await loginGoogleSSO({
+      const res = await api.loginGoogleSSO({
         email: profile.email,
         display_name: profile.display_name,
         avatar_url: profile.avatar_url,
@@ -80,7 +81,7 @@ export function AuthProvider({ children }) {
   const loginWithCredentials = useCallback(async (email, password) => {
     setIsLoading(true);
     try {
-      const res = await loginUser(email, password);
+      const res = await api.loginUser(email, password);
       handleAuthSuccess(res);
       return res;
     } finally {
@@ -91,7 +92,7 @@ export function AuthProvider({ children }) {
   const registerWithCredentials = useCallback(async (payload) => {
     setIsLoading(true);
     try {
-      const res = await registerUser(payload);
+      const res = await api.registerUser(payload);
       handleAuthSuccess(res);
       return res;
     } finally {
@@ -100,7 +101,7 @@ export function AuthProvider({ children }) {
   }, [handleAuthSuccess]);
 
   const logout = useCallback(async () => {
-    await logoutUser();
+    await (api.logoutUser ? api.logoutUser() : Promise.resolve());
     setUser(null);
   }, []);
 

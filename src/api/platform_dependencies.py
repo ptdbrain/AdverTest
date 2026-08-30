@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import functools
 
-from fastapi import Header, HTTPException
+from fastapi import Cookie, Header, HTTPException
 
 from src.api.checkpoint_service import PlatformCheckpointService
 from src.auth.security import decode_access_token
@@ -22,6 +22,7 @@ from src.storage.service import ArtifactService
 
 def require_platform_actor(
     authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Cookie(default=None, alias="advertest_session"),
 ) -> str:
     """Extract authenticated actor identity.
 
@@ -29,8 +30,8 @@ def require_platform_actor(
     - Eliminates identity spoofing via client-supplied headers.
     - Strictly requires a valid JWT Bearer token with authenticated claims.
     """
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.removeprefix("Bearer ").strip()
+    token = authorization.removeprefix("Bearer ").strip() if authorization and authorization.startswith("Bearer ") else session_token
+    if token:
         claims = decode_access_token(token)
         if not claims or "sub" not in claims:
             raise HTTPException(status_code=401, detail="INVALID_TOKEN: Bearer token is invalid or expired.")
@@ -42,12 +43,12 @@ def require_platform_actor(
 def require_project_member(
     project_id: str,
     authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Cookie(default=None, alias="advertest_session"),
 ) -> str:
     """Validate that actor has valid Bearer token and is an active member or owner of project_id."""
-    if not authorization or not authorization.startswith("Bearer "):
+    token = authorization.removeprefix("Bearer ").strip() if authorization and authorization.startswith("Bearer ") else session_token
+    if not token:
         raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED: Valid Bearer token required.")
-
-    token = authorization.removeprefix("Bearer ").strip()
     claims = decode_access_token(token)
     if not claims or "sub" not in claims:
         raise HTTPException(status_code=401, detail="INVALID_TOKEN: Bearer token is invalid or expired.")

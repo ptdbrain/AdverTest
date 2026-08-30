@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import UserMenu from "@/components/UserMenu.jsx";
+import { useTheme } from "@/context/ThemeContext";
 import {
   getWandbSettings,
   saveWandbSettings,
@@ -42,6 +43,7 @@ const ROLES_INFO = [
 export default function SettingsPage() {
   const { user, role, isAuthenticated } = useAuth();
   const { lang, setLang, t } = useLanguage();
+  const { theme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState("appearance");
 
   // Profile Form State
@@ -51,7 +53,6 @@ export default function SettingsPage() {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // Appearance & Language State
-  const [currentTheme, setCurrentTheme] = useState("dark");
   const [minimalMode, setMinimalMode] = useState(true);
   const [prefSuccessMsg, setPrefSuccessMsg] = useState("");
 
@@ -74,8 +75,6 @@ export default function SettingsPage() {
     }
 
     try {
-      const savedTheme = localStorage.getItem("theme") || "dark";
-      setCurrentTheme(savedTheme);
       const savedMin = localStorage.getItem("advertest_minimal_mode");
       if (savedMin !== null) setMinimalMode(savedMin === "true");
     } catch {}
@@ -95,16 +94,8 @@ export default function SettingsPage() {
 
   // Handle Theme Change
   const handleThemeChange = (newTheme) => {
-    setCurrentTheme(newTheme);
+    setTheme(newTheme);
     try {
-      const effectiveTheme =
-        newTheme === "system"
-          ? window.matchMedia("(prefers-color-scheme: light)").matches
-            ? "light"
-            : "dark"
-          : newTheme;
-      document.documentElement.setAttribute("data-theme", effectiveTheme);
-      localStorage.setItem("theme", newTheme);
       setPrefSuccessMsg(t("settings.theme.saved"));
       setTimeout(() => setPrefSuccessMsg(""), 3000);
     } catch {}
@@ -323,9 +314,9 @@ export default function SettingsPage() {
                       style={{
                         padding: "12px 10px",
                         borderRadius: "8px",
-                        background: currentTheme === mode ? "rgba(56, 189, 248, 0.15)" : "var(--bg-primary)",
-                        border: currentTheme === mode ? "2px solid var(--accent, #38BDF8)" : "1px solid var(--border-subtle)",
-                        color: currentTheme === mode ? "var(--text-primary)" : "var(--text-secondary)",
+                        background: theme === mode ? "rgba(56, 189, 248, 0.15)" : "var(--bg-primary)",
+                        border: theme === mode ? "2px solid var(--accent, #38BDF8)" : "1px solid var(--border-subtle)",
+                        color: theme === mode ? "var(--text-primary)" : "var(--text-secondary)",
                         cursor: "pointer",
                         display: "flex",
                         flexDirection: "column",

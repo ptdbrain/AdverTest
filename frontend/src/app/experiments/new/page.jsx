@@ -43,6 +43,8 @@ import {
 } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { getApiBase, getCatalogDatasets, getModelVersions } from "@/lib/api";
+import ProjectAssetPicker from "@/components/ProjectAssetPicker";
+import ClassMappingCard from "@/components/ClassMappingCard";
 
 export default function ConfigureProblemPage() {
   const router = useRouter();
@@ -56,10 +58,7 @@ export default function ConfigureProblemPage() {
   const [catalogModels, setCatalogModels] = useState([]);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
 
-  const [dataSource, setDataSource] = useState("repository");
-  const [modelSource, setModelSource] = useState("default_lib");
-  const [mixedPrecision, setMixedPrecision] = useState(true);
-  const [batchSize, setBatchSize] = useState(16);
+  const [classMapping, setClassMapping] = useState({});
   const [expName, setExpName] = useState("EXP-2025-0512-001");
   const [sessionName, setSessionName] = useState("Đánh giá Robustness YOLO11s trên KITTI");
   const [expDesc, setExpDesc] = useState("Kiểm thử độ suy giảm của mô hình YOLO11s trước các điều kiện thời tiết khắc nghiệt và nhiễu đối kháng.");
@@ -97,55 +96,6 @@ export default function ConfigureProblemPage() {
     }
   };
 
-  // Hardware Specs Auto-detection State
-  const [hardwareSpecs, setHardwareSpecs] = useState(null);
-  const [isLoadingSpecs, setIsLoadingSpecs] = useState(true);
-
-  // Upload & Download Modal / Simulation States
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadTarget, setDownloadTarget] = useState("");
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [uploadType, setUploadType] = useState("model"); // "model" | "dataset"
-  const [uploadFile, setUploadFile] = useState(null);
-  const [uploadStatus, setUploadStatus] = useState("idle"); // "idle" | "validating" | "success" | "error"
-  const [validationReport, setValidationReport] = useState(null);
-
-  // 1. Auto-detect Hardware on Mount
-  useEffect(() => {
-    let isMounted = true;
-    fetch(`${getApiBase()}/api/v1/system/runtime-specs`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (isMounted && data) {
-          setHardwareSpecs(data);
-          const executionSpecs = data.execution_plane || data;
-          setBatchSize(executionSpecs.recommended_batch_size || 16);
-          setMixedPrecision(executionSpecs.recommended_precision === "FP16");
-        }
-      })
-      .catch((err) => {
-        console.warn("Could not fetch hardware specs from backend:", err);
-        if (isMounted) {
-          setHardwareSpecs({
-            has_cuda: false,
-            device_name: "Intel/AMD CPU System",
-            device_target: "cpu",
-            cpu_count: 8,
-            recommended_batch_size: 4,
-            recommended_precision: "FP32",
-            supported_precisions: ["FP32"],
-          });
-        }
-      })
-      .finally(() => {
-        if (isMounted) setIsLoadingSpecs(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   // The experiment form must show the deployable catalog, not the old design
   // mock data.  Dataset `demo` means an anonymised bundle is mounted by the
@@ -239,6 +189,7 @@ export default function ConfigureProblemPage() {
 
   const currentDataset = filteredDatasets.find((d) => d.id === selectedDatasetId) || filteredDatasets[0] || AVAILABLE_DATASETS[0];
   const currentModel = filteredModels.find((m) => m.id === selectedModelId) || filteredModels[0] || AVAILABLE_MODELS[0];
+  const projectId = process.env.NEXT_PUBLIC_DEFAULT_PROJECT_ID || "advertest-default";
 
   // Derive Model Classes and Dataset Classes for Label Mapping Matrix
   const modelClasses = currentModel.architecture === "pointpillars"
@@ -275,72 +226,6 @@ export default function ConfigureProblemPage() {
     }
   };
 
-  const handleDownloadSimulation = (targetName) => {
-    setDownloadTarget(targetName);
-    setIsDownloading(true);
-    setDownloadProgress(10);
-    const interval = setInterval(() => {
-      setDownloadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setTimeout(() => setIsDownloading(false), 500);
-          return 100;
-        }
-        return prev + 25;
-      });
-    }, 300);
-  };
-
-  const handleFileUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadFile(file);
-    setUploadStatus("validating");
-
-    // Strict validation simulation
-    setTimeout(() => {
-      if (uploadType === "model") {
-        const validExt = [".pt", ".pth", ".onnx"].some((ext) => file.name.endsWith(ext));
-        if (!validExt) {
-          setUploadStatus("error");
-          setValidationReport({
-            valid: false,
-            error: `Định dạng tệp không hợp lệ: '${file.name}'. Hệ thống chỉ chấp nhận .pt, .pth, hoặc .onnx.`,
-          });
-        } else {
-          setUploadStatus("success");
-          setValidationReport({
-            valid: true,
-            modelName: file.name,
-            fileSize: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-            architecture: file.name.includes("3d") ? "PointPillars 3D" : "YOLO11 Vision",
-            classesDetected: ["car", "pedestrian", "cyclist"],
-            checksum: "SHA256: verified",
-          });
-        }
-      } else {
-        // Dataset validation
-        if (!file.name.endsWith(".zip")) {
-          setUploadStatus("error");
-          setValidationReport({
-            valid: false,
-            error: `Tập dữ liệu phải được nén dạng .zip chứa cấu trúc 'images/', 'labels/' và 'data.yaml'.`,
-          });
-        } else {
-          setUploadStatus("success");
-          setValidationReport({
-            valid: true,
-            datasetName: file.name.replace(".zip", ""),
-            fileSize: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-            structureCheck: "images/ (OK), labels/ (OK), data.yaml (OK)",
-            annotationFormat: "YOLO Normalized BBox [0..1] — 100% Passed",
-            samplesFound: 48,
-          });
-        }
-      }
-    }, 800);
-  };
-
   const handleNext = () => {
     const taskName = PROBLEM_TYPES.find((t) => t.id === selectedTask)?.name || "Object Detection";
     const experimentConfig = {
@@ -355,8 +240,7 @@ export default function ConfigureProblemPage() {
       selectedModelFormat: currentModel.format,
       selectedDatasetId: currentDataset.id,
       selectedDatasetName: currentDataset.name,
-      batchSize,
-      mixedPrecision,
+      class_mapping: classMapping,
       updatedAt: new Date().toISOString(),
     };
     try {
@@ -375,6 +259,7 @@ export default function ConfigureProblemPage() {
           model_name: currentModel.name,
           dataset_id: currentDataset.id,
           dataset_name: currentDataset.name,
+          class_mapping: classMapping,
           created_at: new Date().toLocaleDateString("vi-VN"),
           updated_at: new Date().toLocaleDateString("vi-VN"),
           runs: [],
@@ -397,48 +282,6 @@ export default function ConfigureProblemPage() {
           { label: "Tạo thí nghiệm mới" },
         ]}
       />
-
-      {/* 1. AUTO-DETECTED HARDWARE RUNSPECS BANNER */}
-      <div className="p-4 rounded-xl bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 border border-slate-700 text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/40 text-indigo-400 flex items-center justify-center font-bold shadow-inner">
-            <Cpu className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">
-                Tài Nguyên Phần Cứng & Runtime Auto-detect
-              </span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                ● Ready
-              </span>
-            </div>
-            <div className="text-sm font-semibold text-slate-100 mt-0.5">
-              {hardwareSpecs ? (hardwareSpecs.execution_plane || hardwareSpecs).device_name : "Đang kiểm tra phần cứng..."}
-              {(hardwareSpecs?.execution_plane || hardwareSpecs)?.total_vram_gb ? ` — ${(hardwareSpecs.execution_plane || hardwareSpecs).total_vram_gb} GB VRAM${(hardwareSpecs.execution_plane || hardwareSpecs).free_vram_gb != null ? ` (${(hardwareSpecs.execution_plane || hardwareSpecs).free_vram_gb} GB khả dụng)` : ""}` : ""}
-            </div>
-            <div className="text-xs text-slate-400 mt-0.5">
-              Tự động tối ưu: Batch Size = <strong>{batchSize}</strong> | Precision = <strong>{mixedPrecision ? "FP16 (Tốc độ cao)" : "FP32"}</strong> | Thiết bị = <code className="bg-slate-800 px-1 py-0.5 rounded text-indigo-300">{(hardwareSpecs?.execution_plane || hardwareSpecs)?.device_target || "cpu"}</code>
-              {hardwareSpecs?.execution_plane?.status === "on_demand" && " | GPU khởi động theo job"}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              setUploadType("model");
-              setIsUploadModalOpen(true);
-            }}
-            icon={Upload}
-            className="bg-slate-800/80 border-slate-600 text-slate-200 hover:bg-slate-700 text-xs"
-          >
-            Tải lên Model / Data
-          </Button>
-        </div>
-      </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
         {/* LEFT & CENTER: Form Controls (2 Columns) */}
@@ -624,16 +467,7 @@ export default function ConfigureProblemPage() {
                       ) : (
                         <div className="flex items-center gap-1" title={model.reason || "Checkpoint chưa sẵn sàng"}>
                           <span className="text-amber-700 text-[10px] font-semibold">Cần tải / xác thực</span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDownloadSimulation(model.name);
-                            }}
-                            className="text-[10px] text-blue-600 hover:underline font-semibold flex items-center gap-0.5"
-                          >
-                            <Download className="w-3 h-3" /> Tải về
-                          </button>
+                          <span className="text-[10px] text-slate-500 font-semibold">Artifact chưa sẵn sàng để tải</span>
                         </div>
                       )}
                       <span className="font-mono text-slate-500">{model.format}</span>
@@ -700,6 +534,12 @@ export default function ConfigureProblemPage() {
             title="4. Đối chiếu nhãn lớp (Class Labels & Mapping Matrix)"
             subtitle="Kiểm tra mức độ trùng khớp giữa nhãn mô hình đã học và nhãn của bộ dữ liệu"
           >
+            <ClassMappingCard
+              modelClasses={modelClasses}
+              datasetClasses={datasetClasses}
+              source={catalogDatasets.length > 0 ? "manifest" : "demo"}
+              onChange={setClassMapping}
+            />
             <div className="space-y-4">
               {/* Header Match Rate */}
               <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
@@ -776,6 +616,13 @@ export default function ConfigureProblemPage() {
 
         {/* RIGHT COLUMN: Experiment Summary & Hyperparameters (1 Column) */}
         <div className="space-y-5">
+          <Card title="Asset của project" subtitle={`Project: ${projectId}`}>
+            <div className="space-y-4">
+              <ProjectAssetPicker projectId={projectId} taskId={selectedTask} kind="model" modelFamilyId={currentModel.architecture} onComplete={() => getModelVersions().then(setCatalogModels).catch(() => {})} />
+              <ProjectAssetPicker projectId={projectId} taskId={selectedTask} kind="dataset" onComplete={() => getCatalogDatasets({ task_id: selectedTask }).then(setCatalogDatasets).catch(() => {})} />
+              <p className="text-[11px] text-slate-500">Upload dùng API project-scoped; server quyết định validation và trạng thái READY.</p>
+            </div>
+          </Card>
           {/* Summary Card */}
           <Card title="Tóm tắt cấu hình bài toán">
             <div className="space-y-3 text-xs">
@@ -791,14 +638,6 @@ export default function ConfigureProblemPage() {
                 <span className="text-slate-500">Dữ liệu:</span>
                 <span className="font-bold text-slate-800 line-clamp-1 max-w-[160px]">{currentDataset.name}</span>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Batch Size:</span>
-                <span className="font-bold text-slate-800">{batchSize}</span>
-              </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Độ chính xác:</span>
-                <span className="font-bold text-slate-800">{mixedPrecision ? "FP16 (Mixed)" : "FP32 (Single)"}</span>
-              </div>
             </div>
 
             <div className="mt-5 space-y-2">
@@ -813,43 +652,11 @@ export default function ConfigureProblemPage() {
             </div>
           </Card>
 
-          {/* Hyperparameters Card */}
-          <Card title="Tùy chỉnh siêu tham số Runtime">
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Batch Size</label>
-                <select
-                  value={batchSize}
-                  onChange={(e) => setBatchSize(Number(e.target.value))}
-                  className="w-full p-2 border border-slate-300 rounded-lg bg-white font-medium text-slate-700"
-                >
-                  <option value={2}>2 (Rất nhẹ / CPU)</option>
-                  <option value={4}>4 (Nhẹ / GPU 4GB)</option>
-                  <option value={8}>8 (Vừa / GPU 6-8GB)</option>
-                  <option value={16}>16 (Chuẩn / GPU 8-16GB)</option>
-                  <option value={32}>32 (Nhanh / GPU &gt;16GB)</option>
-                </select>
-              </div>
-
-              <div className="flex items-center justify-between pt-2">
-                <div>
-                  <div className="font-semibold text-slate-700">Mixed Precision (FP16)</div>
-                  <div className="text-[10px] text-slate-400">Tăng tốc độ suy luận gấp 2 lần</div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={mixedPrecision}
-                  onChange={(e) => setMixedPrecision(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 rounded"
-                />
-              </div>
-            </div>
-          </Card>
         </div>
       </div>
 
       {/* MODAL: DOWNLOAD SIMULATION */}
-      {isDownloading && (
+      {false && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-xl p-6 max-w-sm w-full space-y-4 shadow-2xl border border-slate-200">
             <div className="flex items-center gap-3">
@@ -873,7 +680,7 @@ export default function ConfigureProblemPage() {
       )}
 
       {/* MODAL: UPLOAD WITH STRICT VALIDATION */}
-      {isUploadModalOpen && (
+      {false && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-xl p-6 max-w-lg w-full space-y-4 shadow-2xl border border-slate-200 animate-scale-in">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">

@@ -10,7 +10,7 @@ export default function AppShell({ children }) {
   const { isCollapsed } = useSidebar();
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex">
+    <div className="min-h-screen bg-[var(--app-bg)] text-[var(--app-text)] flex">
       {/* Fixed Collapsible Sidebar */}
       <Sidebar />
 

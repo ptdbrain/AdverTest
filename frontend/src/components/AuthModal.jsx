@@ -10,7 +10,6 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
     closeAuthModal: contextClose,
     googleConfig,
     loginWithGoogle,
-    loginWithDemoProfile,
     loginWithCredentials,
     registerWithCredentials,
     isLoading,
@@ -20,11 +19,10 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
   const isOpen = propsIsOpen !== undefined ? propsIsOpen : contextIsOpen;
   const handleClose = propsOnClose || contextClose;
 
-  const [activeTab, setActiveTab] = useState("google"); // "google" | "login" | "register"
+  const [activeTab, setActiveTab] = useState("login"); // "google" | "login" | "register"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [role, setRole] = useState("RESEARCHER");
   const [error, setError] = useState("");
 
   // Load Google Identity Services SDK if Client ID is configured
@@ -86,7 +84,6 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
           email,
           password,
           display_name: displayName || email.split("@")[0],
-          role: role,
         });
       }
     } catch (err) {
@@ -134,7 +131,7 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
               {activeTab === "register" ? "Tạo tài khoản để lưu trữ và quản lý thí nghiệm đối kháng" : t("auth.subtitle")}
             </p>
           </div>
-          <button
+          {googleConfig?.configured && <button
             type="button"
             onClick={handleClose}
             style={{
@@ -147,7 +144,7 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
             }}
           >
             ✕
-          </button>
+          </button>}
         </div>
 
         {/* Tab Buttons */}
@@ -239,87 +236,7 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
               <div style={{ display: "flex", justifyContent: "center", margin: "8px 0" }}>
                 <div id="google-signin-btn-container" />
               </div>
-            ) : (
-              <div
-                style={{
-                  background: "rgba(30, 41, 59, 0.5)",
-                  border: "1px dashed rgba(148, 163, 184, 0.3)",
-                  borderRadius: "8px",
-                  padding: "14px",
-                  fontSize: "0.75rem",
-                  color: "var(--text-muted)",
-                  textAlign: "center",
-                }}
-              >
-                {t("auth.googleNotConfigured")}
-              </div>
-            )}
-
-            {/* 1-Click Demo Profiles */}
-            <div>
-              <div
-                style={{
-                  fontSize: "0.7rem",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                  color: "var(--text-muted)",
-                  marginBottom: "8px",
-                }}
-              >
-                {t("auth.demoProfilesTitle")}
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                {(googleConfig?.demo_profiles?.length ? googleConfig.demo_profiles : [
-                  { email: "admin@advertest.ai", display_name: "Admin User", role: "ADMIN", avatar_url: "https://api.dicebear.com/7.x/bottts/svg?seed=admin" },
-                  { email: "researcher@advertest.ai", display_name: "Researcher", role: "RESEARCHER", avatar_url: "https://api.dicebear.com/7.x/bottts/svg?seed=researcher" },
-                  { email: "reviewer@advertest.ai", display_name: "Safety Reviewer", role: "SAFETY_REVIEWER", avatar_url: "https://api.dicebear.com/7.x/bottts/svg?seed=reviewer" },
-                  { email: "guest@advertest.ai", display_name: "Guest Auditor", role: "GUEST", avatar_url: "https://api.dicebear.com/7.x/bottts/svg?seed=guest" },
-                ]).map((prof) => (
-                  <button
-                    key={prof.email}
-                    type="button"
-                    disabled={isLoading}
-                    onClick={() => loginWithDemoProfile(prof).catch((err) => setError(err.message))}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      background: "rgba(15, 23, 42, 0.6)",
-                      border: "1px solid rgba(148, 163, 184, 0.15)",
-                      borderRadius: "6px",
-                      padding: "8px 10px",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      color: "var(--text-primary)",
-                      transition: "all 0.15s ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = "var(--primary-accent, #3B82F6)";
-                      e.currentTarget.style.background = "rgba(30, 41, 59, 0.8)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = "rgba(148, 163, 184, 0.15)";
-                      e.currentTarget.style.background = "rgba(15, 23, 42, 0.6)";
-                    }}
-                  >
-                    <img
-                      src={prof.avatar_url}
-                      alt=""
-                      style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#1E293B" }}
-                    />
-                    <div style={{ overflow: "hidden" }}>
-                      <div style={{ fontSize: "0.75rem", fontWeight: 700, whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
-                        {prof.display_name}
-                      </div>
-                      <div style={{ fontSize: "0.65rem", color: "var(--text-muted)" }}>
-                        {prof.role}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
+            ) : <div role="status" style={{ color: "var(--text-muted)", textAlign: "center", fontSize: "0.75rem" }}>{t("auth.googleNotConfigured")}</div>}
           </div>
         )}
 
@@ -459,30 +376,6 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
                   boxSizing: "border-box",
                 }}
               />
-            </div>
-            <div>
-              <label style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "block", marginBottom: "3px" }}>
-                Vai trò (Role)
-              </label>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "8px 10px",
-                  borderRadius: "6px",
-                  border: "1px solid var(--border-subtle)",
-                  background: "var(--bg-primary, #0B0F17)",
-                  color: "var(--text-primary, #FFF)",
-                  fontSize: "0.8rem",
-                  boxSizing: "border-box",
-                }}
-              >
-                <option value="RESEARCHER">RESEARCHER (Nghiên cứu viên)</option>
-                <option value="SAFETY_REVIEWER">SAFETY_REVIEWER (Thẩm định an toàn)</option>
-                <option value="ENGINEER">ENGINEER (Kỹ sư AI)</option>
-                <option value="GUEST">GUEST (Khách kiểm tra)</option>
-              </select>
             </div>
             <button
               type="submit"

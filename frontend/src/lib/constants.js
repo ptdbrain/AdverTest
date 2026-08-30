@@ -132,7 +132,7 @@ export const AVAILABLE_DATASETS = [
 export const AVAILABLE_MODELS = [
   {
     id: "local_sam2_hiera_small",
-    name: "sam2.1_hiera_small.pt (Có sẵn trong checkpoints/sam2)",
+    name: "SAM 2.1 Hiera Small (image segmentation)",
     family: "SAM2.1",
     task: "segmentation",
     params: "46.0M",
@@ -143,12 +143,12 @@ export const AVAILABLE_MODELS = [
     localPath: "checkpoints/sam2/sam2.1_hiera_small.pt",
     mapBaseline: "67.8% mIoU",
     fpsRtx4090: "85 FPS",
-    description: "Mô hình phân đoạn Meta SAM 2.1 Hiera Small chính thức có sẵn tại `checkpoints/sam2/sam2.1_hiera_small.pt`.",
+    description: "Mô hình phân đoạn ảnh; chỉ hiển thị READY khi checkpoint và dataset hợp lệ.",
     architecture: "sam",
   },
   {
     id: "local_yolo11s_clean",
-    name: "yolo11s-clean-b0_best.pt (Có sẵn trong thư mục data/checkpoints)",
+    name: "YOLO11s (2D object detection)",
     family: "YOLO",
     task: "detection2d",
     params: "9.4M",
@@ -159,12 +159,12 @@ export const AVAILABLE_MODELS = [
     localPath: "data/checkpoints/yolo11s-clean-b0_best.pt",
     mapBaseline: "72.4%",
     fpsRtx4090: "120 FPS",
-    description: "Mô hình YOLO11s chuẩn huấn luyện sạch có sẵn trong `data/checkpoints/yolo11s-clean-b0_best.pt`.",
+    description: "Checkpoint YOLO11s cho phát hiện đối tượng 2D; trạng thái chạy phụ thuộc checkpoint đã đăng ký.",
     architecture: "yolo",
   },
   {
     id: "pointpillars_kitti_local",
-    name: "pointpillars_kitti_3class.pth (Có sẵn trong checkpoints/pointpillars)",
+    name: "PointPillars (LiDAR 3D detection)",
     family: "3D LiDAR",
     task: "detection3d",
     params: "4.8M",
@@ -175,7 +175,7 @@ export const AVAILABLE_MODELS = [
     localPath: "checkpoints/pointpillars/pointpillars_kitti_3class.pth",
     mapBaseline: "78.4% 3D mAP",
     fpsRtx4090: "62 FPS",
-    description: "Mô hình PointPillars chính thức phát hiện 3 lớp vật thể (Car, Pedestrian, Cyclist) từ đám mây điểm LiDAR.",
+    description: "Car, Pedestrian, Cyclist; giữ WAITING_FOR_GPU_VALIDATION cho đến CUDA inference thật.",
     architecture: "pointpillars",
   },
   {

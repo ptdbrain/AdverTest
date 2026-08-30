@@ -339,9 +339,9 @@ export default function ReviewPage() {
   const currentSample = reviewSamples[0];
 
   return (
-    <div className="flex flex-col h-screen max-h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+    <div className="min-h-screen bg-[var(--app-bg)] text-[var(--app-text)] overflow-visible font-sans">
       {/* ── Top Navigation Bar ── */}
-      <header className="h-14 min-h-14 px-5 flex items-center justify-between border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md shrink-0">
+      <header className="h-14 px-5 flex items-center justify-between border-b border-[var(--app-border)] bg-[var(--app-surface)] backdrop-blur-md">
         <div className="flex items-center gap-3">
           <Link
             href="/dashboard"
@@ -414,9 +414,9 @@ export default function ReviewPage() {
       )}
 
       {/* ── 3-Column Triage Console ── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-12">
         {/* ════ COLUMN 1: FAILURE CLUSTER & CASE NAVIGATOR (w-80) ════ */}
-        <div className="w-80 shrink-0 border-r border-slate-800/80 bg-slate-900/50 flex flex-col overflow-hidden">
+        <div data-testid="review-queue" className="min-h-[280px] lg:col-span-3 rounded-xl border border-[var(--app-border)] bg-[var(--app-surface)] flex flex-col overflow-hidden">
           {/* Status & View Switcher */}
           <div className="p-3 border-b border-slate-800/80 space-y-2.5 shrink-0">
             <div className="flex items-center justify-between">
@@ -568,7 +568,7 @@ export default function ReviewPage() {
         </div>
 
         {/* ════ COLUMN 2: XAI VISUAL EVIDENCE & CONTEXT (flex-1) ════ */}
-        <div className="flex-1 border-r border-slate-800/80 bg-slate-950 flex flex-col overflow-y-auto">
+        <div className="min-h-[420px] lg:col-span-5 rounded-xl border border-[var(--app-border)] bg-[var(--app-surface)] flex flex-col overflow-y-auto">
           {selectedReview ? (
             <div className="p-6 space-y-5">
               {/* Evidence Header */}
@@ -747,7 +747,7 @@ export default function ReviewPage() {
         </div>
 
         {/* ════ COLUMN 3: 5-DECISION RUBRIC & DOWNSTREAM ACTION (w-88) ════ */}
-        <div className="w-88 shrink-0 bg-slate-900/70 p-5 flex flex-col justify-between overflow-y-auto space-y-5">
+        <div data-testid="review-decision-panel" className="min-h-[420px] lg:col-span-4 rounded-xl border border-[var(--app-border)] bg-[var(--app-surface)] p-5 flex flex-col justify-between overflow-y-auto space-y-5">
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-bold text-sm text-slate-100 flex items-center gap-1.5">

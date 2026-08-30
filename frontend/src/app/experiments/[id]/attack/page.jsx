@@ -40,6 +40,7 @@ import Button from "@/components/common/Button";
 import { ATTACK_CATEGORIES, ATTACK_PRESETS } from "@/lib/constants";
 import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { visibleAttacks } from "@/lib/attackCatalog";
 import {
   createRun,
   getCatalogAttacks,
@@ -50,6 +51,7 @@ import {
   getRunSamples,
   preflightRun,
   addRunToSession,
+  cancelRun,
 } from "@/lib/api";
 
 const TERMINAL_RUN_STATES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
@@ -232,7 +234,9 @@ function ConfigureAttackPageContent() {
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionStep, setExecutionStep] = useState(0);
   const [executionStatusMessage, setExecutionStatusMessage] = useState("");
+  const [activeRunId, setActiveRunId] = useState("");
   const [executionError, setExecutionError] = useState("");
+  const [catalogRows, setCatalogRows] = useState([]);
 
   // Attack Recipe Summary (The active queue of confirmed attacks)
   const [attackQueue, setAttackQueue] = useState([
@@ -281,7 +285,25 @@ function ConfigureAttackPageContent() {
     } catch {}
   }, [mode]);
 
-  const allAttacksList = ATTACK_CATEGORIES.flatMap((c) => c.attacks);
+  useEffect(() => {
+    let mounted = true;
+    getCatalogAttacks({ task_id: expContext.selectedTask }).then((rows) => {
+      if (mounted && Array.isArray(rows)) setCatalogRows(rows);
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, [expContext.selectedTask]);
+
+  const catalogAttacks = visibleAttacks(catalogRows, expContext.selectedTask).map((row) => ({
+    id: row.name,
+    name: row.display_name || row.title || row.name,
+    fullName: row.display_name || row.title || row.name,
+    desc: row.plain_summary || row.technical_summary || row.reason || "Backend catalog attack",
+    norm: row.threat_model || "Catalog",
+    isWeather: row.scenario_kind === "environmental_degradation",
+    available: row.available !== false,
+    unavailable_reason: row.reason,
+  }));
+  const allAttacksList = catalogAttacks.length ? catalogAttacks : ATTACK_CATEGORIES.flatMap((c) => c.attacks);
   const currentAttack =
     allAttacksList.find((a) => a.id === selectedAttackId) || allAttacksList[0];
 
@@ -362,6 +384,7 @@ function ConfigureAttackPageContent() {
       if (preflight.fatal_errors?.length) throw new Error(preflight.fatal_errors.join(" "));
       setExecutionStep(2);
       const created = await createRun(config);
+      setActiveRunId(created.run_id);
       setExecutionStatusMessage(executionStatusMessageForJob(created));
       const { job, report, samples } = await waitForRealRun(created.run_id, (currentJob) => {
         // A poll can observe a lower-level worker state after INFERENCING.
@@ -483,8 +506,29 @@ function ConfigureAttackPageContent() {
     }
   };
 
+  const handleCancelExecution = async () => {
+    if (!activeRunId) return;
+    try {
+      setExecutionStatusMessage("Đang gửi yêu cầu hủy tiến trình...");
+      const cancelled = await cancelRun(activeRunId, expContext.projectId || process.env.NEXT_PUBLIC_DEFAULT_PROJECT_ID);
+      setExecutionStatusMessage(cancelled.status === "CANCELLED" ? "Đã hủy tiến trình." : "Yêu cầu hủy đã được gửi.");
+      if (cancelled.status === "CANCELLED") setIsExecuting(false);
+    } catch (error) {
+      setExecutionError(error.message || "Không thể hủy tiến trình.");
+    }
+  };
+
   const isTask3D = expContext.selectedTask === "detection3d";
-  const filteredCategories = ATTACK_CATEGORIES.filter((cat) => {
+  const sourceCategories = catalogAttacks.length
+    ? Object.values(catalogAttacks.reduce((groups, attack) => {
+      const group = attack.group || "catalog";
+      groups[group] = groups[group] || { id: group, title: group, attacks: [] };
+      groups[group].attacks.push(attack);
+      return groups;
+    }, {}))
+    : ATTACK_CATEGORIES;
+  const filteredCategories = sourceCategories.filter((cat) => {
+    if (catalogAttacks.length) return true;
     if (isTask3D) return cat.task_compatibility?.includes("detection3d");
     return cat.task_compatibility?.includes("detection2d");
   })
@@ -603,9 +647,9 @@ function ConfigureAttackPageContent() {
             {/* Accordion/Category List */}
             <div className="space-y-4 max-h-[580px] overflow-y-auto pr-1">
               {filteredCategories.map((cat) => (
-                <div key={cat.category} className="space-y-1.5">
+                <div key={cat.id || cat.category} className="space-y-1.5">
                   <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-1">
-                    {cat.category}
+                    {cat.title || cat.category}
                   </div>
                   <div className="space-y-1">
                     {cat.attacks.map((atk) => {
@@ -614,11 +658,11 @@ function ConfigureAttackPageContent() {
                       return (
                         <div
                           key={atk.id}
-                          onClick={() => {
-                            setSelectedAttackId(atk.id);
-                          }}
+                          title={atk.unavailable_reason || ""}
+                          onClick={() => { if (atk.available !== false) setSelectedAttackId(atk.id); }}
                           className={cn(
-                            "p-2.5 rounded-lg border text-left cursor-pointer transition-all flex items-center justify-between",
+                            "p-2.5 rounded-lg border text-left transition-all flex items-center justify-between",
+                            atk.available === false ? "cursor-not-allowed border-slate-200 bg-slate-100 opacity-60" : "cursor-pointer",
                             isSelected
                               ? "border-blue-600 bg-blue-50/60 shadow-xs ring-1 ring-blue-500"
                               : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
@@ -629,6 +673,7 @@ function ConfigureAttackPageContent() {
                               <span className="text-xs font-bold text-slate-800">
                                 {atk.name}
                               </span>
+                              {atk.available === false && <span className="text-[10px] font-semibold text-amber-700">Không khả dụng</span>}
                               {isInQueue && (
                                 <span className="w-2 h-2 rounded-full bg-emerald-500" title="Đã có trong chuỗi đòn" />
                               )}
@@ -914,6 +959,9 @@ function ConfigureAttackPageContent() {
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
                 {executionStatusMessage}
               </div>
+            )}
+            {activeRunId && isExecuting && (
+              <Button variant="secondary" size="sm" onClick={handleCancelExecution}>Hủy tiến trình</Button>
             )}
 
             {/* Step Progress Checklist */}

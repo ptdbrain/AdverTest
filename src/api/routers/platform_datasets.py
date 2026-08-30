@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
-from src.api.platform_dependencies import get_platform_artifacts, get_platform_database, require_platform_actor
+from src.api.platform_dependencies import get_platform_artifacts, get_platform_database, require_project_member
 from src.core.platform_contracts import ArtifactKind, ArtifactState
 from src.persistence.models import ArtifactRecord, DatasetVersionRecord
 from src.storage.service import ArtifactService
@@ -48,7 +48,7 @@ def _payload(record: DatasetVersionRecord) -> dict:
 def register_dataset_bundle(
     project_id: str,
     body: RegisterDatasetBundleIn,
-    actor_id: str = Depends(require_platform_actor),
+    actor_id: str = Depends(require_project_member),
     database=Depends(get_platform_database),
     artifacts: ArtifactService = Depends(get_platform_artifacts),
 ) -> dict:
@@ -103,7 +103,7 @@ def register_dataset_bundle(
 
 @router.get("")
 def list_dataset_versions(
-    project_id: str, actor_id: str = Depends(require_platform_actor), database=Depends(get_platform_database)
+    project_id: str, actor_id: str = Depends(require_project_member), database=Depends(get_platform_database)
 ) -> list[dict]:
     del actor_id
     with database.session() as session:

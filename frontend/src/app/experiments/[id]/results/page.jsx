@@ -25,15 +25,6 @@ const STATUS_LABELS = {
   CANCELLED: "Đã hủy",
 };
 
-function readStoredJson(key) {
-  try {
-    const value = localStorage.getItem(key);
-    return value ? JSON.parse(value) : null;
-  } catch {
-    return null;
-  }
-}
-
 function sampleArtifact(sample, key) {
   const direct = sample?.artifacts?.[key];
   const pathKey = {
@@ -99,17 +90,10 @@ function buildExperimentMetadata(expId, activeExperiment, lastSession) {
 
   return {
     details: [
-      { label: "Bài toán", value: firstValue(activeExperiment?.taskName, report.task_name, report.task), icon: Database },
+      { label: "Session / Run ID", value: firstValue(report.run_id, lastSession?.runId, expId), icon: Fingerprint, valueClass: "text-blue-700", mono: true },
       { label: "Mô hình", value: firstValue(activeExperiment?.selectedModelName, report.model_version, report.model, lastSession?.selectedModelVersion, lastSession?.selectedModelFamily), icon: Cpu, valueClass: "text-blue-700" },
       { label: "Bộ dữ liệu", value: firstValue(activeExperiment?.selectedDatasetName, report.dataset_name, report.dataset, lastSession?.selectedDataset), icon: Database },
-      { label: "Tấn công", value: firstValue(attackNames, recipeStep.attack_name, lastSession?.selectedAttacks?.join(" + ")), icon: Crosshair },
-      { label: "Epsilon (ε)", value: firstValue(attack.eps, parameters.epsilon, parameters.eps, report.epsilon), icon: Gauge, mono: true },
-      { label: "Số bước lặp", value: firstValue(parameters.steps, parameters.iterations, attack.steps, report.iterations), icon: Repeat2, mono: true },
-      { label: "Bước nhảy (α)", value: firstValue(parameters.alpha, parameters.step_size, attack.alpha, report.alpha), icon: Link2, mono: true },
-      { label: "Kích thước ảnh", value: imageSize, icon: ImageIcon, mono: true },
-      { label: "Thời gian chạy", value: displayDuration(firstValue(report.duration_seconds, report.runtime_seconds, report.duration, report.runtime, report.seconds)), icon: Clock3, mono: true },
-      { label: "Thời gian tạo", value: displayDate(firstValue(activeExperiment?.executedAt, activeExperiment?.updatedAt, report.created_at, report.started_at)), icon: CalendarClock, mono: true },
-      { label: "ID thí nghiệm", value: expId, icon: Fingerprint, valueClass: "text-blue-700", mono: true },
+      { label: "Attack recipe", value: firstValue(attackNames, recipeStep.attack_name, lastSession?.selectedAttacks?.join(" + ")), icon: Crosshair },
     ],
     status: firstValue(report.status, hasRunEvidence ? lastSession?.runStatus : undefined, hasRunEvidence ? activeExperiment?.status : undefined),
     impact: firstValue(report.map_drop_pct, report.degradation_pct, report.robustness_drop_pct, derivedImpact),
@@ -1310,15 +1294,6 @@ export default function VisualResultsPage() {
     setActiveRunId(runId);
     setActiveSampleIndex(0);
     try {
-      const cached = JSON.parse(localStorage.getItem("advertest_run_reports") || "{}");
-      if (cached[runId]) {
-        setReport(cached[runId].report);
-        const cachedSamples = cached[runId].samples || cached[runId].report?.sample_results || [];
-        setSamples(cachedSamples);
-        return;
-      }
-    } catch {}
-    try {
       const [fetchedReport, fetchedSamples] = await Promise.all([
         getRunReport(runId),
         getRunSamples(runId),
@@ -1330,8 +1305,13 @@ export default function VisualResultsPage() {
     }
   }, []);
 
+  useEffect(() => {
+    const initialRun = sessionData?.runs?.at(-1)?.id || sessionData?.run_id || sessionData?.runId;
+    if (initialRun && !activeRunId) handleSelectRun(initialRun);
+  }, [sessionData, activeRunId, handleSelectRun]);
+
   const handleAutoFlag = useCallback(async () => {
-    const runId = activeRunId || readStoredJson("advertest_last_session")?.runId;
+    const runId = activeRunId;
     if (!runId) return;
     setFlagging(true);
     try {
@@ -1346,27 +1326,12 @@ export default function VisualResultsPage() {
 
   useEffect(() => {
     const syncStoredMetadata = () => {
-      const activeExperiment = readStoredJson("adversai_active_experiment");
-      const lastSession = readStoredJson("advertest_last_session");
-      const sessionReport = lastSession?.report || {};
-      const foundReport = Object.keys(sessionReport).length > 0 ? sessionReport : null;
-      if (!activeRunId) setReport(foundReport);
-
-      if (!activeRunId) {
-        const loadedSamples = (
-          foundReport?.samples?.length ? foundReport.samples :
-          foundReport?.sample_results?.length ? foundReport.sample_results :
-          lastSession?.samples?.length ? lastSession.samples :
-          []
-        );
-        setSamples(loadedSamples);
+      const sessionReport = sessionData?.report || {};
+      if (!activeRunId && sessionReport.run_id) {
+        setReport(sessionReport);
+        setSamples(sessionReport.sample_results || []);
       }
-
-      setMetadata(buildExperimentMetadata(
-        expId,
-        activeExperiment,
-        lastSession,
-      ));
+      setMetadata(buildExperimentMetadata(expId, sessionData, sessionData));
     };
     const syncId = window.setTimeout(syncStoredMetadata, 0);
     window.addEventListener("storage", syncStoredMetadata);
@@ -1374,7 +1339,7 @@ export default function VisualResultsPage() {
       window.clearTimeout(syncId);
       window.removeEventListener("storage", syncStoredMetadata);
     };
-  }, [expId, activeRunId]);
+  }, [expId, activeRunId, sessionData]);
 
   const currentSample = samples[activeSampleIndex] || samples[0] || null;
   const taskId = (
@@ -1385,7 +1350,7 @@ export default function VisualResultsPage() {
     || "detection2d"
   );
 
-  const currentRunId = activeRunId || readStoredJson("advertest_last_session")?.runId || "";
+  const currentRunId = activeRunId || sessionData?.runId || sessionData?.run_id || "";
   const currentRunNote = sessionData?.runs?.find(r => r.id === currentRunId)?.note || "";
 
   return (
