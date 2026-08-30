@@ -194,7 +194,7 @@ function executionStepForJob(job) {
 function executionStatusMessageForJob(job) {
   const stage = job?.detail?.stage || job?.status;
   if (stage === "GPU_STARTING") {
-    return "GPU Cloud Run đang khởi động theo yêu cầu. Đây không phải lỗi; job sẽ tự chạy khi worker sẵn sàng.";
+    return "GPU đang khởi động";
   }
   if (stage === "PREPARING") {
     return "GPU đã sẵn sàng, đang nạp checkpoint và dữ liệu đã ẩn danh từ GCS.";
