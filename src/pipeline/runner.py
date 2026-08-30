@@ -256,6 +256,8 @@ class TestRunner:
         evidence = EvidenceWriter(config.evidence_dir) if config.evidence_dir else None
 
         if config.recipe:
+            if progress:
+                progress("GENERATING", {"attack": config.recipe.name, "completed_cells": 0})
             self._run_recipe(config.recipe, samples, clean, adapter, config, evidence, report, should_cancel=should_cancel)
             report.seconds = perf_counter() - started
             if config.execution_mode == "benchmark":
@@ -289,6 +291,15 @@ class TestRunner:
             def checkpoint_cell(cell: CellResult, results: list[SampleResult]) -> None:
                 report.cells.append(cell)
                 report.sample_results.extend(results)
+                if progress:
+                    progress(
+                        "INFERENCING",
+                        {
+                            "attack": cell.attack,
+                            "severity": cell.severity,
+                            "completed_cells": len(report.cells),
+                        },
+                    )
                 if checkpoint:
                     checkpoint(report)
 

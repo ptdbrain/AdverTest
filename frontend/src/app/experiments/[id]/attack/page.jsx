@@ -181,6 +181,16 @@ async function waitForRealRun(runId, onProgress) {
   }
 }
 
+function executionStepForJob(job) {
+  const stage = job?.detail?.stage || job?.status;
+  if (stage === "COMPLETED") return 5;
+  if (["EVALUATING", "COMPUTING_METRICS"].includes(stage)) return 4;
+  if (stage === "INFERENCING") return 3;
+  // The remote worker may report PREPARING, GPU_STARTING, GENERATING, or its
+  // durable RUNNING state while it materialises data and synthesises variants.
+  return 2;
+}
+
 function ConfigureAttackPageContent() {
   const params = useParams();
   const router = useRouter();
@@ -337,7 +347,9 @@ function ConfigureAttackPageContent() {
       setExecutionStep(2);
       const created = await createRun(config);
       const { job, report, samples } = await waitForRealRun(created.run_id, (currentJob) => {
-        setExecutionStep(currentJob.status === "INFERENCING" ? 3 : currentJob.status === "COMPUTING_METRICS" ? 4 : 2);
+        // A poll can observe a lower-level worker state after INFERENCING.
+        // Keep the checklist monotonic so the UI never appears to run backward.
+        setExecutionStep((previous) => Math.max(previous, executionStepForJob(currentJob)));
       });
 
       const executedAt = new Date().toISOString();

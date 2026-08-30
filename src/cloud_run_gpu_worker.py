@@ -140,6 +140,15 @@ class CloudRunBenchmarkWorker:
             if job is None:  # duplicate Pub/Sub delivery or a cancelled job
                 return
             config = RunConfig.model_validate(job["request"])
+            # The initial GCS materialisation is part of the job, not a silent
+            # Cloud Run cold start.  Surface it to the control plane promptly.
+            self._control.progress(
+                job_id,
+                stage="PREPARING",
+                completed=0,
+                total=1,
+                message="Đang nạp checkpoint và dữ liệu đã ẩn danh từ GCS",
+            )
             settings = get_settings()
             # Large reviewed bundles are fetched only after the job is claimed
             # and only for its selected dataset.  This keeps startup probes
