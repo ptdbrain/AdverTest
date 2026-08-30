@@ -1,39 +1,14 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useTheme } from "@/context/ThemeContext";
 
 export default function ThemeToggle({ className = "", compact = false }) {
   const { t } = useLanguage();
-  const [theme, setTheme] = useState("dark");
-
-  useEffect(() => {
-    let updateTimer;
-    try {
-      const saved = localStorage.getItem("theme");
-      const initial = saved || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-      document.documentElement.setAttribute("data-theme", initial);
-      // Defer the UI state sync: React's effect rule intentionally rejects
-      // a synchronous setState here because it causes an extra render pass.
-      updateTimer = window.setTimeout(() => setTheme(initial), 0);
-    } catch {
-      // ignore
-    }
-    return () => window.clearTimeout(updateTimer);
-  }, []);
-
-  const toggleTheme = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    try {
-      document.documentElement.setAttribute("data-theme", next);
-      localStorage.setItem("theme", next);
-    } catch {
-      // ignore
-    }
-  };
-
-  const isLight = theme === "light";
+  const { resolvedTheme, setTheme } = useTheme();
+  const isLight = resolvedTheme === "light";
+  const toggleTheme = () => setTheme(isLight ? "dark" : "light");
 
   return (
     <button
