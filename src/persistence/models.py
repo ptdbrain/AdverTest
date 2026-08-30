@@ -17,6 +17,37 @@ class Base(DeclarativeBase):
     pass
 
 
+class UserRecord(Base):
+    """Control-plane identity persisted by the production PostgreSQL database."""
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    display_name: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(32), default="VIEWER")
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE")
+    storage_quota_bytes: Mapped[int] = mapped_column(BigInteger, default=10 * 1024 * 1024 * 1024)
+    compute_quota_hours: Mapped[float] = mapped_column(Float, default=100.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AuditLogRecord(Base):
+    """Append-only security audit trail for control-plane actions."""
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    actor_user_id: Mapped[str] = mapped_column(String(36), index=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    resource_type: Mapped[str] = mapped_column(String(64))
+    resource_id: Mapped[str] = mapped_column(String(64))
+    detail_json: Mapped[str] = mapped_column(Text, default="{}")
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
 class ArtifactRecord(Base):
     __tablename__ = "artifacts"
 
