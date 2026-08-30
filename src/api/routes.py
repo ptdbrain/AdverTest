@@ -235,12 +235,12 @@ async def workflow_job_events(job_id: str, websocket: WebSocket) -> None:
         return
 
 
-@router.post("/defense-profiles", status_code=201, include_in_schema=False)
+@router.post("/defense-profiles", status_code=201)
 async def create_defense_profile(body: DefenseProfile) -> dict[str, Any]:
     return _store.put_record("defense_profile", body.profile_id, body.model_dump(mode="json"))
 
 
-@router.get("/defense-profiles/{profile_id}", include_in_schema=False)
+@router.get("/defense-profiles/{profile_id}")
 async def get_defense_profile(profile_id: str) -> dict[str, Any]:
     profile = _store.get_record("defense_profile", profile_id)
     if profile is None:
@@ -248,7 +248,7 @@ async def get_defense_profile(profile_id: str) -> dict[str, Any]:
     return profile
 
 
-@router.post("/training-runs/estimate", include_in_schema=False)
+@router.post("/training-runs/estimate")
 async def estimate_training_run(body: TrainingRunIn) -> dict[str, Any]:
     """Estimate a registered trainer without scheduling external training."""
     config = TrainingRunConfig(run_id=f"estimate-{uuid.uuid4().hex}", **body.model_dump(mode="json"))
@@ -258,7 +258,7 @@ async def estimate_training_run(body: TrainingRunIn) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=f"TRAINER_NOT_AVAILABLE: {exc}") from exc
 
 
-@router.post("/training-runs", status_code=202, include_in_schema=False)
+@router.post("/training-runs", status_code=202)
 async def start_training_run(body: TrainingRunIn) -> dict[str, Any]:
     """Queue training only after the requested parent checkpoint is runnable."""
     version = next(
@@ -275,12 +275,12 @@ async def start_training_run(body: TrainingRunIn) -> dict[str, Any]:
     return _training_jobs.get(job_id) or {"id": job_id, "status": "QUEUED"}
 
 
-@router.get("/training-runs", include_in_schema=False)
+@router.get("/training-runs")
 async def list_training_runs() -> list[dict[str, Any]]:
     return _training_jobs.list()
 
 
-@router.get("/training-runs/{job_id}", include_in_schema=False)
+@router.get("/training-runs/{job_id}")
 async def get_training_run(job_id: str) -> dict[str, Any]:
     job = _training_jobs.get(job_id)
     if job is None:
@@ -288,7 +288,7 @@ async def get_training_run(job_id: str) -> dict[str, Any]:
     return job
 
 
-@router.post("/training-runs/{job_id}/cancel", include_in_schema=False)
+@router.post("/training-runs/{job_id}/cancel")
 async def cancel_training_run(job_id: str) -> dict[str, Any]:
     if _training_jobs.get(job_id) is None:
         raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
@@ -296,21 +296,21 @@ async def cancel_training_run(job_id: str) -> dict[str, Any]:
     return _training_jobs.get(job_id) or {"id": job_id, "status": "CANCEL_REQUESTED"}
 
 
-@router.get("/training-runs/{job_id}/checkpoints", include_in_schema=False)
+@router.get("/training-runs/{job_id}/checkpoints")
 async def get_training_checkpoints(job_id: str) -> list[dict[str, Any]]:
     if _training_jobs.get(job_id) is None:
         raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
     return _workflow_store.checkpoints(job_id)
 
 
-@router.get("/training-runs/{job_id}/events", include_in_schema=False)
+@router.get("/training-runs/{job_id}/events")
 async def get_training_events(job_id: str) -> list[dict[str, Any]]:
     if _training_jobs.get(job_id) is None:
         raise HTTPException(status_code=404, detail="TRAINING_RUN_UNKNOWN")
     return _workflow_store.events(job_id)
 
 
-@router.get("/training-dataset-manifests/{manifest_id}", include_in_schema=False)
+@router.get("/training-dataset-manifests/{manifest_id}")
 async def get_training_dataset_manifest(manifest_id: str) -> dict[str, Any]:
     """Retrieve a training dataset manifest record with lineage details."""
     manifest = _store.get_record("training_dataset_manifest", manifest_id)
@@ -342,12 +342,12 @@ async def training_run_events(job_id: str, websocket: WebSocket) -> None:
         return
 
 
-@router.post("/retraining-backlogs", status_code=201, include_in_schema=False)
+@router.post("/retraining-backlogs", status_code=201)
 async def create_retraining_backlog(body: RetrainingBacklogIn) -> dict[str, Any]:
     return _workflow_store.create_backlog(body.name)
 
 
-@router.get("/retraining-backlogs/{backlog_id}", include_in_schema=False)
+@router.get("/retraining-backlogs/{backlog_id}")
 async def get_retraining_backlog(backlog_id: str) -> dict[str, Any]:
     backlog = _workflow_store.get_backlog(backlog_id)
     if backlog is None:
@@ -355,7 +355,7 @@ async def get_retraining_backlog(backlog_id: str) -> dict[str, Any]:
     return backlog
 
 
-@router.post("/retraining-backlogs/{backlog_id}/items", status_code=201, include_in_schema=False)
+@router.post("/retraining-backlogs/{backlog_id}/items", status_code=201)
 async def add_retraining_backlog_item(backlog_id: str, body: RetrainingBacklogItemIn) -> dict[str, Any]:
     try:
         return _workflow_store.add_backlog_item(backlog_id, body.failure_id)
@@ -365,7 +365,7 @@ async def add_retraining_backlog_item(backlog_id: str, body: RetrainingBacklogIt
         raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
 
 
-@router.post("/retraining-backlogs/{backlog_id}/approve", include_in_schema=False)
+@router.post("/retraining-backlogs/{backlog_id}/approve")
 async def approve_retraining_backlog(backlog_id: str) -> dict[str, Any]:
     try:
         return _workflow_store.approve_backlog(backlog_id)
@@ -375,7 +375,7 @@ async def approve_retraining_backlog(backlog_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
 
 
-@router.post("/model-comparisons", status_code=201, include_in_schema=False)
+@router.post("/model-comparisons", status_code=201)
 async def create_model_comparison(body: ModelComparisonIn) -> dict[str, Any]:
     baseline, candidate = _require_run(body.baseline_run_id), _require_run(body.candidate_run_id)
     if baseline["report"] is None or candidate["report"] is None:
@@ -453,7 +453,7 @@ def _metric_value(report: dict[str, Any], metric: str, *, attacked: bool) -> flo
     return float(values.get(metric, cells[-1].get("ap", 0.0)))
 
 
-@router.get("/model-comparisons/{comparison_id}", include_in_schema=False)
+@router.get("/model-comparisons/{comparison_id}")
 async def get_model_comparison(comparison_id: str) -> dict[str, Any]:
     record = _store.get_record("model_comparison", comparison_id)
     if record is None:
@@ -461,7 +461,7 @@ async def get_model_comparison(comparison_id: str) -> dict[str, Any]:
     return record
 
 
-@router.get("/model-comparisons/{comparison_id}/export", include_in_schema=False)
+@router.get("/model-comparisons/{comparison_id}/export")
 async def export_model_comparison(comparison_id: str, format: str = Query(default="json")) -> Response:
     comparison = await get_model_comparison(comparison_id)
     try:
@@ -478,17 +478,17 @@ async def export_model_comparison(comparison_id: str, format: str = Query(defaul
     )
 
 
-@router.get("/model-comparisons/{comparison_id}/metric-deltas", include_in_schema=False)
+@router.get("/model-comparisons/{comparison_id}/metric-deltas")
 async def get_model_comparison_metric_deltas(comparison_id: str) -> dict[str, Any]:
     return (await get_model_comparison(comparison_id)).get("metric_deltas", {})
 
 
-@router.get("/model-comparisons/{comparison_id}/recovery-report", include_in_schema=False)
+@router.get("/model-comparisons/{comparison_id}/recovery-report")
 async def get_model_comparison_recovery_report(comparison_id: str) -> dict[str, Any]:
     return (await get_model_comparison(comparison_id)).get("recovery_report", {})
 
 
-@router.get("/model-comparisons/{comparison_id}/failures", include_in_schema=False)
+@router.get("/model-comparisons/{comparison_id}/failures")
 async def get_model_comparison_failures(comparison_id: str) -> dict[str, Any]:
     """Return failure deltas between baseline and candidate runs in a comparison."""
     comp = await get_model_comparison(comparison_id)
@@ -817,7 +817,7 @@ async def list_base_checkpoints(
     ]
 
 
-@router.get("/defence-checkpoints", response_model=list[ModelVersionOut], include_in_schema=False)
+@router.get("/defence-checkpoints", response_model=list[ModelVersionOut])
 async def list_defence_checkpoints(task_id: str = Query(...)) -> list[ModelVersionOut]:
     return [
         ModelVersionOut.from_domain(version)
@@ -852,7 +852,7 @@ async def get_model_version_lineage(version_id: str) -> LineageGraphOut:
     )
 
 
-@router.get("/model-versions/{version_id}/benchmark-history", include_in_schema=False)
+@router.get("/model-versions/{version_id}/benchmark-history")
 async def get_model_version_benchmark_history(version_id: str) -> list[dict[str, Any]]:
     """Return historical benchmark run reports for a model version."""
     history = []
@@ -870,7 +870,7 @@ async def get_model_version_benchmark_history(version_id: str) -> list[dict[str,
     return history
 
 
-@router.get("/model-versions/{version_id}/gate-evidence", include_in_schema=False)
+@router.get("/model-versions/{version_id}/gate-evidence")
 async def get_model_version_gate_evidence(version_id: str) -> dict[str, Any]:
     """Return checkpoint gate outcome and evidence records for a model version."""
     gate = _store.get_record("checkpoint_gate", version_id)
@@ -959,7 +959,7 @@ async def validate_recipe(body: RecipeValidationIn) -> RecipeValidationOut:
     )
 
 
-@router.post("/defence-runs", status_code=202, response_model=RunJobOut, include_in_schema=False)
+@router.post("/defence-runs", status_code=202, response_model=RunJobOut)
 async def create_defence_run(body: DefenceRunIn) -> RunJobOut:
     """Run a reviewed Defence candidate on the baseline's immutable protocol."""
     baseline = _store.get(body.baseline_run_id)
@@ -1042,7 +1042,7 @@ async def create_inference_experiment(body: QuickInferenceIn) -> RunJobOut:
     return _job_out(_store.get(run_id))
 
 
-@router.get("/runs/{run_id}/defence-candidates", response_model=list[ModelVersionOut], include_in_schema=False)
+@router.get("/runs/{run_id}/defence-candidates", response_model=list[ModelVersionOut])
 async def run_defence_candidates(run_id: str) -> list[ModelVersionOut]:
     """Fine-tuned/repaired weights are visible only after an attack run."""
     run = _require_run(run_id)
@@ -1169,7 +1169,7 @@ async def resolve_review(review_id: str, body: ResolveReviewIn) -> ReviewOut:
     return ReviewOut(**row)
 
 
-@router.get("/failure-cases", include_in_schema=False)
+@router.get("/failure-cases")
 async def list_failure_cases(run_id: str | None = Query(default=None)) -> list[dict[str, Any]]:
     """Aggregate failure cases across completed benchmark runs or query by run_id."""
     failures = []
@@ -1183,14 +1183,14 @@ async def list_failure_cases(run_id: str | None = Query(default=None)) -> list[d
     return failures
 
 
-@router.get("/failure-clusters", include_in_schema=False)
+@router.get("/failure-clusters")
 async def list_failure_clusters() -> list[dict[str, Any]]:
     """List all persisted failure clusters."""
     records = _store.list_records("failure_cluster")
     return records
 
 
-@router.post("/failure-clusters", status_code=201, include_in_schema=False)
+@router.post("/failure-clusters", status_code=201)
 async def create_failure_cluster(body: FailureClusterCreateIn) -> dict[str, Any]:
     """Persist a failure cluster grouping related failure cases."""
     cluster_id = body.cluster_id or f"cluster-{uuid.uuid4().hex[:8]}"
@@ -1204,7 +1204,7 @@ async def create_failure_cluster(body: FailureClusterCreateIn) -> dict[str, Any]
     return _store.put_record("failure_cluster", cluster_id, payload)
 
 
-@router.post("/failure-clusters/auto-group", include_in_schema=False)
+@router.post("/failure-clusters/auto-group")
 async def auto_group_failure_clusters(run_id: str | None = Query(default=None)) -> list[dict[str, Any]]:
     """Automatically cluster pending review items using SmartFailureClusterer."""
     from src.evaluation.smart_clustering import SmartFailureClusterer
@@ -1245,7 +1245,7 @@ async def auto_group_failure_clusters(run_id: str | None = Query(default=None)) 
     return results
 
 
-@router.get("/failure-clusters/{cluster_id}", include_in_schema=False)
+@router.get("/failure-clusters/{cluster_id}")
 async def get_failure_cluster(cluster_id: str) -> dict[str, Any]:
     """Get detail for a specific failure cluster."""
     cluster = _store.get_record("failure_cluster", cluster_id)
@@ -1257,7 +1257,7 @@ async def get_failure_cluster(cluster_id: str) -> dict[str, Any]:
 # ---- Closed-Loop Training ----
 
 
-@router.post("/closed-loop/start", status_code=201, response_model=ClosedLoopSnapshotOut, include_in_schema=False)
+@router.post("/closed-loop/start", status_code=201, response_model=ClosedLoopSnapshotOut)
 async def start_closed_loop(body: ClosedLoopStartIn) -> dict[str, Any]:
     """Start a closed-loop retraining pipeline from a completed benchmark run."""
     from src.training.closed_loop import ClosedLoopTracker
@@ -1329,7 +1329,7 @@ async def start_closed_loop(body: ClosedLoopStartIn) -> dict[str, Any]:
     return payload
 
 
-@router.get("/closed-loop/{loop_id}", response_model=ClosedLoopSnapshotOut, include_in_schema=False)
+@router.get("/closed-loop/{loop_id}", response_model=ClosedLoopSnapshotOut)
 async def get_closed_loop(loop_id: str) -> dict[str, Any]:
     """Get current state of a closed-loop pipeline."""
     job = _workflow_store.get_job(loop_id)
@@ -1347,7 +1347,7 @@ async def get_closed_loop(loop_id: str) -> dict[str, Any]:
     return checkpoints[-1]["payload"]
 
 
-@router.post("/closed-loop/{loop_id}/advance", response_model=ClosedLoopSnapshotOut, include_in_schema=False)
+@router.post("/closed-loop/{loop_id}/advance", response_model=ClosedLoopSnapshotOut)
 async def advance_closed_loop(loop_id: str, body: ClosedLoopAdvanceIn) -> dict[str, Any]:
     """Advance a recovery loop to a target state if supported by valid persisted evidence."""
     from src.training.closed_loop import ClosedLoopAuditEntry, ClosedLoopTracker, validate_transition
