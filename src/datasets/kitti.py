@@ -105,12 +105,14 @@ class Kitti(DatasetSource):
             payload = json.loads(descriptor.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return False
-        manifest = (
-            Path(settings.manifest_path).expanduser()
-            if settings.manifest_path
-            else self.root / "manifest.jsonl"
-        )
+        manifest = self._manifest_path(settings.manifest_path)
         return bool(payload.get("anonymized", False)) and manifest.is_file()
+
+    def _manifest_path(self, configured: str | None) -> Path:
+        if configured is None:
+            return self.root / "manifest.jsonl"
+        path = Path(configured).expanduser()
+        return path if path.is_absolute() else self.root / path
 
     def info(self) -> DatasetInfo:
         settings: KittiParams = self.params  # type: ignore[assignment]
@@ -210,11 +212,7 @@ class Kitti(DatasetSource):
 
     def _anonymization_manifest_hash(self) -> str | None:
         settings: KittiParams = self.params  # type: ignore[assignment]
-        manifest = (
-            Path(settings.manifest_path).expanduser()
-            if settings.manifest_path
-            else self.root / "manifest.jsonl"
-        )
+        manifest = self._manifest_path(settings.manifest_path)
         return file_digest(manifest, length=64) if manifest.is_file() else None
 
     def _read_labels(
