@@ -193,6 +193,13 @@ async def download_run_artifacts_zip(
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         if "report" in record and record["report"]:
             zf.writestr("metrics_report.json", json.dumps(record["report"], indent=2))
+            report = record["report"]
+            zf.writestr(
+                "summary.csv",
+                "run_id,model,dataset,ap_clean,status\n"
+                f"{run_id},{report.get('model', 'unknown')},{report.get('dataset', 'unknown')},"
+                f"{report.get('ap_clean', 0.0)},{record.get('status', 'COMPLETED')}\n",
+            )
 
         if "config" in record:
             zf.writestr("run_config.json", json.dumps(record["config"], indent=2))
