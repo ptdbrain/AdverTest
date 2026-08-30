@@ -61,7 +61,7 @@ REGISTERED_MODEL_VERSIONS: dict[str, ModelVersion] = {
         checkpoint_path="runs/train/yolo_b0/yolo11s-clean-b0_best.pt",
         parent_version_id=None,
         description="YOLO11s baseline clean model trained on KITTI split v1",
-        metrics={"clean_map50_95": 0.6138, "robust_score": 55.24},
+        metrics={},
     ),
     "yolo11s-robust-r1": ModelVersion(
         version_id="yolo11s-robust-r1",
@@ -71,7 +71,7 @@ REGISTERED_MODEL_VERSIONS: dict[str, ModelVersion] = {
         checkpoint_path="runs/train/yolo_r1/yolo11s-robust-r1_best.pt",
         parent_version_id="yolo11s-clean-b0",
         description="YOLO11s robust mix fine-tuned on combined corruptions & adversarial data",
-        metrics={"clean_map50_95": 0.6263, "robust_score": 56.37},
+        metrics={},
     ),
     "yolo11s-repaired-r2-fog": ModelVersion(
         version_id="yolo11s-repaired-r2-fog",
@@ -81,7 +81,7 @@ REGISTERED_MODEL_VERSIONS: dict[str, ModelVersion] = {
         checkpoint_path="runs/train/yolo_r2_fog/yolo11s-repaired-r2-fog_best.pt",
         parent_version_id="yolo11s-robust-r1",
         description="YOLO11s targeted repair model for Fog corruption recovery",
-        metrics={"clean_map50_95": 0.6335, "robust_score": 57.01},
+        metrics={},
     ),
     "yolo11s-repaired-r2-sensor": ModelVersion(
         version_id="yolo11s-repaired-r2-sensor",
@@ -91,7 +91,7 @@ REGISTERED_MODEL_VERSIONS: dict[str, ModelVersion] = {
         checkpoint_path="runs/train/yolo_r2_sensor/yolo11s-repaired-r2-sensor_fault_best.pt",
         parent_version_id="yolo11s-robust-r1",
         description="YOLO11s targeted repair model for Sensor Fault recovery",
-        metrics={"clean_map50_95": 0.6210, "robust_score": 56.50},
+        metrics={},
     ),
     # Person C (SAM2.1 Segmentation)
     "sam21-clean-b0": ModelVersion(
@@ -102,7 +102,7 @@ REGISTERED_MODEL_VERSIONS: dict[str, ModelVersion] = {
         checkpoint_path="runs/train/sam2_b0/sam21-clean-b0_best.pt",
         parent_version_id=None,
         description="SAM2.1 Hiera Small baseline clean segmentation model",
-        metrics={"clean_miou": 0.7250, "boundary_iou": 0.6810},
+        metrics={},
     ),
     "sam21-robust-r1": ModelVersion(
         version_id="sam21-robust-r1",
@@ -112,7 +112,7 @@ REGISTERED_MODEL_VERSIONS: dict[str, ModelVersion] = {
         checkpoint_path="runs/train/sam2_r1/sam21-robust-r1_best.pt",
         parent_version_id="sam21-clean-b0",
         description="SAM2.1 Hiera Small robust fine-tuned segmentation model",
-        metrics={"clean_miou": 0.7310, "boundary_iou": 0.6950},
+        metrics={},
     ),
 }
 

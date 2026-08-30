@@ -9,12 +9,58 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class UserRecord(Base):
+    """Auth table representation used by Alembic schema comparison."""
+
+    __tablename__ = "users"
+    __table_args__ = (Index("ix_users_email", "email"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, server_default="USER", index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="ACTIVE", index=True)
+    storage_quota_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="10737418240")
+    compute_quota_hours: Mapped[float] = mapped_column(Float, nullable=False, server_default="100.0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AuditLogRecord(Base):
+    """Audit table representation used by Alembic schema comparison."""
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    actor_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    detail_json: Mapped[str] = mapped_column(Text, nullable=False, server_default="{}")
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
+    )
 
 
 class ArtifactRecord(Base):
@@ -149,13 +195,10 @@ class ProjectRecord(Base):
     __tablename__ = "projects"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    name: Mapped[str] = mapped_column(String(255), index=True)
+    name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
-    owner_user_id: Mapped[str] = mapped_column(String(36), index=True)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
 
 
 class ProjectMembershipRecord(Base):
@@ -175,14 +218,12 @@ class ProjectMembershipRecord(Base):
 
 class ExperimentSessionRecord(Base):
     __tablename__ = "experiment_sessions"
-    __table_args__ = (
-        Index("ix_experiment_sessions_project_status", "project_id", "status"),
-    )
+    __table_args__ = (Index("ix_experiment_sessions_project_status", "project_id", "status"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     project_id: Mapped[str] = mapped_column(String(36), index=True, default="default-project")
-    owner_user_id: Mapped[str] = mapped_column(String(36), index=True, default="system")
-    name: Mapped[str] = mapped_column(String(255), index=True)
+    owner_user_id: Mapped[str] = mapped_column(String(36), default="system")
+    name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
     task_id: Mapped[str] = mapped_column(String(100), default="detection2d")
     task_name: Mapped[str] = mapped_column(String(200), default="Object Detection")
@@ -210,15 +251,17 @@ class SessionRunRecord(Base):
     attack_type: Mapped[str] = mapped_column(String(100))
     attack_name: Mapped[str] = mapped_column(String(200))
     severity: Mapped[int] = mapped_column(Integer, default=1)
-    clean_map: Mapped[float] = mapped_column(Float, default=0.0)
-    attacked_map: Mapped[float] = mapped_column(Float, default=0.0)
-    map_drop_pct: Mapped[float] = mapped_column(Float, default=0.0)
-    clean_conf: Mapped[float] = mapped_column(Float, default=0.0)
-    attacked_conf: Mapped[float] = mapped_column(Float, default=0.0)
+    # A visual inference run has no scientific metric until its evidence bundle
+    # is complete.  NULL preserves that distinction; zero would be a false result.
+    clean_map: Mapped[float | None] = mapped_column(Float, nullable=True)
+    attacked_map: Mapped[float | None] = mapped_column(Float, nullable=True)
+    map_drop_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    clean_conf: Mapped[float | None] = mapped_column(Float, nullable=True)
+    attacked_conf: Mapped[float | None] = mapped_column(Float, nullable=True)
     psnr: Mapped[str] = mapped_column(String(32), default="N/A")
     ssim: Mapped[str] = mapped_column(String(32), default="N/A")
-    inference_ms: Mapped[float] = mapped_column(Float, default=0.0)
-    robustness_score: Mapped[float] = mapped_column(Float, default=0.0)
+    inference_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    robustness_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     clean_bbox_count: Mapped[int] = mapped_column(Integer, default=0)
     attacked_bbox_count: Mapped[int] = mapped_column(Integer, default=0)
     sample_id: Mapped[str] = mapped_column(String(64), default="000000")

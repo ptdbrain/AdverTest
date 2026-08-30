@@ -27,7 +27,21 @@ from src.pipeline.runner import RunConfig, TestRunner
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    test_client = TestClient(app)
+    registration = test_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": f"journey-{uuid.uuid4().hex[:10]}@example.com",
+            "password": "StrongPassword123!",
+            "display_name": "Journey Owner",
+        },
+    )
+    assert registration.status_code == 201, registration.text
+    headers = {"Authorization": f"Bearer {registration.json()['access_token']}"}
+    project = test_client.post("/api/v1/projects", headers=headers, json={"name": "Journey project"})
+    assert project.status_code == 201, project.text
+    test_client.headers.update({**headers, "X-Project-Id": project.json()["id"]})
+    return test_client
 
 
 @pytest.fixture
@@ -290,4 +304,3 @@ def test_journey_d_3d_perception_pipeline(tmp_path) -> None:
     except RuntimeError as exc:
         # P1.6 / Journey D contract: exact missing dependency/CUDA runtime recorded
         assert "PointPillars requires MMDetection3D 1.4.0" in str(exc) or "CUDA" in str(exc)
-

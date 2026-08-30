@@ -127,6 +127,25 @@ def test_split_and_explicit_sample_ids_are_honoured(kitti_root: Path) -> None:
     assert [sample.meta["image_id"] for sample in _dataset(kitti_root, sample_ids=("000002",)).load()] == ["000002"]
 
 
+def test_curation_manifest_limits_kitti_loader_to_declared_samples(kitti_root: Path) -> None:
+    manifest = kitti_root / "curation.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "dataset_id": "kitti2d-local-100",
+                "task_id": "detection2d",
+                "modalities": ["image_2", "label_2"],
+                "sample_ids": ["000002"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    samples = _dataset(kitti_root, difficulty="all", curation_manifest_path=str(manifest)).load()
+
+    assert [sample.meta["image_id"] for sample in samples] == ["000002"]
+
+
 def test_missing_root_is_explicit(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="image_2/label_2"):
         _dataset(tmp_path / "missing").load()

@@ -283,7 +283,7 @@ async def test_protocol_must_lock_before_benchmark(client):
     }
     # Attempting to run non-LOCKED (VALIDATED) protocol fails with 409 PROTOCOL_NOT_LOCKED
     run_res = await client.post(f"/api/v1/benchmark/runs?protocol_id={proto_id}", json=run_config)
-    assert run_res.status_code == 409
+    assert run_res.status_code == 409, run_res.text
     assert run_res.json()["detail"]["code"] == "PROTOCOL_NOT_LOCKED"
 
     # Locking advances VALIDATED protocol to LOCKED

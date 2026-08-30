@@ -135,8 +135,6 @@ class ArtifactService:
             )
             if membership is not None:
                 return
-        if record.project_id in {"default", "p-195", "project-a"}:
-            return
         raise PermissionError("INSUFFICIENT_PERMISSION: Actor not authorized for this project artifact.")
 
     def upload_local_content(
@@ -216,6 +214,23 @@ class ArtifactService:
                 raise KeyError("ARTIFACT_UNKNOWN")
             self._check_actor_permission(artifact, actor_id, session)
             return self._storage.get_bytes(artifact.storage_key)
+
+    def list_for_run(self, project_id: str, run_id: str, actor_id: str | None = None) -> list[dict[str, Any]]:
+        """Return only non-deleted artifacts explicitly attached to one project/run."""
+        with self._database.session() as session:
+            records = session.scalars(
+                select(ArtifactRecord).where(
+                    ArtifactRecord.project_id == project_id,
+                    ArtifactRecord.deleted_at.is_(None),
+                )
+            ).all()
+            result: list[dict[str, Any]] = []
+            for record in records:
+                self._check_actor_permission(record, actor_id, session)
+                payload = _artifact_payload(record)
+                if payload["metadata"].get("run_id") == run_id:
+                    result.append(payload)
+            return result
 
     def set_state(self, artifact_id: str, state: ArtifactState, *, metadata: dict[str, Any] | None = None) -> None:
         with self._database.session() as session:

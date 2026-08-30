@@ -71,7 +71,7 @@ export function buildRunDecisionView(report = {}) {
   const catalog = metricCatalogForTask(taskId);
   const primary = catalog[0];
   const metrics = report.metrics || {};
-  const benchmarkAvailable = report.benchmark_metrics_available !== false && metrics.benchmark_metrics_available !== false;
+  const benchmarkAvailable = report?.evidence?.status === "VERIFIED";
   const cleanMetrics = metrics.clean || {};
   const explicitPrimary = finite(cleanMetrics[primary.key]);
   const allowLegacyPrimary = explicitPrimary == null && taskId !== "segmentation";
@@ -90,8 +90,7 @@ export function buildRunDecisionView(report = {}) {
   const config = provenance.run_config || {};
   const dataState = !benchmarkAvailable ? "NO_GROUND_TRUTH" : clean == null || attacked == null ? "NO_DATA" : "MEASURED";
   const limitations = [];
-  if (!benchmarkAvailable) limitations.push("Không có ground truth; không thể tính benchmark metric.");
-  if (report.simulation_only !== false) limitations.push("SIMULATION: chưa phải bằng chứng an toàn production.");
+  if (!benchmarkAvailable) limitations.push("Evidence chưa VERIFIED; không thể hiển thị hoặc kết luận benchmark metric.");
   if (benchmarkAvailable && report.n_samples > 0 && report.n_samples < 30) limitations.push("Cỡ mẫu nhỏ; chưa phù hợp làm deployment gate.");
 
   return {

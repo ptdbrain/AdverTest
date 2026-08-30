@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 UserRole = Literal["RESEARCHER", "USER", "ADMIN", "ENGINEER", "REVIEWER", "AUDITOR"]
 UserStatus = Literal["ACTIVE", "SUSPENDED", "DISABLED"]
@@ -46,11 +46,9 @@ class LoginIn(BaseModel):
 class GoogleAuthIn(BaseModel):
     """Payload for authenticating with Google SSO (ID Token or OAuth callback)."""
 
-    credential: str | None = None
-    email: str | None = None
-    display_name: str | None = None
-    avatar_url: str | None = None
-    role: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    credential: str = Field(min_length=1)
 
 
 class TokenOut(BaseModel):

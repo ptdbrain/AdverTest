@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   BarChart3, Boxes, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3,
   Cpu, Crosshair, Database, Download, Fingerprint, Gauge, History,
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { artifactUrl, getRunReport, getRunSamples, getSession, triggerAutoFlag } from "@/lib/api";
 import RunHistoryBar from "@/components/RunHistoryBar";
 import ResearcherNotePanel from "@/components/ResearcherNotePanel";
+import { useProjectContext } from "@/context/ProjectContext";
 
 const NO_DATA = "Chưa có dữ liệu";
 const STATUS_LABELS = {
@@ -24,15 +25,6 @@ const STATUS_LABELS = {
   FAILED: "Thất bại",
   CANCELLED: "Đã hủy",
 };
-
-function readStoredJson(key) {
-  try {
-    const value = localStorage.getItem(key);
-    return value ? JSON.parse(value) : null;
-  } catch {
-    return null;
-  }
-}
 
 function sampleArtifact(sample, key) {
   const direct = sample?.artifacts?.[key];
@@ -261,21 +253,22 @@ function predictionMetrics(report, sample, attacked) {
   const boxes = predictionBoxes(prediction);
   const cleanBoxes = predictionBoxes(cleanPrediction);
   const attackedBoxes = predictionBoxes(attackedPrediction);
-  const cleanAp = numericValue(report?.metrics?.clean?.ap50 ?? report?.ap_clean);
+  const verifiedMetrics = report?.evidence?.status === "VERIFIED";
+  const cleanAp = verifiedMetrics ? numericValue(report?.metrics?.clean?.ap50 ?? report?.ap_clean) : null;
   const cell = report?.cells?.find((item) => item.attack === sample?.attack && item.severity === sample?.severity) ?? report?.cells?.at(-1);
-  const attackedAp = numericValue(cell?.metrics?.ap50 ?? cell?.ap);
+  const attackedAp = verifiedMetrics ? numericValue(cell?.metrics?.ap50 ?? cell?.ap) : null;
   
   // Calculate or resolve mIoU
   const groundTruthBoxes = sample?.ground_truth?.objects?.map((o) => ({ xyxy: o.xyxy, label: o.label })) || [];
   const cleanIouGt = groundTruthBoxes.length > 0
     ? computeMeanBboxIoU(cleanPrediction, { boxes: groundTruthBoxes })
-    : (cleanBoxes.length > 0 ? 0.82 : null);
+    : null;
   const attackedIouGt = groundTruthBoxes.length > 0
     ? computeMeanBboxIoU(attackedPrediction, { boxes: groundTruthBoxes })
-    : computeMeanBboxIoU(attackedPrediction, cleanPrediction);
+    : null;
 
-  const cleanMiou = numericValue(report?.metrics?.clean?.miou ?? report?.metrics?.clean?.mIoU) ?? cleanIouGt;
-  const attackedMiou = numericValue(cell?.metrics?.miou ?? cell?.metrics?.mIoU) ?? (attackedIouGt !== null ? attackedIouGt : (cleanMiou !== null ? cleanMiou * 0.42 : null));
+  const cleanMiou = verifiedMetrics ? numericValue(report?.metrics?.clean?.miou ?? report?.metrics?.clean?.mIoU) : cleanIouGt;
+  const attackedMiou = verifiedMetrics ? numericValue(cell?.metrics?.miou ?? cell?.metrics?.mIoU) : attackedIouGt;
 
   const count = boxes.length > 0 || prediction?.boxes ? boxes.length : null;
   const confidence = prediction?.boxes ? averageConfidence(boxes) : null;
@@ -284,7 +277,7 @@ function predictionMetrics(report, sample, attacked) {
     { label: "Số lượng bbox", value: count === null ? NO_DATA : String(count), trend: attacked ? percentageDelta(count, cleanBoxes.length) : null, icon: Boxes },
     { label: "Confidence TB", value: confidence === null ? NO_DATA : confidence.toFixed(2), trend: attacked ? percentageDelta(confidence, averageConfidence(cleanBoxes)) : null, icon: Target },
     { label: "mAP@0.5", value: (attacked ? attackedAp : cleanAp) === null ? NO_DATA : (attacked ? attackedAp : cleanAp).toFixed(2), trend: attacked ? percentageDelta(attackedAp, cleanAp) : null, icon: BarChart3 },
-    { label: "mIoU (Độ khớp)", value: (attacked ? attackedMiou : cleanMiou) === null ? NO_DATA : (attacked ? attackedMiou : cleanMiou).toFixed(2), trend: attacked ? percentageDelta(attackedMiou, cleanMiou) : null, icon: PieChart },
+    { label: verifiedMetrics ? "mIoU (ground truth)" : "IoU dự đoán/nhãn", value: (attacked ? attackedMiou : cleanMiou) === null ? NO_DATA : (attacked ? attackedMiou : cleanMiou).toFixed(2), trend: attacked ? percentageDelta(attackedMiou, cleanMiou) : null, icon: PieChart },
   ];
 }
 
@@ -1002,26 +995,6 @@ function DeepDiveGrid({ sample, taskId = "detection2d", zoomRegion, setZoomRegio
                 <span>0.0</span>
               </div>
             </div>
-          ) : sample ? (
-            <div className="relative flex h-full w-full overflow-hidden rounded-md bg-[#000004]">
-              <svg viewBox="0 0 200 120" className="h-full w-full">
-                <defs>
-                  <radialGradient id="diffG1" cx="55%" cy="45%" r="50%">
-                    <stop offset="0%" stopColor="#FCFDBF" />
-                    <stop offset="35%" stopColor="#F8765C" />
-                    <stop offset="70%" stopColor="#BC3754" />
-                    <stop offset="100%" stopColor="#000004" />
-                  </radialGradient>
-                </defs>
-                <rect width="200" height="120" fill="#000004" />
-                <rect width="200" height="120" fill="url(#diffG1)" opacity="0.88" />
-              </svg>
-              <div className="absolute right-1 top-1 bottom-1 flex flex-col justify-between text-[7px] font-mono text-white/80 py-0.5">
-                <span>1.0</span>
-                <div className="h-14 w-1.5 rounded-full bg-gradient-to-t from-black via-rose-600 to-amber-200 border border-white/20" />
-                <span>0.0</span>
-              </div>
-            </div>
           ) : (
             <AnalysisArtifact src={null} />
           )}
@@ -1063,27 +1036,6 @@ function DeepDiveGrid({ sample, taskId = "detection2d", zoomRegion, setZoomRegio
                 <span>-ε</span>
               </div>
             </div>
-          ) : sample ? (
-            <div className="relative flex h-full w-full overflow-hidden rounded-md bg-slate-800">
-              <svg viewBox="0 0 200 120" className="h-full w-full">
-                <rect width="200" height="120" fill="#1e293b" />
-                {Array.from({ length: 65 }).map((_, i) => (
-                  <circle
-                    key={i}
-                    cx={(i * 17 + (i % 3) * 7) % 200}
-                    cy={(i * 23 + (i % 5) * 11) % 120}
-                    r={(i % 2) + 0.9}
-                    fill={i % 2 === 0 ? "#EF4444" : "#3B82F6"}
-                    opacity="0.45"
-                  />
-                ))}
-              </svg>
-              <div className="absolute right-1 top-1 bottom-1 flex flex-col justify-between text-[7px] font-mono text-white/80 py-0.5">
-                <span>+ε</span>
-                <div className="h-14 w-1.5 rounded-full bg-gradient-to-t from-blue-500 via-slate-600 to-red-500 border border-white/20" />
-                <span>-ε</span>
-              </div>
-            </div>
           ) : (
             <AnalysisArtifact src={null} />
           )}
@@ -1109,27 +1061,6 @@ function DeepDiveGrid({ sample, taskId = "detection2d", zoomRegion, setZoomRegio
               <div className="grid h-full grid-cols-2 gap-1">
                 <AnalysisArtifact src={segmentationClean} alt="Phân đoạn trước tấn công" label="Trước" />
                 <AnalysisArtifact src={segmentationAttacked} alt="Phân đoạn sau tấn công" label="Sau" />
-              </div>
-            ) : sample ? (
-              <div className="grid h-full grid-cols-2 gap-1">
-                <div className="relative overflow-hidden rounded-md bg-slate-900">
-                  <svg viewBox="0 0 100 90" className="h-full w-full">
-                    <rect x="0" y="0" width="100" height="50" fill="#38BDF8" opacity="0.3" />
-                    <rect x="0" y="50" width="100" height="40" fill="#64748B" opacity="0.5" />
-                    <path d="M 25 55 L 45 42 L 75 42 L 85 55 Z" fill="#22C55E" opacity="0.85" />
-                    <rect x="35" y="25" width="30" height="25" fill="#A855F7" opacity="0.85" />
-                  </svg>
-                  <span className="absolute inset-x-0 bottom-0 bg-slate-950/75 px-1 py-0.5 text-center text-[8px] font-medium text-white">Trước</span>
-                </div>
-                <div className="relative overflow-hidden rounded-md bg-slate-900">
-                  <svg viewBox="0 0 100 90" className="h-full w-full">
-                    <rect x="0" y="0" width="100" height="50" fill="#38BDF8" opacity="0.2" />
-                    <rect x="0" y="50" width="100" height="40" fill="#64748B" opacity="0.3" />
-                    <path d="M 28 58 L 45 48 L 70 48 L 80 58 Z" fill="#64748B" opacity="0.7" />
-                    <rect x="38" y="28" width="25" height="20" fill="#A855F7" opacity="0.5" />
-                  </svg>
-                  <span className="absolute inset-x-0 bottom-0 bg-slate-950/75 px-1 py-0.5 text-center text-[8px] font-medium text-white">Sau</span>
-                </div>
               </div>
             ) : (
               <AnalysisArtifact src={null} />
@@ -1190,7 +1121,7 @@ function DeepDiveGrid({ sample, taskId = "detection2d", zoomRegion, setZoomRegio
 
       <EvidenceCard
         title="So sánh vùng phóng to (Zoom)"
-        footer={<div className="flex justify-between text-[9px] text-slate-500 font-mono"><span>PSNR: {sample ? "24.2 dB" : NO_DATA}</span><span>SSIM: {sample ? "0.781" : NO_DATA}</span></div>}
+        footer={<div className="flex justify-between text-[9px] text-slate-500 font-mono"><span>PSNR: {numericValue(sample?.metrics?.psnr ?? sample?.psnr) ?? NO_DATA}</span><span>SSIM: {numericValue(sample?.metrics?.ssim ?? sample?.ssim) ?? NO_DATA}</span></div>}
       >
         <div className="flex items-center gap-1 text-[9px] mb-1.5">
           <label htmlFor="zoom-region" className="shrink-0 text-slate-500">Mục tiêu</label>
@@ -1272,9 +1203,10 @@ function QuickObservation({ expId, sample, report }) {
   const attackedBoxes = predictionBoxes(sample?.attacked_prediction);
   const cleanConfidence = averageConfidence(cleanBoxes);
   const attackedConfidence = averageConfidence(attackedBoxes);
-  const cleanAp = numericValue(report?.metrics?.clean?.ap50 ?? report?.ap_clean);
+  const verifiedMetrics = report?.evidence?.status === "VERIFIED";
+  const cleanAp = verifiedMetrics ? numericValue(report?.metrics?.clean?.ap50 ?? report?.ap_clean) : null;
   const cell = report?.cells?.find((item) => item.attack === sample?.attack && item.severity === sample?.severity) ?? report?.cells?.at(-1);
-  const attackedAp = numericValue(cell?.metrics?.ap50 ?? cell?.ap);
+  const attackedAp = verifiedMetrics ? numericValue(cell?.metrics?.ap50 ?? cell?.ap) : null;
   const observations = sample?.clean_prediction || sample?.attacked_prediction
     ? [
       `Số lượng bbox từ model: ${cleanBoxes.length} → ${attackedBoxes.length}.`,
@@ -1288,6 +1220,10 @@ function QuickObservation({ expId, sample, report }) {
 
 export default function VisualResultsPage() {
   const params = useParams();
+  const router = useRouter();
+  const replaceRoute = router.replace;
+  const searchParams = useSearchParams();
+  const { projectId, scopedHref } = useProjectContext();
   const [zoomRegion, setZoomRegion] = useState("vehicle_rear");
   const [zoom, setZoom] = useState(1);
   const [metadata, setMetadata] = useState(null);
@@ -1295,6 +1231,7 @@ export default function VisualResultsPage() {
   const [samples, setSamples] = useState([]);
   const [activeSampleIndex, setActiveSampleIndex] = useState(0);
   const expId = params?.id || "";
+  const requestedRunId = searchParams?.get("run_id") || "";
 
   const [activeRunId, setActiveRunId] = useState(null);
   const [sessionData, setSessionData] = useState(null);
@@ -1309,15 +1246,7 @@ export default function VisualResultsPage() {
   const handleSelectRun = useCallback(async (runId) => {
     setActiveRunId(runId);
     setActiveSampleIndex(0);
-    try {
-      const cached = JSON.parse(localStorage.getItem("advertest_run_reports") || "{}");
-      if (cached[runId]) {
-        setReport(cached[runId].report);
-        const cachedSamples = cached[runId].samples || cached[runId].report?.sample_results || [];
-        setSamples(cachedSamples);
-        return;
-      }
-    } catch {}
+    replaceRoute(scopedHref(`/experiments/${expId}/results`, runId));
     try {
       const [fetchedReport, fetchedSamples] = await Promise.all([
         getRunReport(runId),
@@ -1327,11 +1256,13 @@ export default function VisualResultsPage() {
       setSamples(fetchedSamples?.length ? fetchedSamples : fetchedReport?.sample_results || []);
     } catch (err) {
       console.warn("Could not load run report:", err);
+      setReport(null);
+      setSamples([]);
     }
-  }, []);
+  }, [expId, replaceRoute, scopedHref]);
 
   const handleAutoFlag = useCallback(async () => {
-    const runId = activeRunId || readStoredJson("advertest_last_session")?.runId;
+    const runId = activeRunId;
     if (!runId) return;
     setFlagging(true);
     try {
@@ -1345,36 +1276,18 @@ export default function VisualResultsPage() {
   }, [activeRunId]);
 
   useEffect(() => {
-    const syncStoredMetadata = () => {
-      const activeExperiment = readStoredJson("adversai_active_experiment");
-      const lastSession = readStoredJson("advertest_last_session");
-      const sessionReport = lastSession?.report || {};
-      const foundReport = Object.keys(sessionReport).length > 0 ? sessionReport : null;
-      if (!activeRunId) setReport(foundReport);
+    if (!requestedRunId) {
+      setActiveRunId(null);
+      setReport(null);
+      setSamples([]);
+      return;
+    }
+    handleSelectRun(requestedRunId);
+  }, [requestedRunId, handleSelectRun]);
 
-      if (!activeRunId) {
-        const loadedSamples = (
-          foundReport?.samples?.length ? foundReport.samples :
-          foundReport?.sample_results?.length ? foundReport.sample_results :
-          lastSession?.samples?.length ? lastSession.samples :
-          []
-        );
-        setSamples(loadedSamples);
-      }
-
-      setMetadata(buildExperimentMetadata(
-        expId,
-        activeExperiment,
-        lastSession,
-      ));
-    };
-    const syncId = window.setTimeout(syncStoredMetadata, 0);
-    window.addEventListener("storage", syncStoredMetadata);
-    return () => {
-      window.clearTimeout(syncId);
-      window.removeEventListener("storage", syncStoredMetadata);
-    };
-  }, [expId, activeRunId]);
+  useEffect(() => {
+    setMetadata(buildExperimentMetadata(expId, sessionData, { report, runId: activeRunId, ...sessionData }));
+  }, [activeRunId, expId, report, sessionData]);
 
   const currentSample = samples[activeSampleIndex] || samples[0] || null;
   const taskId = (
@@ -1385,7 +1298,7 @@ export default function VisualResultsPage() {
     || "detection2d"
   );
 
-  const currentRunId = activeRunId || readStoredJson("advertest_last_session")?.runId || "";
+  const currentRunId = activeRunId || "";
   const currentRunNote = sessionData?.runs?.find(r => r.id === currentRunId)?.note || "";
 
   return (
@@ -1413,7 +1326,7 @@ export default function VisualResultsPage() {
               <><ShieldAlert className="h-3.5 w-3.5" /> {flagging ? "Đang gửi..." : "Flag → Review"}</>
             )}
           </button>
-          <Link href="/benchmark" className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50">
+          <Link href={scopedHref("/benchmark", currentRunId || null)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50">
             <History className="h-3.5 w-3.5 text-blue-600" aria-hidden="true" /> Lịch sử kết quả
           </Link>
           <button type="button" onClick={() => window.location.reload()} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50">

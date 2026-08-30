@@ -43,9 +43,10 @@ export default function DefenseTargetSelector({
   const attackName = selectedRun?.attack_components?.length
     ? selectedRun.attack_components.join(" + ")
     : selectedRun?.attack_name || selectedRun?.attack_type;
-  const cleanMetric = selectedRun?.clean_miou ?? selectedRun?.clean_map;
-  const attackedMetric = selectedRun?.attacked_miou ?? selectedRun?.attacked_map;
-  const degradation = selectedRun?.miou_drop_pct ?? selectedRun?.map_drop_pct;
+  const verifiedEvidence = selectedRun?.evidence?.status === "VERIFIED";
+  const cleanMetric = verifiedEvidence ? (selectedRun?.clean_miou ?? selectedRun?.clean_map) : null;
+  const attackedMetric = verifiedEvidence ? (selectedRun?.attacked_miou ?? selectedRun?.attacked_map) : null;
+  const degradation = verifiedEvidence ? (selectedRun?.miou_drop_pct ?? selectedRun?.map_drop_pct) : null;
 
   return (
     <section
@@ -151,6 +152,7 @@ export default function DefenseTargetSelector({
             <ProvenanceItem label="Metric clean" value={formatMetric(cleanMetric)} mono />
             <ProvenanceItem label="Metric attacked" value={formatMetric(attackedMetric)} mono />
             <ProvenanceItem label="Suy giảm" value={formatPercent(degradation)} mono />
+            <ProvenanceItem label="Benchmark evidence" value={selectedRun.evidence?.status || "No verified data"} mono />
             <ProvenanceItem label="Seed" value={selectedRun.seed == null ? missingValue : String(selectedRun.seed)} mono />
             <ProvenanceItem label="Backend run ID" value={selectedRun.backend_run_id} mono />
             <ProvenanceItem label="Protocol hash" value={selectedRun.run_config_hash} mono />

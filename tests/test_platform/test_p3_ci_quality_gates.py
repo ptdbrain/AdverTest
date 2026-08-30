@@ -47,7 +47,7 @@ def test_alembic_migrations_are_at_head() -> None:
     script = ScriptDirectory.from_config(alembic_cfg)
     heads = script.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 migration HEAD revision, got: {heads}"
-    assert heads[0] == "20260830_0004", f"HEAD revision should be 20260830_0004, got: {heads[0]}"
+    assert heads[0] == "20260830_0005", f"HEAD revision should be 20260830_0005, got: {heads[0]}"
 
 
 def test_production_startup_validation_requires_google_client_id() -> None:

@@ -126,7 +126,9 @@ class AuthService:
                 with urllib.request.urlopen(req, timeout=5) as response:
                     claims = json.loads(response.read().decode())
             except Exception as exc:
-                raise ValueError(f"Google Token verification failed: {exc}. Refusing to trust unverified payload.") from exc
+                raise ValueError(
+                    f"Google Token verification failed: {exc}. Refusing to trust unverified payload."
+                ) from exc
 
         # Strict claim validations
         # 1. Issuer
@@ -137,18 +139,21 @@ class AuthService:
         # 2. Audience
         expected_aud = settings.google_client_id or os.getenv("GOOGLE_CLIENT_ID", "")
         aud = claims.get("aud")
-        if expected_aud and aud != expected_aud:
+        if not expected_aud:
+            raise ValueError("Google authentication is unavailable: GOOGLE_CLIENT_ID is not configured.")
+        if not aud or aud != expected_aud:
             raise ValueError("Google Token verification failed: Audience mismatch.")
 
         # 3. Expiration
         now_ts = int(time.time())
         exp = claims.get("exp")
-        if exp is not None:
-            try:
-                if int(exp) < now_ts:
-                    raise ValueError("Google Token verification failed: Token has expired.")
-            except (TypeError, ValueError) as exc:
-                raise ValueError("Google Token verification failed: Invalid exp claim.") from exc
+        if exp is None:
+            raise ValueError("Google Token verification failed: Missing exp claim.")
+        try:
+            if int(exp) < now_ts:
+                raise ValueError("Google Token verification failed: Token has expired.")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Google Token verification failed: Invalid exp claim.") from exc
 
         # 4. Subject (sub)
         sub = claims.get("sub")
@@ -165,8 +170,8 @@ class AuthService:
             raise ValueError("Google Token verification failed: Email is not verified by Google.")
 
         email = str(email).strip().lower()
-        display_name = claims.get("name") or payload.display_name
-        avatar_url = claims.get("picture") or payload.avatar_url
+        display_name = claims.get("name")
+        avatar_url = claims.get("picture")
 
         users = self._store.list_records("user")
         target_user = next((u for u in users if u.get("email", "").lower() == email), None)

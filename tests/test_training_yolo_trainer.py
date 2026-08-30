@@ -160,6 +160,32 @@ def test_acceptance_gate_evaluation() -> None:
     assert gate_res_fail_robust["robust_gate_passed"] is False
 
 
+def test_acceptance_gate_refuses_missing_measured_metrics() -> None:
+    """A promotion gate must not manufacture a baseline or candidate score."""
+    result = YoloTrainer.evaluate_acceptance_gate({}, {})
+
+    assert result["passed"] is False
+    assert result["status"] == "NOT_ELIGIBLE"
+    assert set(result["missing"]) == {"baseline.clean_map50_95", "candidate.clean_map50_95", "baseline.robust_score", "candidate.robust_score"}
+
+
+def test_checkpoint_evaluation_refuses_missing_measured_metrics(trainer: YoloTrainer, tmp_path: Path) -> None:
+    """A checkpoint file alone is not scientific evidence of its benchmark metrics."""
+    from src.training.report import CheckpointMetadata
+
+    checkpoint_path = tmp_path / "checkpoint.pt"
+    checkpoint_path.write_bytes(b"checkpoint")
+    checkpoint = CheckpointMetadata(
+        path=str(checkpoint_path),
+        sha256="a" * 64,
+        parent_model_version="baseline",
+        metadata={},
+    )
+
+    with pytest.raises(ValueError, match="measured checkpoint metrics"):
+        trainer.evaluate_checkpoint(checkpoint)
+
+
 def test_build_robust_yolo_dataset(tmp_path: Path) -> None:
     from src.training.yolo_dataset_formatter import (
         build_robust_yolo_dataset,

@@ -1,4 +1,30 @@
 const BUILD_TIME_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const ACTIVE_PROJECT_STORAGE_KEY = "advertest_active_project_id";
+
+export function getActiveProjectId() {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function setActiveProjectId(projectId) {
+  if (typeof window === "undefined") return;
+  try {
+    if (projectId) localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, projectId);
+    else localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
+  } catch {}
+}
+
+function withActiveProjectScope(path) {
+  const projectId = getActiveProjectId();
+  if (!projectId || path.startsWith("/api/v1/auth/")) return path;
+  const url = new URL(path, BUILD_TIME_API_BASE);
+  if (!url.searchParams.has("project_id")) url.searchParams.set("project_id", projectId);
+  return `${url.pathname}${url.search}`;
+}
 
 // `NEXT_PUBLIC_*` is normally inlined by Next.js at build time.  The Render
 // Docker service is configured at runtime, so let its entrypoint provide an
@@ -21,7 +47,7 @@ export function artifactUrl(pathValue) {
 }
 
 export async function apiFetch(path, options = {}) {
-  const url = `${getApiBase()}${path}`;
+  const url = `${getApiBase()}${withActiveProjectScope(path)}`;
   let authHeaders = {};
   if (typeof window !== "undefined") {
     try {
@@ -74,6 +100,17 @@ export function registerUser(payloadOrEmail, passwordArg, displayNameArg) {
 
 export function getCurrentUser() {
   return apiFetch("/api/v1/auth/me");
+}
+
+export function listProjects() {
+  return apiFetch("/api/v1/projects");
+}
+
+export function createProject(payload) {
+  return apiFetch("/api/v1/projects", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function getCatalogAttacks(params = {}) {

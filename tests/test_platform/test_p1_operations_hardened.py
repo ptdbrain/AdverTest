@@ -17,8 +17,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import src.main as main_module
 from src.core.platform_contracts import ArtifactKind, ArtifactState
-from src.main import app
 from src.persistence.database import PlatformDatabase
 from src.storage.export_service import AttackedDatasetExportService
 from src.storage.local import LocalArtifactStorage
@@ -27,7 +27,24 @@ from src.storage.service import ArtifactService
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(app)
+    test_client = TestClient(main_module.app)
+    registration = test_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": f"operations-{uuid.uuid4().hex[:10]}@example.com",
+            "password": "StrongPassword123!",
+            "display_name": "Operations Owner",
+        },
+    )
+    assert registration.status_code == 201
+    headers = {"Authorization": f"Bearer {registration.json()['access_token']}"}
+    project = test_client.post("/api/v1/projects", headers=headers, json={"name": "Operations project"})
+    assert project.status_code == 201, project.text
+    # All canonical project-scoped routes require the query parameter; headers
+    # must never be a scope bypass.
+    test_client.headers.update(headers)
+    test_client.params = {"project_id": project.json()["id"]}
+    return test_client
 
 
 def test_compose_configuration_standardization_and_healthchecks() -> None:

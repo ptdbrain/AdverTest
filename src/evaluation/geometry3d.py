@@ -69,6 +69,83 @@ def _get_bev_polygon(box: Box3D) -> Polygon:
     return Polygon(rotated_corners)
 
 
+def _bev_corners(box: Box3D) -> list[tuple[float, float]]:
+    """Return counter-clockwise BEV corners without requiring Shapely."""
+    l2 = box.length / 2.0
+    w2 = box.width / 2.0
+    cos_a = math.cos(box.yaw)
+    sin_a = math.sin(box.yaw)
+    return [
+        (cx * cos_a - cy * sin_a + box.x, cx * sin_a + cy * cos_a + box.y)
+        for cx, cy in [(-l2, -w2), (l2, -w2), (l2, w2), (-l2, w2)]
+    ]
+
+
+def _polygon_area(vertices: list[tuple[float, float]]) -> float:
+    """Return the non-negative area of a simple planar polygon."""
+    if len(vertices) < 3:
+        return 0.0
+    return (
+        abs(
+            sum(
+                vertices[index][0] * vertices[(index + 1) % len(vertices)][1]
+                - vertices[(index + 1) % len(vertices)][0] * vertices[index][1]
+                for index in range(len(vertices))
+            )
+        )
+        / 2.0
+    )
+
+
+def _cross(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    point: tuple[float, float],
+) -> float:
+    return (end[0] - start[0]) * (point[1] - start[1]) - (end[1] - start[1]) * (point[0] - start[0])
+
+
+def _line_intersection(
+    segment_start: tuple[float, float],
+    segment_end: tuple[float, float],
+    clip_start: tuple[float, float],
+    clip_end: tuple[float, float],
+) -> tuple[float, float]:
+    """Intersection point of two non-parallel infinite lines."""
+    sx, sy = segment_start
+    ex, ey = segment_end
+    cx, cy = clip_start
+    dx, dy = clip_end
+    denominator = (ex - sx) * (dy - cy) - (ey - sy) * (dx - cx)
+    if abs(denominator) < 1e-12:
+        return segment_end
+    segment_ratio = ((cx - sx) * (dy - cy) - (cy - sy) * (dx - cx)) / denominator
+    return (sx + segment_ratio * (ex - sx), sy + segment_ratio * (ey - sy))
+
+
+def _convex_intersection_area(a: Box3D, b: Box3D) -> float:
+    """Clip one convex BEV rectangle against another."""
+    clipped = _bev_corners(a)
+    clip_polygon = _bev_corners(b)
+    for index, clip_start in enumerate(clip_polygon):
+        clip_end = clip_polygon[(index + 1) % len(clip_polygon)]
+        if not clipped:
+            return 0.0
+        subject = clipped
+        clipped = []
+        previous = subject[-1]
+        previous_inside = _cross(clip_start, clip_end, previous) >= -1e-12
+        for current in subject:
+            current_inside = _cross(clip_start, clip_end, current) >= -1e-12
+            if current_inside != previous_inside:
+                clipped.append(_line_intersection(previous, current, clip_start, clip_end))
+            if current_inside:
+                clipped.append(current)
+            previous = current
+            previous_inside = current_inside
+    return _polygon_area(clipped)
+
+
 def _bev_intersection_area(a: Box3D, b: Box3D) -> float:
     """Compute 2D intersection area of rotated bounding boxes on BEV plane."""
     if not _is_valid_box(a) or not _is_valid_box(b):
@@ -81,17 +158,7 @@ def _bev_intersection_area(a: Box3D, b: Box3D) -> float:
             return 0.0
         inter = poly_a.intersection(poly_b).area
         return float(max(0.0, inter))
-    else:
-        # Axis-aligned approximation fallback
-        ax1, ay1 = a.x - a.length / 2, a.y - a.width / 2
-        ax2, ay2 = a.x + a.length / 2, a.y + a.width / 2
-        bx1, by1 = b.x - b.length / 2, b.y - b.width / 2
-        bx2, by2 = b.x + b.length / 2, b.y + b.width / 2
-
-        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
-        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
-        iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
-        return float(iw * ih)
+    return _convex_intersection_area(a, b)
 
 
 def bev_iou(a: Box3D, b: Box3D) -> float:

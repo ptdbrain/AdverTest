@@ -40,6 +40,7 @@ import Button from "@/components/common/Button";
 import { ATTACK_CATEGORIES, ATTACK_PRESETS } from "@/lib/constants";
 import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useProjectContext } from "@/context/ProjectContext";
 import {
   createRun,
   getCatalogAttacks,
@@ -48,8 +49,10 @@ import {
   getRun,
   getRunReport,
   getRunSamples,
+  estimateRun,
   preflightRun,
   addRunToSession,
+  getSession,
 } from "@/lib/api";
 
 const TERMINAL_RUN_STATES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
@@ -95,11 +98,7 @@ function resolveBackendModel(context, versions) {
       const identity = `${version.id} ${version.model_name} ${version.checkpoint_path || ""}`.toLowerCase();
       return requestedTokens.length > 0 && requestedTokens.every((token) => identity.includes(token));
     })
-    || baseVersions[0]
-    || taskVersions.find((version) => version.checkpoint_role === "base")
-    || taskVersions[0]
-    || versions.find((version) => version.runnable)
-    || versions[0];
+    || null;
 }
 
 function resolveBackendDataset(context, datasets) {
@@ -177,6 +176,7 @@ function ConfigureAttackPageContent() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { projectId, scopedHref } = useProjectContext();
   const mode = searchParams?.get("mode"); // "reset" | "extend" | null
   const expId = params?.id || "EXP-2025-0512-001";
 
@@ -200,6 +200,7 @@ function ConfigureAttackPageContent() {
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionStep, setExecutionStep] = useState(0);
   const [executionError, setExecutionError] = useState("");
+  const [sessionReady, setSessionReady] = useState(false);
 
   // Attack Recipe Summary (The active queue of confirmed attacks)
   const [attackQueue, setAttackQueue] = useState([
@@ -222,31 +223,43 @@ function ConfigureAttackPageContent() {
   ]);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("adversai_active_experiment");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        window.setTimeout(() => {
-          setExpContext((prev) => ({ ...prev, ...parsed }));
-          if (mode === "reset") {
-            if (parsed.selectedTask === "detection3d") {
+    if (!projectId || !expId) return;
+    let active = true;
+    getSession(expId)
+      .then((session) => {
+        if (!active) return;
+        const context = {
+          expName: session.id,
+          selectedTask: session.task_id,
+          taskName: session.task_name,
+          selectedModelId: session.model_id,
+          selectedModelName: session.model_name,
+          selectedDatasetId: session.dataset_id,
+          selectedDatasetName: session.dataset_name,
+        };
+        setExpContext((previous) => ({ ...previous, ...context }));
+        setSessionReady(true);
+        if (mode === "reset") {
+          if (context.selectedTask === "detection3d") {
               setSelectedAttackId("lidar_beam_drop");
               setAttackQueue([{ id: "lidar_beam_drop", name: "Beam Drop (LiDAR 3D)", severity: 3, eps: "Drop 30%", norm: "Spatial 3D", desc: "Mất chùm tia cảm biến LiDAR mô phỏng bụi bám và thời tiết." }]);
-            } else {
+          } else {
               setSelectedAttackId("depth_rain");
               setAttackQueue([{ id: "depth_rain", name: "Depth Rain (Mưa giông)", severity: 3, eps: "Severity 3", norm: "Weather", desc: "Mưa giông tán xạ quang học làm suy giảm tương phản." }]);
-            }
-          } else if (parsed.selectedTask === "detection3d") {
+          }
+        } else if (context.selectedTask === "detection3d") {
             setSelectedAttackId("lidar_beam_drop");
             setAttackQueue([
               { id: "lidar_beam_drop", name: "Beam Drop (LiDAR 3D)", severity: 3, eps: "Drop 30%", norm: "Spatial 3D", desc: "Mất chùm tia cảm biến LiDAR mô phỏng bụi bám và thời tiết." },
               { id: "lidar_jitter", name: "Point Jitter (LiDAR 3D)", severity: 3, eps: "σ=0.05m", norm: "Gaussian 3D", desc: "Nhiễu rung tọa độ 3D làm biến dạng voxels." },
             ]);
-          }
-        }, 0);
-      }
-    } catch {}
-  }, [mode]);
+        }
+      })
+      .catch((error) => {
+        if (active) setExecutionError(error.message || "Không thể tải phiên thử nghiệm thuộc dự án hiện tại.");
+      });
+    return () => { active = false; };
+  }, [expId, mode, projectId]);
 
   const allAttacksList = ATTACK_CATEGORIES.flatMap((c) => c.attacks);
   const currentAttack =
@@ -299,6 +312,8 @@ function ConfigureAttackPageContent() {
     setExecutionStep(1);
     setExecutionError("");
     try {
+      if (!projectId) throw new Error("Hãy chọn một dự án trước khi chạy attack.");
+      if (!sessionReady) throw new Error("Phiên thử nghiệm chưa sẵn sàng hoặc không thuộc dự án đang chọn.");
       const [versions, datasets] = await Promise.all([
         getModelVersions(),
         getCatalogDatasets({ task_id: expContext.selectedTask }),
@@ -326,84 +341,58 @@ function ConfigureAttackPageContent() {
       const config = buildRealRunConfig(expContext, normalizedAttackQueue, model, dataset, attackMode);
       const preflight = await preflightRun(config);
       if (preflight.fatal_errors?.length) throw new Error(preflight.fatal_errors.join(" "));
+      const estimate = await estimateRun(config);
+      if (!estimate?.estimate_token) {
+        throw new Error("Backend không trả estimate token; run nặng chưa được xác nhận.");
+      }
       setExecutionStep(2);
-      const created = await createRun(config);
+      const created = await createRun({
+        ...config,
+        confirmed: true,
+        estimate_token: estimate.estimate_token,
+      });
       const { job, report, samples } = await waitForRealRun(created.run_id, (currentJob) => {
         setExecutionStep(currentJob.status === "INFERENCING" ? 3 : currentJob.status === "COMPUTING_METRICS" ? 4 : 2);
       });
 
-      const executedAt = new Date().toISOString();
-      const resultData = {
-        ...expContext,
-        attackMode,
-        attackQueue: normalizedAttackQueue,
-        selectedModelId: model.id,
-        selectedModelName: report.model_version || report.model || expContext.selectedModelName,
-        selectedDatasetId: dataset.name,
-        selectedDatasetName: report.dataset || dataset.title || dataset.name,
-        executedAt,
-        status: job.status,
-        activeRunId: job.run_id,
-      };
-      localStorage.setItem("adversai_active_experiment", JSON.stringify(resultData));
       setExecutionStep(5);
-      const previous = JSON.parse(localStorage.getItem("advertest_last_session") || "{}");
-      localStorage.setItem("advertest_last_session", JSON.stringify({
-        ...previous,
-        runId: job.run_id,
-        report,
-        samples,
-        recipe: attackMode === "combined" ? config.recipe : null,
-        attackMode,
-        selectedAttacks: normalizedAttackQueue.map((attack) => attack.id),
-        selectedDataset: dataset.name,
-        selectedModelFamily: model.model_family_id,
-        selectedModelVersion: model.id,
-        activeTab: "evidence",
-        runStatus: job.status,
-      }));
-
-      // ── Auto-push RunRecord to Session API ──
+      // Persist an evidence-labelled run.  Visual inference must not be
+      // converted into AP/mAP/robustness values when its evidence is incomplete.
+      const evidenceStatus = report?.evidence?.status || "NOT_ELIGIBLE";
+      const verified = evidenceStatus === "VERIFIED";
       const lastCell = report.cells?.[report.cells.length - 1];
-      const cleanApVal = report.ap_clean ?? report.metrics?.clean?.ap50 ?? 0;
-      const attackedApVal = lastCell?.metrics?.ap50 ?? lastCell?.ap ?? 0;
-      const mapDropPctVal = cleanApVal > 0
-        ? parseFloat(((cleanApVal - attackedApVal) / cleanApVal * 100).toFixed(1))
-        : 0;
+      const cleanApVal = report.ap_clean ?? report.metrics?.clean?.ap50;
+      const attackedApVal = lastCell?.metrics?.ap50 ?? lastCell?.ap;
+      const mapDropPctVal = Number.isFinite(cleanApVal) && cleanApVal > 0 && Number.isFinite(attackedApVal)
+        ? ((cleanApVal - attackedApVal) / cleanApVal * 100)
+        : null;
       const sampleCleanBoxes = samples?.[0]?.clean_prediction?.boxes || [];
       const sampleAttackedBoxes = samples?.[0]?.attacked_prediction?.boxes || [];
       const avgCleanConfVal = sampleCleanBoxes.length > 0
         ? sampleCleanBoxes.reduce((sum, b) => sum + (b.score || 0), 0) / sampleCleanBoxes.length
-        : 0;
+        : null;
       const avgAttackedConfVal = sampleAttackedBoxes.length > 0
         ? sampleAttackedBoxes.reduce((sum, b) => sum + (b.score || 0), 0) / sampleAttackedBoxes.length
-        : 0;
-
-      const sessionRunIndex = (() => {
-        try {
-          return Number(localStorage.getItem("advertest_session_run_count") || "0") + 1;
-        } catch { return 1; }
-      })();
-      localStorage.setItem("advertest_session_run_count", String(sessionRunIndex));
+        : null;
 
       const sessionRunRecord = {
         id: job.run_id,
-        name: `Lần ${sessionRunIndex}: ${normalizedAttackQueue.map(a => a.name || a.id).join(" + ")}`,
+        name: `Run ${job.run_id}: ${normalizedAttackQueue.map(a => a.name || a.id).join(" + ")}`,
         timestamp: new Date().toLocaleString("vi-VN"),
         attack_type: normalizedAttackQueue.map(a => a.id).join("+"),
         attack_name: normalizedAttackQueue.map(a => a.name || a.id).join(" + "),
         severity: normalizedAttackQueue[0]?.severity || 3,
-        clean_map: parseFloat(cleanApVal.toFixed(4)),
-        attacked_map: parseFloat(attackedApVal.toFixed(4)),
-        map_drop_pct: mapDropPctVal,
-        clean_conf: parseFloat(avgCleanConfVal.toFixed(3)),
-        attacked_conf: parseFloat(avgAttackedConfVal.toFixed(3)),
-        psnr: String(lastCell?.psnr ?? "N/A"),
-        ssim: String(lastCell?.ssim ?? "N/A"),
-        inference_ms: parseFloat(
-          ((report.duration_seconds ?? 0) * 1000 / Math.max(report.n_samples || 1, 1)).toFixed(1)
-        ),
-        robustness_score: parseFloat(Math.max(0, 100 - mapDropPctVal).toFixed(1)),
+        clean_map: verified && Number.isFinite(cleanApVal) ? cleanApVal : null,
+        attacked_map: verified && Number.isFinite(attackedApVal) ? attackedApVal : null,
+        map_drop_pct: verified ? mapDropPctVal : null,
+        clean_conf: Number.isFinite(avgCleanConfVal) ? avgCleanConfVal : null,
+        attacked_conf: Number.isFinite(avgAttackedConfVal) ? avgAttackedConfVal : null,
+        psnr: Number.isFinite(lastCell?.psnr) ? String(lastCell.psnr) : "N/A",
+        ssim: Number.isFinite(lastCell?.ssim) ? String(lastCell.ssim) : "N/A",
+        inference_ms: Number.isFinite(report.duration_seconds) && report.n_samples > 0
+          ? report.duration_seconds * 1000 / report.n_samples
+          : null,
+        robustness_score: verified && Number.isFinite(mapDropPctVal) ? Math.max(0, 100 - mapDropPctVal) : null,
         clean_bbox_count: sampleCleanBoxes.length,
         attacked_bbox_count: sampleAttackedBoxes.length,
         sample_id: samples?.[0]?.sample_id ?? "000000",
@@ -411,6 +400,7 @@ function ConfigureAttackPageContent() {
         attack_components: normalizedAttackQueue.map(a => a.id),
         seed: config.seed ?? 42,
         backend_run_id: job.run_id,
+        evidence_status: evidenceStatus,
       };
       if (typeof addRunToSession === "function") {
         addRunToSession(expId, sessionRunRecord).catch(syncErr =>
@@ -418,26 +408,7 @@ function ConfigureAttackPageContent() {
         );
       }
 
-      // ── Cache report for RunHistoryBar ──
-      try {
-        const existingCache = JSON.parse(localStorage.getItem("advertest_run_reports") || "{}");
-        const cacheKeys = Object.keys(existingCache);
-        if (cacheKeys.length >= 10) {
-          delete existingCache[cacheKeys[0]];
-        }
-        existingCache[job.run_id] = {
-          report,
-          samples,
-          attackQueue: normalizedAttackQueue,
-          executedAt: new Date().toISOString(),
-          attackMode,
-        };
-        localStorage.setItem("advertest_run_reports", JSON.stringify(existingCache));
-      } catch (cacheErr) {
-        console.warn("Could not cache run report:", cacheErr);
-      }
-
-      router.push(`/experiments/${expId}/results`);
+      router.push(scopedHref(`/experiments/${expId}/results`, job.run_id));
     } catch (error) {
       setExecutionError(error.message || "Không thể chạy attack bằng backend.");
       setIsExecuting(false);
@@ -836,7 +807,7 @@ function ConfigureAttackPageContent() {
               <Button
                 variant="primary"
                 onClick={handleStartExecution}
-                disabled={isExecuting || attackQueue.length === 0}
+                disabled={isExecuting || !sessionReady || attackQueue.length === 0}
                 icon={isExecuting ? Sparkles : Play}
                 className="w-full justify-center py-2.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 shadow-sm"
               >

@@ -541,15 +541,23 @@ class YoloTrainer(ModelTrainer):
         if not path.is_file():
             raise FileNotFoundError(f"Checkpoint file {checkpoint.path!r} not found")
 
-        final_clean = float(checkpoint.metadata.get("final_clean_map50_95", 0.678))
-        final_robust = float(checkpoint.metadata.get("final_robust_score", 76.0))
+        required = ("final_clean_map50_95", "final_robust_score")
+        missing = [key for key in required if key not in checkpoint.metadata]
+        if missing:
+            raise ValueError(f"measured checkpoint metrics are required: {', '.join(missing)}")
+
+        try:
+            final_clean = float(checkpoint.metadata["final_clean_map50_95"])
+            final_robust = float(checkpoint.metadata["final_robust_score"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("measured checkpoint metrics must be finite numbers") from exc
+        if not all(value == value and abs(value) != float("inf") for value in (final_clean, final_robust)):
+            raise ValueError("measured checkpoint metrics must be finite numbers")
 
         return MetricSnapshot(
             metrics={
                 "clean_map50_95": final_clean,
                 "robust_score": final_robust,
-                "map50": round(min(1.0, final_clean + 0.15), 4),
-                "map75": round(max(0.0, final_clean - 0.10), 4),
             },
             version=self.version,
         )
@@ -572,13 +580,29 @@ class YoloTrainer(ModelTrainer):
         candidate_metrics: dict[str, float],
     ) -> dict[str, Any]:
         """Verify candidate checkpoint against YOLO acceptance gate criteria."""
-        baseline_clean = baseline_metrics.get("clean_map50_95", 0.685)
-        candidate_clean = candidate_metrics.get("clean_map50_95", 0.678)
+        required = ("clean_map50_95", "robust_score")
+        missing = [
+            f"{role}.{metric}"
+            for role, values in (("baseline", baseline_metrics), ("candidate", candidate_metrics))
+            for metric in required
+            if not isinstance(values.get(metric), (int, float)) or isinstance(values.get(metric), bool)
+        ]
+        if missing:
+            return {
+                "passed": False,
+                "status": "NOT_ELIGIBLE",
+                "missing": missing,
+                "clean_gate_passed": False,
+                "robust_gate_passed": False,
+            }
+
+        baseline_clean = float(baseline_metrics["clean_map50_95"])
+        candidate_clean = float(candidate_metrics["clean_map50_95"])
         clean_delta = round(candidate_clean - baseline_clean, 4)
         clean_gate_passed = clean_delta >= -0.020
 
-        baseline_robust = baseline_metrics.get("robust_score", 62.0)
-        candidate_robust = candidate_metrics.get("robust_score", 76.0)
+        baseline_robust = float(baseline_metrics["robust_score"])
+        candidate_robust = float(candidate_metrics["robust_score"])
         robust_delta = round(candidate_robust - baseline_robust, 2)
         robust_gate_passed = robust_delta >= 8.0
 
@@ -586,6 +610,8 @@ class YoloTrainer(ModelTrainer):
 
         return {
             "passed": all_passed,
+            "status": "VERIFIED" if all_passed else "FAILED_ACCEPTANCE_GATE",
+            "missing": [],
             "clean_gate_passed": clean_gate_passed,
             "clean_delta": clean_delta,
             "clean_drop_max_allowed": -0.020,

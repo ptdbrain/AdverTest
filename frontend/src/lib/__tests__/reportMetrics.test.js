@@ -37,8 +37,8 @@ describe("task-aware report metrics", () => {
     };
     const view = buildRunDecisionView(report);
 
-    expect(view.dataState).toBe("NO_DATA");
-    expect(view.primary.clean).toBe(0.55);
+    expect(view.dataState).toBe("NO_GROUND_TRUTH");
+    expect(view.primary.clean).toBeNull();
     expect(view.primary.attacked).toBeNull();
     expect(primaryMetricForCell(report, report.cells[0], view.taskId, view.primary.key)).toBeNull();
   });
@@ -58,6 +58,7 @@ describe("task-aware report metrics", () => {
       },
       simulation_only: false,
       benchmark_metrics_available: true,
+      evidence: { status: "VERIFIED", missing: [] },
     });
 
     expect(view.primary).toMatchObject({ label: "KITTI 3D AP", clean: 0.62, attacked: 0.39 });

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -134,3 +135,21 @@ def test_kitti3d_rejects_noninvertible_calibration_transform(kitti3d_root: Path)
 
     with pytest.raises(ValueError, match="transform is non-invertible"):
         _dataset(kitti3d_root).load(limit=1)
+
+
+def test_kitti3d_rejects_a_manifest_without_lidar_or_calibration(kitti3d_root: Path) -> None:
+    manifest = kitti3d_root / "curation.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "dataset_id": "kitti2d-local-100",
+                "task_id": "detection3d",
+                "modalities": ["image_2", "label_2"],
+                "sample_ids": ["000001"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="INSUFFICIENT_FOR_REQUESTED_SUBSET.*calib.*velodyne"):
+        _dataset(kitti3d_root, curation_manifest_path=str(manifest)).load()

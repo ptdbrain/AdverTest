@@ -11,14 +11,14 @@ from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from src.adapters import load_adapters
-from src.api.platform_dependencies import get_platform_storage
+from src.api.platform_dependencies import get_platform_storage, require_project_member
 from src.api.routers import (
     admin,
     advisor,
@@ -33,6 +33,7 @@ from src.api.routers import (
     jobs,
     live_inference,
     platform_datasets,
+    projects,
     risk_rubric,
     runs,
     sessions,
@@ -115,20 +116,21 @@ app.include_router(admin.router, prefix="/api/v1")
 app.include_router(catalog.router, prefix="/api/v1")
 app.include_router(runs.router, prefix="/api/v1")
 app.include_router(datasets.router, prefix="/api/v1")
+app.include_router(projects.router, prefix="/api/v1")
 app.include_router(artifacts.router, prefix="/api/v1")
 app.include_router(checkpoints.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(exports.router, prefix="/api/v1")
 app.include_router(platform_datasets.router, prefix="/api/v1")
-app.include_router(defence.router, prefix="/api/v1")
-app.include_router(analytics.router, prefix="/api/v1")
+app.include_router(defence.router, prefix="/api/v1", dependencies=[Depends(require_project_member)])
+app.include_router(analytics.router, prefix="/api/v1", dependencies=[Depends(require_project_member)])
 app.include_router(advisor.router, prefix="/api/v1")
 app.include_router(system.router, prefix="/api/v1")
 app.include_router(live_inference.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(settings_router.router, prefix="/api/v1")
 app.include_router(risk_rubric.router, prefix="/api/v1")
-app.include_router(router, prefix="/api/v1")
+app.include_router(router, prefix="/api/v1", dependencies=[Depends(require_project_member)])
 app.mount("/data", StaticFiles(directory=str(data_root)), name="data")
 
 

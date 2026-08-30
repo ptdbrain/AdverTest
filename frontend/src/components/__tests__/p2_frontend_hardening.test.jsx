@@ -7,21 +7,25 @@ import { projectKitti3dTo2d } from "@/components/PointCloudViewer";
 import { exportReportAsCsv, exportReportAsJson } from "@/lib/exportReport";
 
 describe("P2.7 Evidence Badges", () => {
-  it("derives the exact evidence state from backend provenance", () => {
-    expect(getEvidenceState({ is_demo: true })).toBe("DEMO");
-    expect(getEvidenceState({ simulation_only: true })).toBe("SIMULATION");
-    expect(getEvidenceState({ checkpoint_sha256: "abc12345" }, false)).toBe("REAL_ARTIFACT");
-    expect(getEvidenceState({}, false, "WAITING_FOR_GPU_VALIDATION")).toBe("WAITING_FOR_GPU_VALIDATION");
-    expect(getEvidenceState({}, false, "WAITING_FOR_EXTERNAL_DATA")).toBe("WAITING_FOR_EXTERNAL_DATA");
-    expect(getEvidenceState(null, undefined)).toBe("NO_DATA");
+  it("uses the backend evidence decision and never infers real evidence from partial provenance", () => {
+    expect(getEvidenceState({ checkpoint_sha256: "abc12345" }, false)).toBe("NO_DATA");
+    expect(
+      getEvidenceState(
+        { checkpoint_sha256: "abc12345" },
+        false,
+        undefined,
+        { status: "NOT_ELIGIBLE", missing: ["ground_truth_hash"] },
+      ),
+    ).toBe("NOT_ELIGIBLE");
+    expect(getEvidenceState({}, false, undefined, { status: "VERIFIED" })).toBe("VERIFIED");
   });
 
   it("renders with proper accessibility role and label", () => {
-    render(<EvidenceBadge state="REAL_ARTIFACT" />);
+    render(<EvidenceBadge state="VERIFIED" />);
     const badge = screen.getByRole("status");
     expect(badge).toBeInTheDocument();
-    expect(badge).toHaveTextContent("REAL ARTIFACT");
-    expect(badge).toHaveAttribute("aria-label", "Trạng thái nguồn: REAL ARTIFACT");
+    expect(badge).toHaveTextContent("VERIFIED");
+    expect(badge).toHaveAttribute("aria-label", "Trạng thái nguồn: VERIFIED");
   });
 });
 

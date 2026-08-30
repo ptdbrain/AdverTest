@@ -10,10 +10,13 @@ const {
   getModelVersions,
   getCatalogDatasets,
   preflightRun,
+  estimateRun,
   getRun,
   getRunReport,
   getRunSamples,
   addRunToSession,
+  getSession,
+  scopedHref,
 } = vi.hoisted(() => ({
   push: vi.fn(),
   createRun: vi.fn(),
@@ -21,10 +24,13 @@ const {
   getModelVersions: vi.fn(),
   getCatalogDatasets: vi.fn(),
   preflightRun: vi.fn(),
+  estimateRun: vi.fn(),
   getRun: vi.fn(),
   getRunReport: vi.fn(),
   getRunSamples: vi.fn(),
   addRunToSession: vi.fn().mockResolvedValue({}),
+  getSession: vi.fn(),
+  scopedHref: vi.fn((path, runId) => `${path}?project_id=project-a&run_id=${runId}`),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -42,7 +48,13 @@ vi.mock("@/lib/api", () => ({
   getRunReport,
   getRunSamples,
   preflightRun,
+  estimateRun,
   addRunToSession,
+  getSession,
+}));
+
+vi.mock("@/context/ProjectContext", () => ({
+  useProjectContext: () => ({ projectId: "project-a", scopedHref }),
 }));
 
 afterEach(() => {
@@ -50,6 +62,18 @@ afterEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
 });
+
+function mockExperimentSession() {
+  getSession.mockResolvedValue({
+    id: "EXP-REAL-001",
+    task_id: "detection2d",
+    task_name: "Object Detection",
+    model_id: "yolo11s-base",
+    model_name: "yolo11s-clean-b0_best.pt (Local Workspace)",
+    dataset_id: "kitti",
+    dataset_name: "KITTI",
+  });
+}
 
 describe("ConfigureAttackPage real run handoff", () => {
   it("normalizes legacy UI attack ids to executable backend ids", () => {
@@ -63,6 +87,7 @@ describe("ConfigureAttackPage real run handoff", () => {
   });
 
   it("persists backend report and samples before opening visual results", async () => {
+    mockExperimentSession();
     getModelVersions.mockResolvedValueOnce([{
       id: "yolo11s-kitti-clean-b0",
       model_name: "yolo11s",
@@ -90,6 +115,7 @@ describe("ConfigureAttackPage real run handoff", () => {
       { name: "pgd", available: true },
     ]);
     preflightRun.mockResolvedValueOnce({ fatal_errors: [] });
+    estimateRun.mockResolvedValueOnce({ estimate_token: "signed-estimate-token" });
     createRun.mockResolvedValueOnce({ run_id: "run-real-001", status: "QUEUED" });
     getRun.mockResolvedValue({ run_id: "run-real-001", status: "COMPLETED", progress: 1 });
     const sample = {
@@ -116,9 +142,14 @@ describe("ConfigureAttackPage real run handoff", () => {
     getRunSamples.mockResolvedValueOnce([sample]);
 
     render(<ConfigureAttackPage />);
+    await waitFor(() => expect(screen.getByRole("button", { name: /Bắt đầu chạy suy luận/i })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: /Bắt đầu chạy suy luận/i }));
 
     await waitFor(() => expect(createRun).toHaveBeenCalledTimes(1));
+    expect(estimateRun).toHaveBeenCalledWith(expect.objectContaining({
+      checkpoint_id: "yolo11s-base",
+      dataset: "kitti",
+    }));
     expect(getCatalogAttacks).toHaveBeenCalledWith(expect.objectContaining({
       task_id: "detection2d",
       model_family_id: "yolo11",
@@ -136,16 +167,23 @@ describe("ConfigureAttackPage real run handoff", () => {
           expect.objectContaining({ attack_name: "pgd", position: 1 }),
         ],
       },
+      confirmed: true,
+      estimate_token: "signed-estimate-token",
     });
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/experiments/EXP-REAL-001/results"));
-    const saved = JSON.parse(localStorage.getItem("advertest_last_session"));
-    expect(saved.runId).toBe("run-real-001");
-    expect(saved.report).toEqual(report);
-    expect(saved.samples).toEqual([sample]);
-    expect(saved.recipe).toBeDefined();
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/experiments/EXP-REAL-001/results?project_id=project-a&run_id=run-real-001"));
+    expect(addRunToSession).toHaveBeenCalledWith("EXP-REAL-001", expect.objectContaining({
+      id: "run-real-001",
+      evidence_status: "NOT_ELIGIBLE",
+      clean_map: null,
+      attacked_map: null,
+      robustness_score: null,
+    }));
+    expect(localStorage.getItem("advertest_last_session")).toBeNull();
+    expect(localStorage.getItem("advertest_run_reports")).toBeNull();
   });
 
   it("submits individual attacks config when Tách riêng lẻ mode is selected", async () => {
+    mockExperimentSession();
     getModelVersions.mockResolvedValueOnce([{
       id: "yolo11s-base",
       model_name: "yolo11s",
@@ -165,6 +203,7 @@ describe("ConfigureAttackPage real run handoff", () => {
       { name: "pgd", available: true },
     ]);
     preflightRun.mockResolvedValueOnce({ fatal_errors: [] });
+    estimateRun.mockResolvedValueOnce({ estimate_token: "individual-estimate-token" });
     createRun.mockResolvedValueOnce({ run_id: "run-individual-001", status: "QUEUED" });
     getRun.mockResolvedValue({ run_id: "run-individual-001", status: "COMPLETED", progress: 1 });
     const sample = { sample_id: "000001", clean_prediction: { boxes: [] }, attacked_prediction: { boxes: [] } };
@@ -172,15 +211,19 @@ describe("ConfigureAttackPage real run handoff", () => {
     getRunSamples.mockResolvedValueOnce([sample]);
 
     render(<ConfigureAttackPage />);
+    await waitFor(() => expect(screen.getByRole("button", { name: /Bắt đầu chạy suy luận/i })).toBeEnabled());
 
     // Switch to Individual Mode
     fireEvent.click(screen.getByTestId("mode-individual-btn"));
     fireEvent.click(screen.getByRole("button", { name: /Bắt đầu chạy suy luận/i }));
 
     await waitFor(() => expect(createRun).toHaveBeenCalledTimes(1));
+    expect(estimateRun).toHaveBeenCalledTimes(1);
     expect(createRun.mock.calls[0][0]).toMatchObject({
       checkpoint_id: "yolo11s-base",
       attacks: ["depth_fog", "pgd"],
+      confirmed: true,
+      estimate_token: "individual-estimate-token",
     });
     expect(createRun.mock.calls[0][0].recipe).toBeUndefined();
   });

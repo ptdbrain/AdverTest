@@ -7,10 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from src.api.dependencies import get_runner, get_store, get_worker
 from src.api.jobs import LocalRunWorker, SqliteRunStore
+from src.api.platform_dependencies import get_platform_artifacts, require_project_member
 from src.api.routes import _resolve_run_config
 from src.api.schemas.run import CostEstimateOut, PreflightOut, RunJobOut, RunReportOut
 from src.config import get_settings
 from src.pipeline.runner import RunConfig, TestRunner
+from src.storage.service import ArtifactService
 
 router = APIRouter(prefix="/runs", tags=["Runs"])
 
@@ -87,6 +89,8 @@ async def preflight_run(config: RunConfig, runner: TestRunner = Depends(get_runn
 async def create_run(
     request: Request,
     config: RunConfig,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
     runner: TestRunner = Depends(get_runner),
     store: SqliteRunStore = Depends(get_store),
     worker: LocalRunWorker = Depends(get_worker),
@@ -117,27 +121,44 @@ async def create_run(
     preflight = runner.preflight(config)
     if preflight.fatal_errors:
         raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
-    run_id = store.create(config)
+    run_id = store.create(config, project_id=project_id, owner_user_id=actor_id)
     worker.enqueue(run_id, config)
     return _job_out(store.get(run_id))
 
 
 @router.get("", response_model=list[RunJobOut])
-async def list_runs(store: SqliteRunStore = Depends(get_store)) -> list[RunJobOut]:
-    return [_job_out(r) for r in store.list()]
+async def list_runs(
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
+    store: SqliteRunStore = Depends(get_store),
+) -> list[RunJobOut]:
+    del actor_id
+    return [_job_out(r) for r in store.list_scoped(project_id=project_id)]
 
 
 @router.get("/{run_id}", response_model=RunJobOut)
-async def get_run(run_id: str, store: SqliteRunStore = Depends(get_store)) -> RunJobOut:
-    record = store.get(run_id)
+async def get_run(
+    run_id: str,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
+    store: SqliteRunStore = Depends(get_store),
+) -> RunJobOut:
+    del actor_id
+    record = store.get_scoped(run_id, project_id=project_id)
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
     return _job_out(record)
 
 
 @router.get("/{run_id}/report", response_model=RunReportOut)
-async def get_run_report(run_id: str, store: SqliteRunStore = Depends(get_store)) -> RunReportOut:
-    record = store.get(run_id)
+async def get_run_report(
+    run_id: str,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
+    store: SqliteRunStore = Depends(get_store),
+) -> RunReportOut:
+    del actor_id
+    record = store.get_scoped(run_id, project_id=project_id)
     if not record:
         raise HTTPException(status_code=404)
     if "report" not in record:
@@ -149,35 +170,42 @@ async def get_run_report(run_id: str, store: SqliteRunStore = Depends(get_store)
 @router.get("/{run_id}/zip")
 async def download_run_artifacts_zip(
     run_id: str,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
+    artifacts: ArtifactService = Depends(get_platform_artifacts),
 ):
     """Bundle report, config, sample metrics and artifacts into a single downloadable zip file."""
     import io
     import json
     import zipfile
-    from pathlib import Path
 
     from fastapi.responses import Response
 
-    from src.config import get_settings
-
-    record = store.get(run_id)
+    record = store.get_scoped(run_id, project_id=project_id)
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
 
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         report = record.get("report") or {}
+        evidence = _report_evidence(report)
         if report:
-            zf.writestr("metrics_report.json", json.dumps(report, indent=2))
-            model_name = report.get("model", "unknown")
-            dataset_name = report.get("dataset", "unknown")
-            ap_clean = report.get("ap_clean", 0.0)
-            csv_lines = [
-                "run_id,model,dataset,ap_clean,status",
-                f"{run_id},{model_name},{dataset_name},{ap_clean},{record.get('status', 'COMPLETED')}",
-            ]
-            zf.writestr("summary.csv", "\n".join(csv_lines) + "\n")
+            if evidence["status"] == "VERIFIED":
+                zf.writestr("metrics_report.json", json.dumps(report, indent=2))
+                model_name = report.get("model", "unknown")
+                dataset_name = report.get("dataset", "unknown")
+                ap_clean = report.get("ap_clean", "")
+                csv_lines = [
+                    "run_id,model,dataset,ap_clean,status,evidence_status",
+                    f"{run_id},{model_name},{dataset_name},{ap_clean},{record.get('status', 'COMPLETED')},VERIFIED",
+                ]
+                zf.writestr("summary.csv", "\n".join(csv_lines) + "\n")
+            else:
+                zf.writestr(
+                    "diagnostic_report.json",
+                    json.dumps(_diagnostic_export(run_id, report, evidence), indent=2),
+                )
 
         config = record.get("config") or {}
         if config:
@@ -188,16 +216,16 @@ async def download_run_artifacts_zip(
             zf.writestr("events.json", json.dumps(events, indent=2))
 
         cells = report.get("cells", [])
-        if cells:
+        if cells and evidence["status"] == "VERIFIED":
             zf.writestr("samples_diagnostics.json", json.dumps(cells, indent=2))
 
-        settings = get_settings()
-        for root_candidate in (Path(settings.artifact_root) / run_id, Path(settings.runs_root) / run_id):
-            if root_candidate.is_dir():
-                for file_path in root_candidate.glob("**/*"):
-                    if file_path.is_file():
-                        rel_name = f"artifacts/{file_path.relative_to(root_candidate)}"
-                        zf.write(file_path, arcname=rel_name)
+        for artifact in artifacts.list_for_run(project_id, run_id, actor_id=actor_id):
+            try:
+                content = artifacts.read_bytes(project_id, artifact["id"], actor_id=actor_id)
+            except (FileNotFoundError, KeyError):
+                continue
+            filename = _safe_zip_filename(artifact["original_filename"])
+            zf.writestr(f"artifacts/{artifact['id']}_{filename}", content)
 
     zip_bytes = zip_buffer.getvalue()
     return Response(
@@ -211,6 +239,8 @@ async def download_run_artifacts_zip(
 @router.get("/{run_id}/pdf")
 async def download_run_report_pdf(
     run_id: str,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ):
     """Generate and stream a professional PDF evaluation report for the run."""
@@ -218,7 +248,8 @@ async def download_run_report_pdf(
 
     from src.evaluation.pdf_export import generate_run_report_pdf
 
-    record = store.get(run_id)
+    del actor_id
+    record = store.get_scoped(run_id, project_id=project_id)
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
 
@@ -234,12 +265,36 @@ async def download_run_report_pdf(
     )
 
 
+@router.post("/{run_id}/promote", status_code=201)
+async def promote_run(
+    run_id: str,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
+    store: SqliteRunStore = Depends(get_store),
+) -> dict:
+    """Allow a promotion request only after the report's shared evidence gate passes."""
+    del actor_id
+    record = store.get_scoped(run_id, project_id=project_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Run not found")
+    report = record.get("report")
+    if not report:
+        raise HTTPException(status_code=409, detail={"code": "REPORT_NOT_READY"})
+    evidence = _report_evidence(report)
+    if evidence["status"] != "VERIFIED":
+        raise HTTPException(status_code=409, detail={"code": "NOT_ELIGIBLE", "evidence": evidence})
+    return {"run_id": run_id, "project_id": project_id, "status": "PROMOTION_ELIGIBLE", "evidence": evidence}
+
+
 @router.post("/{run_id}/cancel", response_model=RunJobOut)
 async def cancel_run(
     run_id: str,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
     store: SqliteRunStore = Depends(get_store),
 ) -> RunJobOut:
-    record = store.get(run_id)
+    del actor_id
+    record = store.get_scoped(run_id, project_id=project_id)
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
     if record["status"] not in ("COMPLETED", "FAILED", "CANCELLED"):
@@ -247,3 +302,34 @@ async def cancel_run(
         if record["status"] == "QUEUED":
             store.fail(run_id, "Cancelled by user", cancelled=True)
     return _job_out(store.get(run_id))
+
+
+def _report_evidence(report: dict) -> dict:
+    """Recompute evidence instead of trusting a persisted or browser-provided label."""
+    from src.evaluation.evidence import evaluate_evidence
+
+    return evaluate_evidence(
+        report.get("provenance") or {},
+        simulation_only=bool(report.get("simulation_only", True)),
+    ).as_dict()
+
+
+def _diagnostic_export(run_id: str, report: dict, evidence: dict) -> dict:
+    """Non-eligible exports carry audit context, never a benchmark conclusion."""
+    return {
+        "run_id": run_id,
+        "classification": "NOT_ELIGIBLE - NO BENCHMARK CONCLUSION",
+        "model": report.get("model"),
+        "model_version": report.get("model_version"),
+        "dataset": report.get("dataset"),
+        "n_samples": report.get("n_samples"),
+        "evidence": evidence,
+        "provenance": report.get("provenance") or {},
+    }
+
+
+def _safe_zip_filename(value: object) -> str:
+    from pathlib import PurePath
+
+    filename = PurePath(str(value or "artifact")).name
+    return filename or "artifact"

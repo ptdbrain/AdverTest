@@ -43,7 +43,6 @@ export function RunMetricsContent({ report, mode = "benchmark", analytics = {} }
   const cells = report.cells || [];
   const worstAttack = analytics.summary?.worst_attack || analytics.attacks?.[0] || null;
   const vulnerableClass = [...(analytics.classes || [])].sort((a, b) => (b.detection_drop_percent ?? -1) - (a.detection_drop_percent ?? -1))[0] || null;
-  const evidenceState = view.dataState === "NO_GROUND_TRUTH" ? "NO_DATA" : undefined;
   const nextAction = view.dataState !== "MEASURED"
     ? "Chạy benchmark trên dataset có ground truth và split khóa trước khi kết luận."
     : report.simulation_only !== false
@@ -58,7 +57,7 @@ export function RunMetricsContent({ report, mode = "benchmark", analytics = {} }
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <EvidenceBadge provenance={report.provenance} simulationOnly={report.simulation_only} state={evidenceState} />
+              <EvidenceBadge provenance={report.provenance} simulationOnly={report.simulation_only} evidence={report.evidence} />
               <span className="rounded-md border border-slate-700 px-2 py-1 font-mono text-xs text-slate-300">{report.run_id}</span>
             </div>
             <h2 className="mt-3 text-lg font-semibold">{report.model || "Unknown model"} · {report.dataset || "Unknown dataset"}</h2>

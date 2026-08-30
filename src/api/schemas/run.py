@@ -55,8 +55,10 @@ class RunReportOut(BaseModel):
     provenance: dict[str, Any] = Field(default_factory=dict)
     seconds: float = 0.0
     simulation_only: bool = True
-    benchmark_metrics_available: bool = True
+    benchmark_metrics_available: bool = False
     needs_review: bool = False
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    promotion_eligible: bool = False
 
 
 class PreflightOut(BaseModel):

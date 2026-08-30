@@ -172,7 +172,7 @@ def _build_scientific_provenance(
             "python": sys.version.split()[0],
             "numpy": np.__version__,
         },
-        "simulation_only": dataset.name == "synthetic_shapes",
+        "simulation_only": dataset.name.startswith("synthetic"),
         "hardware_metadata": {
             "platform": platform.platform(),
             "processor": platform.processor() or "generic-x86_64",
@@ -320,7 +320,7 @@ class TestRunner:
             dataset=dataset.name,
             n_samples=len(samples),
             ap_clean=clean_ap_val,
-            simulation_only=(dataset.name == "synthetic_shapes"),
+            simulation_only=dataset.name.startswith("synthetic"),
             provenance=_build_scientific_provenance(config, dataset, info, samples),
         )
         selected, skipped = self._resolve_attacks(config, dataset, info, samples)

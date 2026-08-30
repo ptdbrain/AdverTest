@@ -48,15 +48,20 @@ async def client(tmp_path, monkeypatch):
     get_settings.cache_clear()
 
     import src.api.dependencies as deps_module
+    import src.api.platform_dependencies as platform_deps_module
     import src.api.routers.admin as admin_module
     import src.api.routers.advisor as advisor_module
     import src.api.routers.analytics as analytics_module
+    import src.api.routers.artifacts as artifacts_module
     import src.api.routers.auth as auth_module
     import src.api.routers.catalog as catalog_module
     import src.api.routers.datasets as datasets_module
     import src.api.routers.defence as defence_module
+    import src.api.routers.projects as projects_module
     import src.api.routers.risk_rubric as risk_rubric_module
     import src.api.routers.runs as runs_module
+    import src.api.routers.sessions as sessions_module
+    import src.api.routers.settings as settings_module
     import src.api.routes as routes_module
     import src.auth.dependencies as auth_deps_module
     import src.main as main_module
@@ -75,9 +80,20 @@ async def client(tmp_path, monkeypatch):
         deps_module.get_advisor_service.cache_clear()
     if hasattr(auth_deps_module, "get_auth_service") and hasattr(auth_deps_module.get_auth_service, "cache_clear"):
         auth_deps_module.get_auth_service.cache_clear()
+    if hasattr(platform_deps_module, "get_platform_database"):
+        platform_deps_module.get_platform_database.cache_clear()
+    if hasattr(platform_deps_module, "get_platform_storage"):
+        platform_deps_module.get_platform_storage.cache_clear()
+    if hasattr(platform_deps_module, "get_platform_artifacts"):
+        platform_deps_module.get_platform_artifacts.cache_clear()
 
     importlib.reload(deps_module)
     importlib.reload(auth_deps_module)
+    importlib.reload(platform_deps_module)
+    importlib.reload(projects_module)
+    importlib.reload(artifacts_module)
+    importlib.reload(sessions_module)
+    importlib.reload(settings_module)
     importlib.reload(routes_module)
     importlib.reload(catalog_module)
     importlib.reload(runs_module)
@@ -93,6 +109,31 @@ async def client(tmp_path, monkeypatch):
     app = main_module.app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        registration = await ac.post(
+            "/api/v1/auth/register",
+            json={
+                "email": f"test-{tmp_path.name}@example.com",
+                "password": "StrongPassword123!",
+                "display_name": "Test Project Owner",
+            },
+        )
+        assert registration.status_code == 201, registration.text
+        auth_headers = {"Authorization": f"Bearer {registration.json()['access_token']}"}
+        project = await ac.post(
+            "/api/v1/projects",
+            headers=auth_headers,
+            json={"name": "Test project"},
+        )
+        assert project.status_code == 201, project.text
+        ac.headers.update(auth_headers)
+        default_project_id = project.json()["id"]
+        setattr(ac, "default_project_id", default_project_id)
+
+        async def add_project_scope(request):
+            if request.url.path.startswith("/api/v1/") and "project_id" not in request.url.params:
+                request.url = request.url.copy_merge_params({"project_id": default_project_id})
+
+        ac.event_hooks["request"].append(add_project_scope)
         yield ac
     get_settings.cache_clear()
 

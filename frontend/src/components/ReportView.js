@@ -123,7 +123,7 @@ export default function ReportView({ report, onClearHistory }) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <EvidenceBadge provenance={report.provenance} simulationOnly={report.simulation_only} />
+          <EvidenceBadge provenance={report.provenance} simulationOnly={report.simulation_only} evidence={report.evidence} />
           <span style={{ fontSize: "0.8rem", color: "#64748B", fontWeight: 600 }}>
             Run ID: <strong style={{ color: "#0F172A" }}>{report.run_id || "—"}</strong>
           </span>

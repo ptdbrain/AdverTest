@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 EvidenceStatus = Literal["VERIFIED", "NOT_ELIGIBLE", "WAITING_FOR_GPU_VALIDATION", "INVALID"]
 

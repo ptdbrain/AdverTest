@@ -10,13 +10,12 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.api.platform_dependencies import get_platform_database
-from src.auth.security import decode_access_token
+from src.api.platform_dependencies import get_platform_database, require_project_member
 from src.persistence.database import PlatformDatabase
-from src.persistence.models import ExperimentSessionRecord, ProjectMembershipRecord, SessionRunRecord
+from src.persistence.models import ExperimentSessionRecord, SessionRunRecord
 
 router = APIRouter(prefix="/sessions", tags=["Experiment Sessions"])
 
@@ -28,15 +27,15 @@ class RunRecord(BaseModel):
     attack_type: str
     attack_name: str
     severity: int
-    clean_map: float
-    attacked_map: float
-    map_drop_pct: float
-    clean_conf: float
-    attacked_conf: float
+    clean_map: float | None = None
+    attacked_map: float | None = None
+    map_drop_pct: float | None = None
+    clean_conf: float | None = None
+    attacked_conf: float | None = None
     psnr: str = "N/A"
     ssim: str = "N/A"
-    inference_ms: float = 0.0
-    robustness_score: float = 0.0
+    inference_ms: float | None = None
+    robustness_score: float | None = None
     clean_bbox_count: int = 0
     attacked_bbox_count: int = 0
     sample_id: str = "000000"
@@ -57,6 +56,7 @@ class RunRecord(BaseModel):
     seed: int | None = None
     run_config_hash: str = ""
     backend_run_id: str = ""
+    evidence_status: str = "NOT_ELIGIBLE"
 
 
 class SessionRecord(BaseModel):
@@ -86,6 +86,12 @@ def _row_to_run_record(row: SessionRunRecord) -> RunRecord:
             attack_comps = json.loads(row.attack_components_json)
         except Exception:
             attack_comps = []
+    evidence_status = "NOT_ELIGIBLE"
+    if row.metrics_json:
+        try:
+            evidence_status = str(json.loads(row.metrics_json).get("evidence_status", evidence_status))
+        except Exception:
+            pass
     return RunRecord(
         id=row.id,
         name=row.name,
@@ -114,13 +120,26 @@ def _row_to_run_record(row: SessionRunRecord) -> RunRecord:
         seed=row.seed,
         run_config_hash=row.run_config_hash,
         backend_run_id=row.backend_run_id,
+        evidence_status=evidence_status,
     )
 
 
 def _row_to_session_record(s_row: ExperimentSessionRecord, run_rows: list[SessionRunRecord]) -> SessionRecord:
-    created_str = s_row.created_at.strftime("%d/%m/%Y %H:%M:%S") if isinstance(s_row.created_at, datetime) else str(s_row.created_at)
-    updated_str = s_row.updated_at.strftime("%d/%m/%Y %H:%M:%S") if isinstance(s_row.updated_at, datetime) else str(s_row.updated_at)
-    ended_str = s_row.ended_at.strftime("%d/%m/%Y %H:%M:%S") if isinstance(s_row.ended_at, datetime) else (str(s_row.ended_at) if s_row.ended_at else None)
+    created_str = (
+        s_row.created_at.strftime("%d/%m/%Y %H:%M:%S")
+        if isinstance(s_row.created_at, datetime)
+        else str(s_row.created_at)
+    )
+    updated_str = (
+        s_row.updated_at.strftime("%d/%m/%Y %H:%M:%S")
+        if isinstance(s_row.updated_at, datetime)
+        else str(s_row.updated_at)
+    )
+    ended_str = (
+        s_row.ended_at.strftime("%d/%m/%Y %H:%M:%S")
+        if isinstance(s_row.ended_at, datetime)
+        else (str(s_row.ended_at) if s_row.ended_at else None)
+    )
 
     runs = [_row_to_run_record(r) for r in run_rows]
     return SessionRecord(
@@ -142,34 +161,29 @@ def _row_to_session_record(s_row: ExperimentSessionRecord, run_rows: list[Sessio
     )
 
 
-def _get_active_project_ids(session, user_id: str | None) -> list[str] | None:
-    if not user_id:
-        return None
-    memberships = session.query(ProjectMembershipRecord).filter(
-        ProjectMembershipRecord.user_id == user_id,
-        ProjectMembershipRecord.status == "ACTIVE",
-    ).all()
-    return [m.project_id for m in memberships]
-
-
 @router.get("", response_model=list[SessionRecord])
 async def list_sessions(
-    project_id: str | None = None,
-    authorization: str | None = Header(default=None, alias="Authorization"),
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
     db: PlatformDatabase = Depends(get_platform_database),
 ) -> list[SessionRecord]:
-    """Get all experiment sessions for the caller's active projects."""
+    """Get experiment sessions from exactly one authorized project."""
+    del actor_id
     with db.session() as session:
-        query = session.query(ExperimentSessionRecord)
-        if project_id:
-            query = query.filter(ExperimentSessionRecord.project_id == project_id)
-
-        session_rows = query.order_by(ExperimentSessionRecord.created_at.desc()).all()
+        session_rows = (
+            session.query(ExperimentSessionRecord)
+            .filter(ExperimentSessionRecord.project_id == project_id)
+            .order_by(ExperimentSessionRecord.created_at.desc())
+            .all()
+        )
         results: list[SessionRecord] = []
         for s_row in session_rows:
-            run_rows = session.query(SessionRunRecord).filter(
-                SessionRunRecord.session_id == s_row.id
-            ).order_by(SessionRunRecord.created_at.asc()).all()
+            run_rows = (
+                session.query(SessionRunRecord)
+                .filter(SessionRunRecord.session_id == s_row.id)
+                .order_by(SessionRunRecord.created_at.asc())
+                .all()
+            )
             results.append(_row_to_session_record(s_row, run_rows))
         return results
 
@@ -177,19 +191,20 @@ async def list_sessions(
 @router.post("", response_model=SessionRecord)
 async def create_or_update_session(
     session_data: SessionRecord,
-    project_id: str = "default-project",
-    authorization: str | None = Header(default=None, alias="Authorization"),
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
     db: PlatformDatabase = Depends(get_platform_database),
 ) -> SessionRecord:
     """Create a new experiment session or update existing."""
-    actor_id = "system"
-    if authorization and authorization.startswith("Bearer "):
-        claims = decode_access_token(authorization.removeprefix("Bearer ").strip())
-        if claims and "sub" in claims:
-            actor_id = claims["sub"]
-
     with db.session() as session:
-        existing = session.query(ExperimentSessionRecord).filter(ExperimentSessionRecord.id == session_data.id).first()
+        existing = (
+            session.query(ExperimentSessionRecord)
+            .filter(
+                ExperimentSessionRecord.id == session_data.id,
+                ExperimentSessionRecord.project_id == project_id,
+            )
+            .first()
+        )
         if existing:
             existing.name = session_data.name
             existing.description = session_data.description
@@ -219,10 +234,14 @@ async def create_or_update_session(
 
         # Upsert runs if provided
         for r in session_data.runs:
-            existing_run = session.query(SessionRunRecord).filter(
-                SessionRunRecord.session_id == session_data.id,
-                SessionRunRecord.id == r.id,
-            ).first()
+            existing_run = (
+                session.query(SessionRunRecord)
+                .filter(
+                    SessionRunRecord.session_id == session_data.id,
+                    SessionRunRecord.id == r.id,
+                )
+                .first()
+            )
             if existing_run:
                 existing_run.name = r.name
                 existing_run.timestamp = r.timestamp
@@ -250,6 +269,7 @@ async def create_or_update_session(
                 existing_run.seed = r.seed
                 existing_run.run_config_hash = r.run_config_hash
                 existing_run.backend_run_id = r.backend_run_id
+                existing_run.metrics_json = json.dumps({"evidence_status": r.evidence_status})
             else:
                 new_run = SessionRunRecord(
                     id=r.id,
@@ -280,7 +300,8 @@ async def create_or_update_session(
                     note=r.note,
                     seed=r.seed,
                     run_config_hash=r.run_config_hash,
-                    backend_run_id=r.backend_run_id,
+                backend_run_id=r.backend_run_id,
+                metrics_json=json.dumps({"evidence_status": r.evidence_status}),
                 )
                 session.add(new_run)
 
@@ -294,16 +315,29 @@ async def create_or_update_session(
 @router.get("/{session_id}", response_model=SessionRecord)
 async def get_session(
     session_id: str,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
     db: PlatformDatabase = Depends(get_platform_database),
 ) -> SessionRecord:
     """Get a specific session by ID."""
+    del actor_id
     with db.session() as session:
-        s_row = session.query(ExperimentSessionRecord).filter(ExperimentSessionRecord.id == session_id).first()
+        s_row = (
+            session.query(ExperimentSessionRecord)
+            .filter(
+                ExperimentSessionRecord.id == session_id,
+                ExperimentSessionRecord.project_id == project_id,
+            )
+            .first()
+        )
         if not s_row:
             raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
-        run_rows = session.query(SessionRunRecord).filter(
-            SessionRunRecord.session_id == session_id
-        ).order_by(SessionRunRecord.created_at.asc()).all()
+        run_rows = (
+            session.query(SessionRunRecord)
+            .filter(SessionRunRecord.session_id == session_id)
+            .order_by(SessionRunRecord.created_at.asc())
+            .all()
+        )
         return _row_to_session_record(s_row, run_rows)
 
 
@@ -311,26 +345,32 @@ async def get_session(
 async def add_run_to_session(
     session_id: str,
     run: RunRecord,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
     db: PlatformDatabase = Depends(get_platform_database),
 ) -> SessionRecord:
     """Append a new attack execution run record to the session."""
+    del actor_id
     with db.session() as session:
-        s_row = session.query(ExperimentSessionRecord).filter(ExperimentSessionRecord.id == session_id).first()
-        if not s_row:
-            s_row = ExperimentSessionRecord(
-                id=session_id,
-                project_id="default-project",
-                owner_user_id="system",
-                name=f"Phiên thử nghiệm {session_id}",
-                status="active",
+        s_row = (
+            session.query(ExperimentSessionRecord)
+            .filter(
+                ExperimentSessionRecord.id == session_id,
+                ExperimentSessionRecord.project_id == project_id,
             )
-            session.add(s_row)
-            session.flush()
+            .first()
+        )
+        if not s_row:
+            raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
 
-        existing_run = session.query(SessionRunRecord).filter(
-            SessionRunRecord.session_id == session_id,
-            SessionRunRecord.id == run.id,
-        ).first()
+        existing_run = (
+            session.query(SessionRunRecord)
+            .filter(
+                SessionRunRecord.session_id == session_id,
+                SessionRunRecord.id == run.id,
+            )
+            .first()
+        )
 
         if existing_run:
             existing_run.name = run.name
@@ -359,6 +399,7 @@ async def add_run_to_session(
             existing_run.seed = run.seed
             existing_run.run_config_hash = run.run_config_hash
             existing_run.backend_run_id = run.backend_run_id
+            existing_run.metrics_json = json.dumps({"evidence_status": run.evidence_status})
         else:
             new_run = SessionRunRecord(
                 id=run.id,
@@ -390,29 +431,44 @@ async def add_run_to_session(
                 seed=run.seed,
                 run_config_hash=run.run_config_hash,
                 backend_run_id=run.backend_run_id,
+                metrics_json=json.dumps({"evidence_status": run.evidence_status}),
             )
             session.add(new_run)
 
         session.commit()
 
         s_saved = session.query(ExperimentSessionRecord).filter(ExperimentSessionRecord.id == session_id).first()
-        r_saved = session.query(SessionRunRecord).filter(
-            SessionRunRecord.session_id == session_id
-        ).order_by(SessionRunRecord.created_at.asc()).all()
+        r_saved = (
+            session.query(SessionRunRecord)
+            .filter(SessionRunRecord.session_id == session_id)
+            .order_by(SessionRunRecord.created_at.asc())
+            .all()
+        )
         return _row_to_session_record(s_saved, r_saved)
 
 
 @router.delete("/{session_id}")
 async def delete_session(
     session_id: str,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
     db: PlatformDatabase = Depends(get_platform_database),
 ) -> dict[str, str]:
     """Delete an entire experiment session and all its runs."""
+    del actor_id
     with db.session() as session:
-        s_row = session.query(ExperimentSessionRecord).filter(ExperimentSessionRecord.id == session_id).first()
-        if s_row:
-            session.delete(s_row)
-            session.commit()
+        s_row = (
+            session.query(ExperimentSessionRecord)
+            .filter(
+                ExperimentSessionRecord.id == session_id,
+                ExperimentSessionRecord.project_id == project_id,
+            )
+            .first()
+        )
+        if not s_row:
+            raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+        session.delete(s_row)
+        session.commit()
     return {"status": "deleted", "session_id": session_id}
 
 
@@ -420,26 +476,43 @@ async def delete_session(
 async def delete_run(
     session_id: str,
     run_id: str,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
     db: PlatformDatabase = Depends(get_platform_database),
 ) -> SessionRecord:
     """Delete a specific run from an experiment session."""
+    del actor_id
     with db.session() as session:
-        s_row = session.query(ExperimentSessionRecord).filter(ExperimentSessionRecord.id == session_id).first()
+        s_row = (
+            session.query(ExperimentSessionRecord)
+            .filter(
+                ExperimentSessionRecord.id == session_id,
+                ExperimentSessionRecord.project_id == project_id,
+            )
+            .first()
+        )
         if not s_row:
             raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
 
-        r_row = session.query(SessionRunRecord).filter(
-            SessionRunRecord.session_id == session_id,
-            SessionRunRecord.id == run_id,
-        ).first()
+        r_row = (
+            session.query(SessionRunRecord)
+            .filter(
+                SessionRunRecord.session_id == session_id,
+                SessionRunRecord.id == run_id,
+            )
+            .first()
+        )
         if r_row:
             session.delete(r_row)
             session.commit()
 
         s_saved = session.query(ExperimentSessionRecord).filter(ExperimentSessionRecord.id == session_id).first()
-        r_saved = session.query(SessionRunRecord).filter(
-            SessionRunRecord.session_id == session_id
-        ).order_by(SessionRunRecord.created_at.asc()).all()
+        r_saved = (
+            session.query(SessionRunRecord)
+            .filter(SessionRunRecord.session_id == session_id)
+            .order_by(SessionRunRecord.created_at.asc())
+            .all()
+        )
         return _row_to_session_record(s_saved, r_saved)
 
 
@@ -457,18 +530,32 @@ async def update_run_note(
     session_id: str,
     run_id: str,
     body: UpdateRunNoteIn,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
     db: PlatformDatabase = Depends(get_platform_database),
 ) -> SessionRecord:
     """Update or set researcher note for a specific run."""
+    del actor_id
     with db.session() as session:
-        s_row = session.query(ExperimentSessionRecord).filter(ExperimentSessionRecord.id == session_id).first()
+        s_row = (
+            session.query(ExperimentSessionRecord)
+            .filter(
+                ExperimentSessionRecord.id == session_id,
+                ExperimentSessionRecord.project_id == project_id,
+            )
+            .first()
+        )
         if not s_row:
             raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
 
-        r_row = session.query(SessionRunRecord).filter(
-            SessionRunRecord.session_id == session_id,
-            SessionRunRecord.id == run_id,
-        ).first()
+        r_row = (
+            session.query(SessionRunRecord)
+            .filter(
+                SessionRunRecord.session_id == session_id,
+                SessionRunRecord.id == run_id,
+            )
+            .first()
+        )
         if not r_row:
             raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found in session.")
 
@@ -476,9 +563,12 @@ async def update_run_note(
         session.commit()
 
         s_saved = session.query(ExperimentSessionRecord).filter(ExperimentSessionRecord.id == session_id).first()
-        r_saved = session.query(SessionRunRecord).filter(
-            SessionRunRecord.session_id == session_id
-        ).order_by(SessionRunRecord.created_at.asc()).all()
+        r_saved = (
+            session.query(SessionRunRecord)
+            .filter(SessionRunRecord.session_id == session_id)
+            .order_by(SessionRunRecord.created_at.asc())
+            .all()
+        )
         return _row_to_session_record(s_saved, r_saved)
 
 
@@ -488,11 +578,21 @@ async def update_run_note(
 @router.post("/{session_id}/end", response_model=SessionRecord)
 async def end_session(
     session_id: str,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
     db: PlatformDatabase = Depends(get_platform_database),
 ) -> SessionRecord:
     """Mark session as completed and lock it from further modifications."""
+    del actor_id
     with db.session() as session:
-        s_row = session.query(ExperimentSessionRecord).filter(ExperimentSessionRecord.id == session_id).first()
+        s_row = (
+            session.query(ExperimentSessionRecord)
+            .filter(
+                ExperimentSessionRecord.id == session_id,
+                ExperimentSessionRecord.project_id == project_id,
+            )
+            .first()
+        )
         if not s_row:
             raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
         if s_row.status == "completed":
@@ -503,7 +603,10 @@ async def end_session(
         session.commit()
 
         s_saved = session.query(ExperimentSessionRecord).filter(ExperimentSessionRecord.id == session_id).first()
-        r_saved = session.query(SessionRunRecord).filter(
-            SessionRunRecord.session_id == session_id
-        ).order_by(SessionRunRecord.created_at.asc()).all()
+        r_saved = (
+            session.query(SessionRunRecord)
+            .filter(SessionRunRecord.session_id == session_id)
+            .order_by(SessionRunRecord.created_at.asc())
+            .all()
+        )
         return _row_to_session_record(s_saved, r_saved)

@@ -12,17 +12,8 @@ import {
   Legend,
 } from "recharts";
 
-const DEFAULT_DATA = [
-  { metric: "mAP@0.5", Before: 27.4, After: 20.6 },
-  { metric: "Precision", Before: 31.2, After: 23.7 },
-  { metric: "Recall", Before: 18.5, After: 14.2 },
-  { metric: "mIoU", Before: 46.7, After: 32.9 },
-  { metric: "ASR", Before: 23.6, After: 68.7 },
-  { metric: "Robustness", Before: 71.0, After: 42.0 },
-];
-
 export default function ComparisonBarChart({
-  data = DEFAULT_DATA,
+  data = [],
   height = 260,
 }) {
   const [mounted, setMounted] = useState(false);
@@ -32,6 +23,17 @@ export default function ComparisonBarChart({
 
   if (!mounted) {
     return <div style={{ width: "100%", height }} className="min-h-[200px]" />;
+  }
+
+  if (!Array.isArray(data) || data.length === 0) {
+    return (
+      <div
+        style={{ width: "100%", height }}
+        className="min-h-[200px] flex items-center justify-center text-sm text-slate-500"
+      >
+        No data available for comparison.
+      </div>
+    );
   }
 
   return (

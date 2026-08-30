@@ -16,6 +16,7 @@ from src.core.types import Box, Modality, Sample
 from src.datasets import DATASETS
 from src.datasets.base import DatasetInfo, DatasetParams, DatasetSource
 from src.datasets.io import IMAGE_SUFFIXES, load_image
+from src.datasets.registry import DatasetManifest, DatasetRegistry
 
 LABEL_MAP = {
     "Car": "Car",
@@ -42,6 +43,7 @@ class KittiParams(DatasetParams):
     merge_van_truck: bool = False
     sample_ids: tuple[str, ...] | None = None
     manifest_path: str | None = None
+    curation_manifest_path: str | None = None
 
 
 @DATASETS.register
@@ -80,7 +82,20 @@ class Kitti(DatasetSource):
         self.root = candidate_root.resolve()
         self.image_dir = self._find_dir("image_2")
         self.label_dir = self._find_dir("label_2")
+        self.curation_manifest = self._load_curation_manifest(settings.curation_manifest_path)
         self.anonymized = settings.anonymize == "required" and self._has_manifest()
+
+    def _load_curation_manifest(self, configured: str | None) -> DatasetManifest | None:
+        if configured is None:
+            return None
+        path = Path(configured).expanduser()
+        if not path.is_absolute():
+            path = self.root / path
+        manifest = DatasetRegistry.load(path)
+        readiness = manifest.readiness("detection2d")
+        if readiness.status != "READY":
+            raise ValueError(f"{readiness.status}: {', '.join(readiness.missing)}")
+        return manifest
 
     def _find_dir(self, name: str) -> Path:
         candidates = [
@@ -119,11 +134,17 @@ class Kitti(DatasetSource):
         self._require_layout()
         settings: KittiParams = self.params  # type: ignore[assignment]
         ids = list(self._ids())
+        if self.curation_manifest is not None:
+            ids = list(self.curation_manifest.sample_ids)
         if settings.sample_ids is not None:
             missing = sorted(set(settings.sample_ids) - set(ids))
             if missing:
                 raise ValueError(f"KITTI sample_ids do not exist: {missing}")
             ids = list(settings.sample_ids)
+        elif self.curation_manifest is not None:
+            missing = sorted(set(ids) - set(self._ids()))
+            if missing:
+                raise ValueError(f"KITTI curated sample_ids do not exist: {missing}")
         if limit is not None:
             ids = ids[:limit]
         return [self._load_sample(image_id) for image_id in ids]

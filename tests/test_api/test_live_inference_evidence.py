@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from src.core.platform_contracts import ArtifactKind, ArtifactState
+
 
 class _FakeBox:
     def __init__(self) -> None:
@@ -28,16 +30,33 @@ class _FakeYOLO:
 async def test_visual_inference_returns_only_visual_measurements_and_scoped_artifacts(client, tmp_path, monkeypatch) -> None:
     import src.api.routers.live_inference as live_inference
 
-    image_path = tmp_path / "api-state" / "data" / "anonymized" / "kitti-de" / "image_2" / "000000.png"
-    image_path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(np.full((12, 12, 3), 128, dtype=np.uint8)).save(image_path)
+    image = Image.fromarray(np.full((12, 12, 3), 128, dtype=np.uint8))
+    image_bytes = __import__("io").BytesIO()
+    image.save(image_bytes, format="PNG")
     monkeypatch.setattr(live_inference, "YOLO", _FakeYOLO)
     monkeypatch.setattr(live_inference, "imagecorruptions_corrupt", lambda image, **_kwargs: image)
 
-    project_id = client.headers["X-Project-Id"]
+    project_id = client.default_project_id
+    import src.api.platform_dependencies as platform_dependencies
+
+    source = platform_dependencies.get_platform_artifacts().create_internal(
+        project_id=project_id,
+        actor_id="system",
+        kind=ArtifactKind.EVIDENCE,
+        original_filename="input.png",
+        mime_type="image/png",
+        content=image_bytes.getvalue(),
+        state=ArtifactState.READY,
+    )
     response = await client.post(
         f"/api/v1/runs/live-inference?project_id={project_id}",
-        json={"sample_id": "000000", "attack_type": "depth_fog", "severity": 3, "run_id": "visual-run-1"},
+        json={
+            "sample_id": "000000",
+            "attack_type": "depth_fog",
+            "severity": 3,
+            "run_id": "visual-run-1",
+            "source_artifact_id": source["id"],
+        },
     )
 
     assert response.status_code == 200, response.text

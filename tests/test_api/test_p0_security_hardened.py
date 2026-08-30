@@ -14,13 +14,22 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from src.auth.security import create_access_token
-from src.main import app
+import src.main as main_module
 
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(app)
+    return TestClient(main_module.app)
+
+
+def _create_owned_project(client: TestClient, token: str) -> str:
+    response = client.post(
+        "/api/v1/projects",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": f"Project {uuid.uuid4().hex[:12]}"},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
 
 
 def test_public_registration_ignores_or_rejects_admin_role(client: TestClient) -> None:
@@ -147,8 +156,14 @@ def test_google_sso_unverified_email_rejected(client: TestClient) -> None:
     assert res.status_code == 401
 
 
-def test_google_sso_uses_verified_claims_and_ignores_payload_email_and_role(client: TestClient) -> None:
+def test_google_sso_uses_verified_claims_and_ignores_payload_email_and_role(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """P0.2: System relies exclusively on verified claims, ignoring client payload email and role."""
+    from src.config import get_settings
+
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-google-client.apps.googleusercontent.com")
+    get_settings.cache_clear()
     verified_email = f"real_verified_{uuid.uuid4().hex[:6]}@example.com"
     valid_token = json.dumps(
         {
@@ -157,6 +172,7 @@ def test_google_sso_uses_verified_claims_and_ignores_payload_email_and_role(clie
             "email": verified_email,
             "email_verified": True,
             "name": "Real Google User",
+            "aud": "test-google-client.apps.googleusercontent.com",
             "exp": 2500000000,
         }
     )
@@ -164,29 +180,97 @@ def test_google_sso_uses_verified_claims_and_ignores_payload_email_and_role(clie
         "/api/v1/auth/google",
         json={
             "credential": f"test-google-token:{valid_token}",
-            "email": "fake_attacker@example.com",  # Should be ignored
-            "role": "ADMIN",  # Should be ignored
+            "email": "fake_attacker@example.com",
+            "role": "ADMIN",
         },
     )
-    assert res.status_code == 200, f"Expected 200, got {res.status_code}: {res.text}"
-    data = res.json()
+    assert res.status_code == 422, res.text
+
+    valid_res = client.post(
+        "/api/v1/auth/google",
+        json={"credential": f"test-google-token:{valid_token}"},
+    )
+    assert valid_res.status_code == 200, valid_res.text
+    data = valid_res.json()
     assert data["user"]["email"] == verified_email
     assert data["user"]["role"] in ("RESEARCHER", "USER")
     assert data["user"]["role"].upper() != "ADMIN"
 
 
+def test_google_sso_requires_audience_and_expiry_claims(client: TestClient) -> None:
+    """A test token is still rejected when its security-critical claims are absent."""
+    missing_claims = json.dumps(
+        {
+            "iss": "accounts.google.com",
+            "sub": f"sub-{uuid.uuid4().hex}",
+            "email": f"claims-{uuid.uuid4().hex[:8]}@example.com",
+            "email_verified": True,
+        }
+    )
+    res = client.post(
+        "/api/v1/auth/google",
+        json={"credential": f"test-google-token:{missing_claims}"},
+    )
+    assert res.status_code == 401, res.text
+
+
+def test_profile_cannot_self_assign_admin_role_and_wandb_requires_login(client: TestClient) -> None:
+    """Sensitive settings need a logged-in actor and cannot elevate a normal user."""
+    registration = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": f"profile-{uuid.uuid4().hex[:10]}@example.com",
+            "password": "StrongPassword123!",
+            "display_name": "Researcher",
+        },
+    )
+    assert registration.status_code == 201, registration.text
+    token = registration.json()["access_token"]
+
+    assert client.get("/api/v1/settings/wandb").status_code == 401
+    assert (
+        client.post(
+            "/api/v1/settings/wandb",
+            json={"api_key": "x" * 32},
+        ).status_code
+        == 401
+    )
+    profile = client.put(
+        "/api/v1/settings/profile",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"role": "ADMIN"},
+    )
+    assert profile.status_code == 422, profile.text
+
+
 def test_cross_project_artifact_access_is_blocked(client: TestClient) -> None:
     """P0.3: Actor from Project B must NOT be able to access, download, or create signed URLs for Project A artifacts."""
-    proj_a = f"proj-a-{uuid.uuid4().hex[:8]}"
-    user_a = f"usr-alice-{uuid.uuid4().hex[:6]}"
-    user_b = f"usr-bob-{uuid.uuid4().hex[:6]}"
-    token_a = create_access_token({"sub": user_a, "role": "researcher"})
-    token_b = create_access_token({"sub": user_b, "role": "researcher"})
+    owner_registration = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": f"alice-{uuid.uuid4().hex[:8]}@example.com",
+            "password": "AlicePassword123!",
+            "display_name": "Alice",
+        },
+    )
+    outsider_registration = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": f"bob-{uuid.uuid4().hex[:8]}@example.com",
+            "password": "BobPassword123!",
+            "display_name": "Bob",
+        },
+    )
+    assert owner_registration.status_code == 201
+    assert outsider_registration.status_code == 201
+    token_a = owner_registration.json()["access_token"]
+    token_b = outsider_registration.json()["access_token"]
+    proj_a = _create_owned_project(client, token_a)
 
     # 1. Unauthenticated request with spoofed X-User-Id header MUST be rejected (401)
     spoof_res = client.post(
         f"/api/v1/projects/{proj_a}/artifact-upload-sessions",
-        headers={"X-User-Id": user_a},
+        headers={"X-User-Id": "forged-user-id"},
         json={
             "kind": "checkpoint",
             "original_filename": "secret_model.pth",
@@ -256,7 +340,7 @@ def test_forged_x_user_id_does_not_override_jwt_bearer_identity(client: TestClie
     token_alice = res_alice.json()["access_token"]
 
     # Spoofed request sending Alice's Bearer token but claiming X-User-Id: admin
-    proj_test = f"proj-test-{uuid.uuid4().hex[:8]}"
+    proj_test = _create_owned_project(client, token_alice)
     upload_res = client.post(
         f"/api/v1/projects/{proj_test}/artifact-upload-sessions",
         headers={"Authorization": f"Bearer {token_alice}", "X-User-Id": "admin_spoofed_id"},
@@ -324,4 +408,3 @@ def test_dev_and_test_environments_pass_validation() -> None:
 
     test_settings = Settings(app_env="test")
     test_settings.validate_production_environment()
-

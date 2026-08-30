@@ -54,7 +54,7 @@ export function exportReportAsCsv(report, filename = null) {
     "dataset_version_id",
   ]);
 
-  const evidenceState = getEvidenceState(report.provenance, report.simulation_only);
+  const evidenceState = getEvidenceState(report.provenance, report.simulation_only, undefined, report.evidence);
   const seed = report.provenance?.run_config?.seed ?? report.provenance?.seed ?? "—";
   const cells = report.cells || [];
 
@@ -140,7 +140,7 @@ export function printReportAsPdf(report) {
   if (!report) return;
   const decision = buildRunDecisionView(report);
 
-  const evidenceState = getEvidenceState(report.provenance, report.simulation_only);
+  const evidenceState = getEvidenceState(report.provenance, report.simulation_only, undefined, report.evidence);
   const printWindow = window.open("", "_blank");
   if (!printWindow) return;
 

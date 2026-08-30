@@ -8,12 +8,13 @@ import { cn } from "@/lib/utils";
 import UserMenu from "@/components/UserMenu";
 import { useAuth } from "@/context/AuthContext";
 import { useSidebar } from "@/context/SidebarContext";
+import { useProjectContext } from "@/context/ProjectContext";
 
 const NAV_TABS = [
   { name: "Tổng quan hệ thống", href: "/dashboard" },
   { name: "Cấu hình bài toán", href: "/experiments/new" },
-  { name: "Cấu hình tấn công", href: "/experiments/EXP-2025-0512-001/attack" },
-  { name: "Kết quả trực quan", href: "/experiments/EXP-2025-0512-001/results" },
+  { name: "Cấu hình tấn công", href: "/experiments/new" },
+  { name: "Kết quả trực quan", href: "/benchmark" },
   { name: "Metrics & Benchmark", href: "/benchmark" },
   { name: "Phân tích & Báo cáo", href: "/analysis" },
   { name: "Phòng thủ", href: "/defense" },
@@ -25,6 +26,7 @@ export default function TopNavigation() {
   const pathname = rawPathname || "/";
   const { user, isAuthenticated, openAuthModal } = useAuth();
   const { isCollapsed, toggleSidebar } = useSidebar();
+  const { projectId, projects, selectProject, scopedHref } = useProjectContext();
 
   const isActive = (href) => {
     if (!pathname) return false;
@@ -60,7 +62,7 @@ export default function TopNavigation() {
               return (
                 <Link
                   key={tab.name}
-                  href={tab.href}
+                  href={scopedHref(tab.href)}
                   className={cn(
                     "px-3.5 min-h-[44px] flex items-center text-[13px] font-medium transition-colors border-b-2 whitespace-nowrap",
                     active
@@ -77,6 +79,15 @@ export default function TopNavigation() {
 
         {/* Right Utilities */}
         <div className="flex items-center gap-3 pl-4">
+          {isAuthenticated && (
+            <label className="hidden lg:block text-xs text-slate-600">
+              <span className="sr-only">Dự án đang chọn</span>
+              <select aria-label="Dự án đang chọn" value={projectId || ""} onChange={(event) => selectProject(event.target.value)} className="min-h-11 max-w-44 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-800">
+                <option value="">Chọn dự án</option>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
+            </label>
+          )}
           {/* Simulation Notice */}
           <span className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
             <Sparkles className="w-3 h-3" /> AdversAI Lab v2.5

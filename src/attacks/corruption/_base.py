@@ -3,13 +3,33 @@
 from __future__ import annotations
 
 import random
+import sys
+from importlib import import_module, resources
 from threading import Lock
+from types import ModuleType
 from typing import ClassVar
 
 import numpy as np
 
 from src.attacks.base import AttackContext, BaseAttack
 from src.core.types import AttackGroup, CostClass, Sample
+
+
+def _install_pkg_resources_resource_filename_compat() -> None:
+    """Provide the one legacy API required by imagecorruptions 1.1.2."""
+    if "pkg_resources" in sys.modules:
+        return
+
+    compatibility_module = ModuleType("pkg_resources")
+
+    def resource_filename(package_or_requirement: str, resource_name: str) -> str:
+        package = import_module(package_or_requirement)
+        package_name = package.__package__ or package.__name__
+        return str(resources.files(package_name).joinpath(resource_name.lstrip("./")))
+
+    compatibility_module.resource_filename = resource_filename
+    sys.modules["pkg_resources"] = compatibility_module
+
 
 try:
     # imagecorruptions 1.1.2 still passes the removed ``multichannel``
@@ -23,6 +43,7 @@ try:
     if not hasattr(np, "float_"):
         np.float_ = np.float64  # type: ignore[attr-defined]
 
+    _install_pkg_resources_resource_filename_compat()
     from imagecorruptions import corrupt
     from imagecorruptions import corruptions as _imagecorruptions
 

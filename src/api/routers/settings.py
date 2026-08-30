@@ -11,7 +11,7 @@ from typing import Any
 
 from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.api.dependencies import get_store
 from src.api.jobs import SqliteRunStore
@@ -51,8 +51,9 @@ router = APIRouter(prefix="/settings", tags=["Settings & Integrations"])
 class ProfileUpdateIn(BaseModel):
     """Payload for updating user profile."""
 
+    model_config = ConfigDict(extra="forbid")
+
     display_name: str | None = Field(default=None, max_length=100)
-    role: str | None = None
     avatar_url: str | None = None
 
 
@@ -81,15 +82,13 @@ async def update_profile(
     current_user: UserOut = Depends(get_current_user),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> UserOut:
-    """Update active user profile (display name, active role, avatar)."""
+    """Update only the active user's non-privileged profile fields."""
     user_record = auth_service._store.get_record("user", current_user.id)
     if not user_record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
 
     if payload.display_name:
         user_record["display_name"] = payload.display_name
-    if payload.role:
-        user_record["role"] = payload.role
     if payload.avatar_url:
         user_record["avatar_url"] = payload.avatar_url
 
@@ -99,10 +98,11 @@ async def update_profile(
 
 @router.get("/wandb", response_model=WandbSettingsOut)
 async def get_wandb_settings(
+    current_user: UserOut = Depends(get_current_user),
     store: SqliteRunStore = Depends(get_store),
 ) -> WandbSettingsOut:
     """Retrieve current Weights & Biases integration configuration."""
-    record = store.get_record("integration_setting", "wandb") or {}
+    record = store.get_record("integration_setting", f"wandb:{current_user.id}") or {}
     encrypted_key = record.get("api_key")
 
     if encrypted_key:
@@ -129,6 +129,7 @@ async def get_wandb_settings(
 @router.post("/wandb", response_model=WandbSettingsOut)
 async def save_wandb_settings(
     payload: WandbSettingsIn,
+    current_user: UserOut = Depends(get_current_user),
     store: SqliteRunStore = Depends(get_store),
 ) -> WandbSettingsOut:
     """Save Weights & Biases API Key and synchronization parameters."""
@@ -139,14 +140,14 @@ async def save_wandb_settings(
     # Save to SQLite store with ENCRYPTED key
     encrypted_api_key = encrypt_key(clean_key)
     setting_data = {
-        "id": "wandb",
+        "id": f"wandb:{current_user.id}",
         "api_key": encrypted_api_key,
         "entity": entity,
         "project": project,
         "auto_sync": payload.auto_sync,
         "connected": bool(clean_key),
     }
-    store.put_record("integration_setting", "wandb", setting_data)
+    store.put_record("integration_setting", f"wandb:{current_user.id}", setting_data)
 
     # Export to environment variables for background runner
     os.environ["WANDB_API_KEY"] = clean_key
@@ -169,8 +170,10 @@ async def save_wandb_settings(
 @router.post("/wandb/test")
 async def test_wandb_connection(
     payload: WandbSettingsIn,
+    current_user: UserOut = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Validate Weights & Biases API Key against W&B API."""
+    del current_user
     key = payload.api_key.strip()
     if not key:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="API Key cannot be empty.")

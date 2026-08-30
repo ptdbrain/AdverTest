@@ -47,6 +47,7 @@ const sessions = [
         seed: 42,
         run_config_hash: "protocol-hash-a",
         backend_run_id: "backend-run-a",
+        evidence: { status: "VERIFIED" },
       },
     ],
   },

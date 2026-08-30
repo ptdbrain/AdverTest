@@ -11,6 +11,7 @@ const report3d = {
   ap_clean: 0.62,
   simulation_only: false,
   benchmark_metrics_available: true,
+  evidence: { status: "VERIFIED", missing: [] },
   metrics: { clean: { kitti_3d_ap: 0.62, mean_bev_iou: 0.71 } },
   cells: [{ attack: "lidar_fog", severity: 3, ap: 0.39, degradation_percent: 37.1, metrics: { kitti_3d_ap: 0.39, mean_bev_iou: 0.48 } }],
   provenance: { run_config: { task_id: "detection3d", benchmark_protocol_id: "kitti-val-v1", split: "val", seed: 42 } },
@@ -35,7 +36,7 @@ describe("RunMetricsContent", () => {
   it("shows measured findings and limitations instead of generated advice", () => {
     render(
       <RunMetricsContent
-        report={{ ...report3d, simulation_only: true, n_samples: 8 }}
+        report={{ ...report3d, simulation_only: true, n_samples: 8, evidence: { status: "NOT_ELIGIBLE", missing: ["simulation_only"] } }}
         mode="analysis"
         analytics={{
           summary: { worst_attack: { attack: "lidar_fog", mean_degradation_percent: 37.1 } },
@@ -46,8 +47,8 @@ describe("RunMetricsContent", () => {
     );
     expect(screen.getAllByText(/lidar_fog/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Car/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/SIMULATION/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Cỡ mẫu nhỏ/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/NOT ELIGIBLE/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Không đủ dữ liệu benchmark/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/L_adv = 0.4/i)).toBeNull();
   });
 });

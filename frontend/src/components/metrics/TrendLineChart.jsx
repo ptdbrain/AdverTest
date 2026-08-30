@@ -12,17 +12,8 @@ import {
   Legend,
 } from "recharts";
 
-const DEFAULT_TREND_DATA = [
-  { exp: "EXP-001", Clean_mAP: 78.4, Attacked_mAP: 42.1, Defended_mAP: 68.5 },
-  { exp: "EXP-002", Clean_mAP: 79.1, Attacked_mAP: 40.5, Defended_mAP: 70.2 },
-  { exp: "EXP-003", Clean_mAP: 77.8, Attacked_mAP: 38.9, Defended_mAP: 69.8 },
-  { exp: "EXP-004", Clean_mAP: 80.2, Attacked_mAP: 35.4, Defended_mAP: 72.1 },
-  { exp: "EXP-005", Clean_mAP: 81.0, Attacked_mAP: 39.2, Defended_mAP: 74.5 },
-  { exp: "EXP-006", Clean_mAP: 82.5, Attacked_mAP: 44.8, Defended_mAP: 76.8 },
-];
-
 export default function TrendLineChart({
-  data = DEFAULT_TREND_DATA,
+  data = [],
   height = 260,
 }) {
   const [mounted, setMounted] = useState(false);
@@ -32,6 +23,10 @@ export default function TrendLineChart({
 
   if (!mounted) {
     return <div style={{ width: "100%", height }} className="min-h-[200px]" />;
+  }
+
+  if (!Array.isArray(data) || data.length === 0) {
+    return <div style={{ width: "100%", height }} className="flex items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">— / No verified data</div>;
   }
 
   return (

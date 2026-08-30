@@ -14,53 +14,28 @@ import { cn } from "@/lib/utils";
 /**
  * Derive the exact provenance evidence state from backend metadata.
  */
-export function getEvidenceState(provenance, simulationOnly, status) {
-  if (provenance?.demo_mode || provenance?.is_demo) {
-    return "DEMO";
-  }
-  if (
-    status === "WAITING_FOR_GPU_VALIDATION" ||
-    provenance?.status === "WAITING_FOR_GPU_VALIDATION"
-  ) {
-    return "WAITING_FOR_GPU_VALIDATION";
-  }
-  if (
-    status === "WAITING_FOR_EXTERNAL_DATA" ||
-    provenance?.status === "WAITING_FOR_EXTERNAL_DATA"
-  ) {
-    return "WAITING_FOR_EXTERNAL_DATA";
-  }
-  if (simulationOnly === true || provenance?.simulation_only === true) {
-    return "SIMULATION";
-  }
-  if (
-    provenance?.checkpoint_sha256 ||
-    provenance?.split_manifest_hash ||
-    simulationOnly === false
-  ) {
-    return "REAL_ARTIFACT";
-  }
-  return "NO_DATA";
+export function getEvidenceState(_provenance, _simulationOnly, _status, evidence) {
+  return evidence?.status || "NO_DATA";
 }
 
 const BADGE_CONFIG = {
-  DEMO: {
-    label: "DEMO",
-    icon: Layers,
-    className: "bg-amber-100 text-amber-900 border-amber-300 font-semibold",
-    description: "Chế độ mô phỏng trực quan minh họa",
-  },
-  SIMULATION: {
-    label: "SIMULATION",
-    icon: Cpu,
-    className: "bg-purple-100 text-purple-900 border-purple-300 font-semibold",
-    description: "Đánh giá trên tập dữ liệu mô phỏng synthetic",
-  },
-  REAL_ARTIFACT: {
-    label: "REAL ARTIFACT",
+  VERIFIED: {
+    label: "VERIFIED",
     icon: Database,
     className: "bg-emerald-100 text-emerald-900 border-emerald-300 font-semibold",
-    description: "Dữ liệu và mô hình thực tế đã xác thực provenance",
+    description: "Benchmark evidence đầy đủ và đã xác minh",
+  },
+  NOT_ELIGIBLE: {
+    label: "NOT ELIGIBLE",
+    icon: ShieldAlert,
+    className: "bg-orange-100 text-orange-900 border-orange-300 font-semibold",
+    description: "Thiếu evidence; không được kết luận benchmark hoặc promotion",
+  },
+  INVALID: {
+    label: "INVALID",
+    icon: ShieldAlert,
+    className: "bg-red-100 text-red-900 border-red-300 font-semibold",
+    description: "Evidence không hợp lệ",
   },
   WAITING_FOR_GPU_VALIDATION: {
     label: "WAITING_FOR_GPU_VALIDATION",
@@ -91,10 +66,11 @@ export default function EvidenceBadge({
   provenance,
   simulationOnly,
   status,
+  evidence,
   state: explicitState,
   className,
 }) {
-  const stateKey = explicitState || getEvidenceState(provenance, simulationOnly, status);
+  const stateKey = explicitState || getEvidenceState(provenance, simulationOnly, status, evidence);
   const config = BADGE_CONFIG[stateKey] || BADGE_CONFIG.NO_DATA;
   const Icon = config.icon;
 

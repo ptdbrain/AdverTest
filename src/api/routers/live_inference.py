@@ -39,6 +39,7 @@ class LiveInferenceRequest(BaseModel):
     )
     severity: int = Field(default=3, ge=1, le=5, description="Severity ladder 1..5")
     run_id: str = Field(min_length=1, max_length=128, description="Existing visual or benchmark run namespace")
+    source_artifact_id: str = Field(min_length=1, description="Project-scoped uploaded image artifact")
 
 
 class DetectionItem(BaseModel):
@@ -204,13 +205,14 @@ async def run_live_inference(
             detail="Image corruption runtime is unavailable; live visual corruption cannot be executed.",
         )
     sample_stem = payload.sample_id.replace(".png", "")
-    src_clean = Path(f"frontend/public/samples/kitti/{sample_stem}_clean.png")
-    if not src_clean.exists():
-        src_clean = Path(f"data/anonymized/kitti-de/image_2/{sample_stem}.png")
-    if not src_clean.exists():
-        raise HTTPException(status_code=404, detail=f"Sample '{payload.sample_id}' not found.")
-
-    img_pil = Image.open(src_clean).convert("RGB")
+    try:
+        source_bytes = artifacts.read_bytes(project_id, payload.source_artifact_id, actor_id=actor_id)
+    except (KeyError, FileNotFoundError, PermissionError) as exc:
+        raise HTTPException(status_code=404, detail="SOURCE_ARTIFACT_NOT_FOUND") from exc
+    try:
+        img_pil = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="SOURCE_ARTIFACT_IS_NOT_A_DECODABLE_IMAGE") from exc
     w, h = img_pil.size
     arr_clean = np.array(img_pil)
 
@@ -219,9 +221,12 @@ async def run_live_inference(
     model = YOLO(str(checkpoint_path))
 
     # 2. Real Clean Inference
-    t0 = time.perf_counter()
-    res_clean = model(src_clean, verbose=False)[0]
-    clean_duration_ms = (time.perf_counter() - t0) * 1000
+    with tempfile.TemporaryDirectory(prefix="advertest-live-") as temporary_directory:
+        clean_path = Path(temporary_directory) / "clean.png"
+        img_pil.save(clean_path)
+        t0 = time.perf_counter()
+        res_clean = model(clean_path, verbose=False)[0]
+        clean_duration_ms = (time.perf_counter() - t0) * 1000
 
     clean_detections: list[DetectionItem] = []
     for b in res_clean.boxes:

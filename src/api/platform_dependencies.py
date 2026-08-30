@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import functools
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, HTTPException, status
 
 from src.api.checkpoint_service import PlatformCheckpointService
-from src.auth.security import decode_access_token
+from src.api.project_scope import set_active_project_id
+from src.auth.contracts import UserOut
+from src.auth.dependencies import get_current_user
 from src.compute.backends import ExternalGPUWorker, LocalWorker, RenderWorker
 from src.config import get_settings
 from src.jobs.queue import HttpDispatcherQueue, LocalJobQueue, RedisJobQueue
@@ -20,60 +22,53 @@ from src.storage.s3 import S3CompatibleStorage
 from src.storage.service import ArtifactService
 
 
-def require_platform_actor(
-    authorization: str | None = Header(default=None, alias="Authorization"),
+def require_platform_actor(current_user: UserOut = Depends(get_current_user)) -> str:
+    """Return only the identity loaded by the central authentication dependency."""
+    return current_user.id
+
+
+async def require_project_member(
+    project_id: str | None = None,
+    current_user: UserOut = Depends(get_current_user),
 ) -> str:
-    """Extract authenticated actor identity.
-
-    Security Hardening:
-    - Eliminates identity spoofing via client-supplied headers.
-    - Strictly requires a valid JWT Bearer token with authenticated claims.
-    """
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.removeprefix("Bearer ").strip()
-        claims = decode_access_token(token)
-        if not claims or "sub" not in claims:
-            raise HTTPException(status_code=401, detail="INVALID_TOKEN: Bearer token is invalid or expired.")
-        return claims["sub"]
-
-    raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED: Valid Bearer token required.")
-
-
-def require_project_member(
-    project_id: str,
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> str:
-    """Validate that actor has valid Bearer token and is an active member or owner of project_id."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED: Valid Bearer token required.")
-
-    token = authorization.removeprefix("Bearer ").strip()
-    claims = decode_access_token(token)
-    if not claims or "sub" not in claims:
-        raise HTTPException(status_code=401, detail="INVALID_TOKEN: Bearer token is invalid or expired.")
-
-    actor_id = claims["sub"]
-    user_role = str(claims.get("role", "")).upper()
-    if user_role == "ADMIN":
+    """Return an authenticated actor only when they actively belong to the project."""
+    if not project_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="PROJECT_ID_REQUIRED: supply project_id in the canonical route or query.",
+        )
+    actor_id = current_user.id
+    if current_user.role.upper() == "ADMIN":
+        set_active_project_id(project_id)
         return actor_id
 
     from src.persistence.models import ProjectMembershipRecord, ProjectRecord
 
     db = get_platform_database()
     with db.session() as session:
-        membership = session.query(ProjectMembershipRecord).filter(
-            ProjectMembershipRecord.project_id == project_id,
-            ProjectMembershipRecord.user_id == actor_id,
-            ProjectMembershipRecord.status == "ACTIVE",
-        ).first()
+        membership = (
+            session.query(ProjectMembershipRecord)
+            .filter(
+                ProjectMembershipRecord.project_id == project_id,
+                ProjectMembershipRecord.user_id == actor_id,
+                ProjectMembershipRecord.status == "ACTIVE",
+            )
+            .first()
+        )
         if membership:
+            set_active_project_id(project_id)
             return actor_id
 
-        project = session.query(ProjectRecord).filter(
-            ProjectRecord.id == project_id,
-            ProjectRecord.owner_user_id == actor_id,
-        ).first()
+        project = (
+            session.query(ProjectRecord)
+            .filter(
+                ProjectRecord.id == project_id,
+                ProjectRecord.owner_user_id == actor_id,
+            )
+            .first()
+        )
         if project:
+            set_active_project_id(project_id)
             return actor_id
 
     raise HTTPException(status_code=403, detail="FORBIDDEN: User is not an active member or owner of this project.")

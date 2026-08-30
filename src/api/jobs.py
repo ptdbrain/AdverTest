@@ -42,6 +42,7 @@ class SqliteRunStore:
                     run_id TEXT PRIMARY KEY, config_json TEXT NOT NULL, status TEXT NOT NULL,
                     progress REAL NOT NULL DEFAULT 0, detail_json TEXT NOT NULL DEFAULT '{}',
                     report_json TEXT, error TEXT, cancel_requested INTEGER NOT NULL DEFAULT 0,
+                    project_id TEXT, owner_user_id TEXT,
                     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS test_run_events (
@@ -87,7 +88,12 @@ class SqliteRunStore:
                 ON reviews(run_id, attack, severity, flagged_by);
                 """
             )
-            # Backward-compatible migration for existing databases
+            # Backward-compatible migration for existing databases.
+            for column_def in ("project_id TEXT", "owner_user_id TEXT"):
+                try:
+                    connection.execute(f"ALTER TABLE test_runs ADD COLUMN {column_def}")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
             for column_def in (
                 "risk_level TEXT DEFAULT NULL",
                 "risk_category TEXT DEFAULT NULL",
@@ -156,13 +162,26 @@ class SqliteRunStore:
         connection.row_factory = sqlite3.Row
         return connection
 
-    def create(self, config: RunConfig) -> str:
+    def create(
+        self,
+        config: RunConfig,
+        *,
+        project_id: str | None = None,
+        owner_user_id: str | None = None,
+    ) -> str:
+        if project_id is None:
+            from src.api.project_scope import get_active_project_id
+
+            project_id = get_active_project_id()
         run_id = uuid.uuid4().hex[:16]
         now = _now()
         with self._lock, self._connection() as connection:
             connection.execute(
-                "INSERT INTO test_runs(run_id, config_json, status, created_at, updated_at) VALUES (?, ?, 'QUEUED', ?, ?)",
-                (run_id, config.model_dump_json(), now, now),
+                """
+                INSERT INTO test_runs(run_id, config_json, status, project_id, owner_user_id, created_at, updated_at)
+                VALUES (?, ?, 'QUEUED', ?, ?, ?, ?)
+                """,
+                (run_id, config.model_dump_json(), project_id, owner_user_id, now, now),
             )
             self._event(connection, run_id, "QUEUED", {"progress": 0.0})
         return run_id
@@ -241,13 +260,44 @@ class SqliteRunStore:
         return bool(row and row["cancel_requested"])
 
     def get(self, run_id: str) -> dict[str, Any] | None:
+        from src.api.project_scope import get_active_project_id
+
+        project_id = get_active_project_id()
+        if project_id is not None:
+            return self.get_scoped(run_id, project_id=project_id)
         with self._connection() as connection:
             row = connection.execute("SELECT * FROM test_runs WHERE run_id=?", (run_id,)).fetchone()
         return _row_payload(row) if row else None
 
+    def get_scoped(self, run_id: str, *, project_id: str) -> dict[str, Any] | None:
+        """Return only a run explicitly owned by the requested project.
+
+        Pre-hardening rows have no project_id and are intentionally invisible:
+        exposing them would reintroduce a cross-project evidence leak.
+        """
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM test_runs WHERE run_id=? AND project_id=?",
+                (run_id, project_id),
+            ).fetchone()
+        return _row_payload(row) if row else None
+
     def list(self) -> list[dict[str, Any]]:
+        from src.api.project_scope import get_active_project_id
+
+        project_id = get_active_project_id()
+        if project_id is not None:
+            return self.list_scoped(project_id=project_id)
         with self._connection() as connection:
             rows = connection.execute("SELECT * FROM test_runs ORDER BY created_at DESC").fetchall()
+        return [_row_payload(row) for row in rows]
+
+    def list_scoped(self, *, project_id: str) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM test_runs WHERE project_id=? ORDER BY created_at DESC",
+                (project_id,),
+            ).fetchall()
         return [_row_payload(row) for row in rows]
 
     def events(self, run_id: str, after: int = 0) -> list[dict[str, Any]]:
@@ -507,7 +557,10 @@ class LocalRunWorker:
 def _sqlite_path(url: str) -> Path:
     if url.startswith("sqlite:///"):
         return Path(url.removeprefix("sqlite:///"))
-    return Path("data/runs.db")
+    raise ValueError(
+        "SqliteRunStore requires a sqlite:/// DATABASE_URL. "
+        "Configure the production run-store implementation instead of silently writing a local fallback database."
+    )
 
 
 def _row_payload(row: sqlite3.Row) -> dict[str, Any]:

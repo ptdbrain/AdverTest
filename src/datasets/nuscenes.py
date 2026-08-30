@@ -20,6 +20,7 @@ from pydantic import Field
 from src.core.types import Box3D, CameraView, LidarFrame, Sample
 from src.datasets.base import DatasetParams, DatasetSource
 from src.datasets.io import load_image
+from src.datasets.registry import DatasetRegistry
 
 NUSCENES_CAMERA_NAMES = (
     "CAM_FRONT",
@@ -51,6 +52,7 @@ class NuScenesParams(DatasetParams):
     version: str = "v1.0-mini"
     split: str = "mini_val"
     anonymization_manifest: str | None = None
+    curation_manifest_path: str | None = None
     limit: int | None = Field(default=None, ge=1)
 
 
@@ -70,6 +72,13 @@ class NuScenesDataset(DatasetSource):
         super().__init__(**params)
         manifest = self.params.anonymization_manifest
         self.anonymized = bool(manifest and Path(manifest).is_file())
+        self.curated_sample_tokens: set[str] | None = None
+        if self.params.curation_manifest_path:
+            curation_manifest = DatasetRegistry.load(self.params.curation_manifest_path)
+            readiness = curation_manifest.readiness(self.task_id)
+            if readiness.status != "READY":
+                raise ValueError(f"{readiness.status}: {', '.join(readiness.missing)}")
+            self.curated_sample_tokens = set(curation_manifest.sample_ids)
 
     def load(self, limit: int | None = None) -> list[Sample]:
         try:
@@ -96,6 +105,8 @@ class NuScenesDataset(DatasetSource):
             split_scenes = set()
 
         for sample in nusc.sample:
+            if self.curated_sample_tokens is not None and sample["token"] not in self.curated_sample_tokens:
+                continue
             if split_scenes:
                 scene = nusc.get("scene", sample["scene_token"])
                 if scene["name"] not in split_scenes:
@@ -133,7 +144,12 @@ class NuScenesDataset(DatasetSource):
                 lidar_sd = nusc.get("sample_data", lidar_token)
                 lidar_path = Path(self.params.dataroot) / lidar_sd["filename"]
                 if lidar_path.is_file():
-                    points = np.fromfile(str(lidar_path), dtype=np.float32).reshape(-1, 5)
+                    raw_points = np.fromfile(str(lidar_path), dtype=np.float32)
+                    if raw_points.size == 0 or raw_points.size % 5:
+                        raise ValueError(f"nuScenes LiDAR must contain non-empty finite Nx5 points: {lidar_path}")
+                    points = raw_points.reshape(-1, 5)
+                    if not np.isfinite(points).all():
+                        raise ValueError(f"nuScenes LiDAR contains NaN or inf: {lidar_path}")
                     frame = LidarFrame(points, sensor_model="HDL32E")
 
             # 3D Annotations
@@ -161,10 +177,9 @@ class NuScenesDataset(DatasetSource):
                     )
                 )
 
-            front = next(
-                (v.image for v in cams if v.name == "CAM_FRONT"),
-                cams[0].image if cams else np.zeros((32, 32, 3), dtype=np.float32),
-            )
+            front = next((v.image for v in cams if v.name == "CAM_FRONT"), cams[0].image if cams else None)
+            if front is None or frame is None:
+                raise ValueError(f"nuScenes curated sample is missing required camera or LiDAR asset: {sample['token']}")
             sample_obj = Sample(
                 sample_id=sample["token"],
                 image=front,
@@ -176,6 +191,7 @@ class NuScenesDataset(DatasetSource):
                     "scene_token": sample["scene_token"],
                     "timestamp": sample["timestamp"],
                     "calibrations": calibs,
+                    "curation_manifest_sample": self.curated_sample_tokens is not None,
                 },
             )
             rows.append(sample_obj)

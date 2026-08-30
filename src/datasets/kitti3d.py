@@ -21,6 +21,7 @@ from src.datasets import DATASETS
 from src.datasets.base import DatasetInfo, DatasetParams, DatasetSource
 from src.datasets.io import IMAGE_SUFFIXES, load_image
 from src.datasets.kitti import DIFFICULTY_LIMITS, LABEL_MAP, Difficulty
+from src.datasets.registry import DatasetManifest, DatasetRegistry
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +143,7 @@ class Kitti3DParams(DatasetParams):
     difficulty: Difficulty = "moderate"
     sample_ids: tuple[str, ...] | None = None
     anonymization_manifest: str | None = None
+    curation_manifest_path: str | None = None
 
 
 @DATASETS.register
@@ -185,7 +187,20 @@ class Kitti3D(DatasetSource):
         self.calib_dir = self._find_dir("calib")
         self.label_dir = self._find_dir("label_2")
         self.manifest = self._manifest_path(settings.anonymization_manifest)
+        self.curation_manifest = self._load_curation_manifest(settings.curation_manifest_path)
         self.anonymized = self.manifest is not None and self.manifest.is_file()
+
+    def _load_curation_manifest(self, configured: str | None) -> DatasetManifest | None:
+        if configured is None:
+            return None
+        path = Path(configured).expanduser()
+        if not path.is_absolute():
+            path = self.root / path
+        manifest = DatasetRegistry.load(path)
+        readiness = manifest.readiness(self.task_id)
+        if readiness.status != "READY":
+            raise ValueError(f"{readiness.status}: {', '.join(readiness.missing)}")
+        return manifest
 
     def _find_dir(self, name: str) -> Path:
         for candidate in (self.root / name, self.root / "training" / name):
@@ -213,12 +228,18 @@ class Kitti3D(DatasetSource):
         self._require_layout()
         image_ids = list(self._ids())
         settings: Kitti3DParams = self.params  # type: ignore[assignment]
+        if self.curation_manifest is not None:
+            image_ids = list(self.curation_manifest.sample_ids)
         if settings.sample_ids is not None:
             available = set(image_ids)
             missing = sorted(set(settings.sample_ids) - available)
             if missing:
                 raise ValueError(f"KITTI 3D sample_ids do not exist: {missing}")
             image_ids = list(settings.sample_ids)
+        elif self.curation_manifest is not None:
+            missing = sorted(set(image_ids) - set(self._ids()))
+            if missing:
+                raise ValueError(f"KITTI 3D curated sample_ids do not exist: {missing}")
         if limit is not None:
             image_ids = image_ids[:limit]
         return [self._load_sample(image_id) for image_id in image_ids]

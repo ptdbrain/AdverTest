@@ -7,12 +7,29 @@ degradation matrices, and scientific provenance metadata.
 from __future__ import annotations
 
 import io
+import unicodedata
 from typing import Any
+
+from src.evaluation.evidence import evaluate_evidence
 
 
 def _escape_pdf_text(text: str) -> str:
-    """Escape special characters for PDF literal strings."""
-    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    """Return a safe literal for the built-in PDF font encoding.
+
+    The dependency-free renderer uses Helvetica, which cannot encode arbitrary
+    Unicode. Normalising first preserves readable Latin text (including most
+    Vietnamese names) and prevents an export failure for any remaining glyph.
+    """
+    normalized = unicodedata.normalize("NFKD", str(text)).replace("—", "-").replace("–", "-")
+    latin = normalized.encode("latin-1", "replace").decode("latin-1")
+    return latin.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _provenance_value(provenance: dict[str, Any], key: str, fallback: str = "Not recorded") -> str:
+    value = provenance.get(key)
+    if value is None or value == "":
+        return fallback
+    return str(value)
 
 
 def generate_run_report_pdf(report: dict[str, Any], run_id: str | None = None) -> bytes:
@@ -25,9 +42,11 @@ def generate_run_report_pdf(report: dict[str, Any], run_id: str | None = None) -
     ap_clean = report.get("ap_clean", 0.0)
     cells = report.get("cells", [])
     provenance = report.get("provenance", {})
+    evidence = evaluate_evidence(provenance, simulation_only=bool(report.get("simulation_only", True)))
+    benchmark_eligible = evidence.status == "VERIFIED"
 
     # Calculate summary metrics
-    degradations = [c.get("degradation_ratio", c.get("degradation", 0.0)) for c in cells]
+    degradations = [c.get("degradation_ratio", c.get("degradation", 0.0)) for c in cells] if benchmark_eligible else []
     mean_deg = sum(degradations) / len(degradations) if degradations else 0.0
     robustness_score = max(0.0, 1.0 - mean_deg) * 100.0
 
@@ -43,14 +62,23 @@ def generate_run_report_pdf(report: dict[str, Any], run_id: str | None = None) -
             stream_cmds.append("1 w")
             stream_cmds.append(f"{x:.1f} {y:.1f} {w:.1f} {h:.1f} re S")
 
-    def draw_text(x: float, y: float, text: str, font: str = "F1", size: float = 10, r: float = 0, g: float = 0, b: float = 0):
+    def draw_text(
+        x: float, y: float, text: str, font: str = "F1", size: float = 10, r: float = 0, g: float = 0, b: float = 0
+    ):
         clean_txt = _escape_pdf_text(str(text))
-        stream_cmds.append(f"BT /{font} {size:.1f} Tf {r:.3f} {g:.3f} {b:.3f} rg {x:.1f} {y:.1f} Td ({clean_txt}) Tj ET")
+        stream_cmds.append(
+            f"BT /{font} {size:.1f} Tf {r:.3f} {g:.3f} {b:.3f} rg {x:.1f} {y:.1f} Td ({clean_txt}) Tj ET"
+        )
 
     # Header Background Banner
     draw_rect(0, 740, 612, 52, 0.08, 0.18, 0.36, fill=True)
     draw_text(36, 762, "AdverTest - AI Robustness Benchmark Report", font="F2", size=16, r=1, g=1, b=1)
-    draw_text(36, 748, "SIMULATION ONLY — Research & Model Robustness Evaluation", font="F1", size=9, r=0.8, g=0.9, b=1)
+    evidence_label = (
+        "VERIFIED EVIDENCE - benchmark protocol complete"
+        if benchmark_eligible
+        else "NOT ELIGIBLE - NO BENCHMARK CONCLUSION"
+    )
+    draw_text(36, 748, evidence_label, font="F1", size=9, r=0.8, g=0.9, b=1)
 
     # Overview Card
     draw_rect(36, 620, 540, 105, 0.96, 0.97, 0.98, fill=True)
@@ -60,15 +88,20 @@ def generate_run_report_pdf(report: dict[str, Any], run_id: str | None = None) -
     draw_text(48, 688, f"Target Model: {model_name} (v{model_version})", font="F1", size=10, r=0.2, g=0.25, b=0.3)
     draw_text(48, 672, f"Evaluation Dataset: {dataset_name}", font="F1", size=10, r=0.2, g=0.25, b=0.3)
     draw_text(48, 656, f"Total Evaluation Samples: {n_samples}", font="F1", size=10, r=0.2, g=0.25, b=0.3)
-    draw_text(48, 640, f"Clean Baseline AP: {ap_clean:.4f}", font="F2", size=10, r=0.05, g=0.5, b=0.2)
-
-    draw_text(340, 688, f"Robustness Score: {robustness_score:.1f} / 100", font="F2", size=12, r=0.1, g=0.3, b=0.7)
-    draw_text(340, 672, f"Mean Degradation: {mean_deg * 100:.1f}%", font="F1", size=10, r=0.8, g=0.2, b=0.1)
-    draw_text(340, 656, f"Tested Attack Variations: {len(cells)} cells", font="F1", size=10, r=0.3, g=0.35, b=0.4)
-    draw_text(340, 640, "Verification Gate: WAITING_FOR_GPU_VALIDATION" if not provenance.get("cuda_verified") else "Verification Gate: VERIFIED_GPU", font="F1", size=9, r=0.4, g=0.4, b=0.5)
+    if benchmark_eligible:
+        draw_text(48, 640, f"Clean Baseline AP: {ap_clean:.4f}", font="F2", size=10, r=0.05, g=0.5, b=0.2)
+        draw_text(340, 688, f"Robustness Score: {robustness_score:.1f} / 100", font="F2", size=12, r=0.1, g=0.3, b=0.7)
+        draw_text(340, 672, f"Mean Degradation: {mean_deg * 100:.1f}%", font="F1", size=10, r=0.8, g=0.2, b=0.1)
+        draw_text(340, 656, f"Tested Attack Variations: {len(cells)} cells", font="F1", size=10, r=0.3, g=0.35, b=0.4)
+    else:
+        draw_text(48, 640, "Metric conclusion: unavailable until evidence is complete.", font="F2", size=10, r=0.65, g=0.25, b=0.1)
+        draw_text(340, 688, f"Evidence status: {evidence.status}", font="F2", size=11, r=0.65, g=0.25, b=0.1)
+        draw_text(340, 672, f"Missing: {', '.join(evidence.missing[:3]) or 'none'}", font="F1", size=8.5, r=0.4, g=0.4, b=0.5)
+        draw_text(340, 656, evidence.action[:72], font="F1", size=8.5, r=0.4, g=0.4, b=0.5)
+    draw_text(340, 640, f"Promotion eligible: {'yes' if benchmark_eligible else 'no'}", font="F1", size=9, r=0.4, g=0.4, b=0.5)
 
     # Table Title
-    draw_text(36, 595, "Attack Degradation Breakdown", font="F2", size=12, r=0.1, g=0.15, b=0.25)
+    draw_text(36, 595, "Attack Degradation Breakdown" if benchmark_eligible else "Diagnostic Evidence (metrics withheld)", font="F2", size=12, r=0.1, g=0.15, b=0.25)
 
     # Table Header
     draw_rect(36, 565, 540, 22, 0.9, 0.93, 0.96, fill=True)
@@ -80,7 +113,7 @@ def generate_run_report_pdf(report: dict[str, Any], run_id: str | None = None) -
 
     # Table Rows (up to 15 items on page 1)
     y_cursor = 545
-    for idx, c in enumerate(cells[:14]):
+    for idx, c in enumerate(cells[:14] if benchmark_eligible else []):
         bg_color = (0.98, 0.98, 0.99) if idx % 2 == 0 else (1.0, 1.0, 1.0)
         draw_rect(36, y_cursor - 4, 540, 18, bg_color[0], bg_color[1], bg_color[2], fill=True)
 
@@ -105,14 +138,26 @@ def generate_run_report_pdf(report: dict[str, Any], run_id: str | None = None) -
     draw_rect(36, 50, 540, 65, 0.95, 0.95, 0.96, fill=True)
     draw_rect(36, 50, 540, 65, 0.85, 0.85, 0.88, fill=False)
     draw_text(45, 98, "Scientific Provenance & Audit Trail", font="F2", size=9, r=0.2, g=0.25, b=0.3)
-    ckpt_hash = provenance.get("checkpoint_sha256", "N/A")
-    config_hash = provenance.get("run_config_hash", "N/A")
-    seed_val = provenance.get("seed", 42)
-    protocol_hash = provenance.get("protocol_hash", "official-protocol-locked")
+    ckpt_hash = _provenance_value(provenance, "checkpoint_sha256")
+    config_hash = _provenance_value(provenance, "run_config_hash")
+    seed_val = _provenance_value(provenance, "seed")
+    protocol_hash = _provenance_value(provenance, "protocol_hash")
+    metric_label = "verified benchmark metric" if benchmark_eligible else "diagnostic only; no benchmark conclusion"
 
     draw_text(45, 82, f"Checkpoint SHA256: {ckpt_hash[:32]}...", font="F1", size=7.5, r=0.3, g=0.35, b=0.4)
-    draw_text(45, 70, f"Config Hash: {config_hash[:32]}... | Seed: {seed_val}", font="F1", size=7.5, r=0.3, g=0.35, b=0.4)
-    draw_text(45, 58, f"Protocol Hash: {protocol_hash[:32]} | Official Metric Evaluator: LOCKED", font="F1", size=7.5, r=0.3, g=0.35, b=0.4)
+    draw_text(
+        45, 70, f"Config Hash: {config_hash[:32]}... | Seed: {seed_val}", font="F1", size=7.5, r=0.3, g=0.35, b=0.4
+    )
+    draw_text(
+        45,
+        58,
+        f"Protocol Hash: {protocol_hash[:32]} | Classification: {metric_label}",
+        font="F1",
+        size=7.5,
+        r=0.3,
+        g=0.35,
+        b=0.4,
+    )
 
     # Footer Page Number
     draw_text(260, 30, "AdverTest Evaluation Platform — Page 1 of 1", font="F1", size=8, r=0.5, g=0.5, b=0.5)

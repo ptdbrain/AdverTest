@@ -42,10 +42,12 @@ import {
   CLASS_LABELS_DATA,
 } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { getApiBase } from "@/lib/api";
+import { createOrUpdateSession, getApiBase, listSessions } from "@/lib/api";
+import { useProjectContext } from "@/context/ProjectContext";
 
 export default function ConfigureProblemPage() {
   const router = useRouter();
+  const { projectId, scopedHref } = useProjectContext();
   const [selectedTask, setSelectedTask] = useState("detection2d");
   const [selectedArch, setSelectedArch] = useState("yolo");
 
@@ -69,8 +71,12 @@ export default function ConfigureProblemPage() {
 
   // Load existing sessions on mount
   useEffect(() => {
-    fetch(`${getApiBase()}/api/v1/sessions`)
-      .then((res) => res.json())
+    if (!projectId) {
+      setExistingSessions([]);
+      setSelectedSessionId("");
+      return;
+    }
+    listSessions()
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
           setExistingSessions(data);
@@ -78,7 +84,7 @@ export default function ConfigureProblemPage() {
         }
       })
       .catch((err) => console.warn("Could not load sessions:", err));
-  }, []);
+  }, [projectId]);
 
   // When choosing an existing session, auto-fill its configuration
   const handleSelectExistingSession = (sessId) => {
@@ -274,49 +280,33 @@ export default function ConfigureProblemPage() {
     }, 800);
   };
 
-  const handleNext = () => {
-    const taskName = PROBLEM_TYPES.find((t) => t.id === selectedTask)?.name || "Object Detection";
-    const experimentConfig = {
-      expName,
-      sessionName: sessionName || `Phiên thử nghiệm ${expName}`,
-      sessionDesc: expDesc,
-      selectedTask,
-      taskName,
-      selectedArch,
-      selectedModelId: currentModel.id,
-      selectedModelName: currentModel.name,
-      selectedModelFormat: currentModel.format,
-      selectedDatasetId: currentDataset.id,
-      selectedDatasetName: currentDataset.name,
-      batchSize,
-      mixedPrecision,
-      updatedAt: new Date().toISOString(),
-    };
-    try {
-      localStorage.setItem("adversai_active_experiment", JSON.stringify(experimentConfig));
-      // Register or update session in backend API
-      fetch(`${getApiBase()}/api/v1/sessions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: expName,
-          name: sessionName || `Phiên thử nghiệm ${expName}`,
-          description: expDesc,
-          task_id: selectedTask,
-          task_name: taskName,
-          model_id: currentModel.id,
-          model_name: currentModel.name,
-          dataset_id: currentDataset.id,
-          dataset_name: currentDataset.name,
-          created_at: new Date().toLocaleDateString("vi-VN"),
-          updated_at: new Date().toLocaleDateString("vi-VN"),
-          runs: [],
-        }),
-      }).catch((e) => console.warn("Could not save session to backend:", e));
-    } catch (e) {
-      console.warn("Could not save to localStorage:", e);
+  const handleNext = async () => {
+    if (!projectId) {
+      setValidationReport({ valid: false, error: "Hãy chọn dự án trước khi tạo phiên thử nghiệm." });
+      setUploadStatus("error");
+      return;
     }
-    router.push(`/experiments/${expName}/attack`);
+    const taskName = PROBLEM_TYPES.find((t) => t.id === selectedTask)?.name || "Object Detection";
+    try {
+      await createOrUpdateSession({
+        id: expName,
+        name: sessionName || `Phiên thử nghiệm ${expName}`,
+        description: expDesc,
+        task_id: selectedTask,
+        task_name: taskName,
+        model_id: currentModel.id,
+        model_name: currentModel.name,
+        dataset_id: currentDataset.id,
+        dataset_name: currentDataset.name,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        runs: [],
+      });
+      router.push(scopedHref(`/experiments/${expName}/attack`));
+    } catch (error) {
+      setValidationReport({ valid: false, error: error.message || "Không thể lưu phiên thử nghiệm." });
+      setUploadStatus("error");
+    }
   };
 
   return (

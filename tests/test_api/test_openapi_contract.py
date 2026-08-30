@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.main import app
@@ -80,9 +81,10 @@ def test_openapi_schema_is_valid_and_contains_all_routes() -> None:
         assert path in paths, f"Missing required OpenAPI path: {path}"
 
 
-def test_recipe_preset_catalog_endpoint() -> None:
+@pytest.mark.asyncio
+async def test_recipe_preset_catalog_endpoint(client) -> None:
     """Verify GET /api/v1/catalog/recipes/presets returns valid presets."""
-    response = client.get("/api/v1/catalog/recipes/presets")
+    response = await client.get("/api/v1/catalog/recipes/presets")
     assert response.status_code == 200
     presets = response.json()
     assert isinstance(presets, list)
@@ -92,18 +94,20 @@ def test_recipe_preset_catalog_endpoint() -> None:
     assert "sensor_fault_suite" in preset_ids
 
 
-def test_recipe_randomize_endpoint() -> None:
+@pytest.mark.asyncio
+async def test_recipe_randomize_endpoint(client) -> None:
     """Verify POST /api/v1/attack-recipes/randomize creates a valid recipe."""
-    response = client.post("/api/v1/attack-recipes/randomize", json={"n_steps": 2})
+    response = await client.post("/api/v1/attack-recipes/randomize", json={"n_steps": 2})
     assert response.status_code == 201
     data = response.json()
     assert "id" in data
     assert len(data["steps"]) == 2
 
 
-def test_recipe_sweep_endpoint() -> None:
+@pytest.mark.asyncio
+async def test_recipe_sweep_endpoint(client) -> None:
     """Verify POST /api/v1/attack-recipes/sweep generates severity sweep steps."""
-    response = client.post(
+    response = await client.post(
         "/api/v1/attack-recipes/sweep", json={"attack_id": "gaussian_noise", "severity_range": [1, 2, 3]}
     )
     assert response.status_code == 201
@@ -112,9 +116,10 @@ def test_recipe_sweep_endpoint() -> None:
     assert data["steps"][0]["severity"] == 1
 
 
-def test_failure_clusters_crud_endpoints() -> None:
+@pytest.mark.asyncio
+async def test_failure_clusters_crud_endpoints(client) -> None:
     """Verify failure clusters list and creation."""
-    create_res = client.post(
+    create_res = await client.post(
         "/api/v1/failure-clusters",
         json={"name": "Fog Failures", "member_ids": ["fog-001", "fog-002"]},
     )
@@ -122,24 +127,25 @@ def test_failure_clusters_crud_endpoints() -> None:
     cluster = create_res.json()
     cluster_id = cluster["cluster_id"]
 
-    get_res = client.get(f"/api/v1/failure-clusters/{cluster_id}")
+    get_res = await client.get(f"/api/v1/failure-clusters/{cluster_id}")
     assert get_res.status_code == 200
     assert get_res.json()["name"] == "Fog Failures"
 
-    list_res = client.get("/api/v1/failure-clusters")
+    list_res = await client.get("/api/v1/failure-clusters")
     assert list_res.status_code == 200
     assert any(c["id"] == cluster_id for c in list_res.json())
 
 
-def test_model_version_lineage_endpoint() -> None:
+@pytest.mark.asyncio
+async def test_model_version_lineage_endpoint(client) -> None:
     """Verify GET /api/v1/model-versions/{version_id}/lineage returns lineage tree."""
-    versions_res = client.get("/api/v1/model-versions")
+    versions_res = await client.get("/api/v1/model-versions")
     assert versions_res.status_code == 200
     versions = versions_res.json()
     assert len(versions) > 0
     version_id = versions[0]["id"]
 
-    response = client.get(f"/api/v1/model-versions/{version_id}/lineage")
+    response = await client.get(f"/api/v1/model-versions/{version_id}/lineage")
     assert response.status_code == 200
     data = response.json()
     assert data["version_id"] == version_id
@@ -167,4 +173,3 @@ def test_all_openapi_operation_ids_are_strictly_unique() -> None:
                     operation_ids[op_id] = f"{method.upper()} {path}"
 
     assert len(duplicates) == 0, "Duplicate OpenAPI operation IDs found:\n" + "\n".join(duplicates)
-
