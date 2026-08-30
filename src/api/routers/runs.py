@@ -53,6 +53,11 @@ async def preflight_run(
     runner: TestRunner = Depends(get_runner)
 ) -> PreflightOut:
     config = normalize_dataset_params(_resolve_run_config(config))
+    if _remote_enabled():
+        # Production data and weights live on GCS and are materialized by the
+        # GPU worker.  Render must not download them merely to answer this
+        # advisory endpoint; the worker repeats the authoritative preflight.
+        return PreflightOut(compatible=list(config.attacks))
     return PreflightOut(**runner.preflight(config).as_dict())
 
 @router.post("", status_code=202, response_model=RunJobOut)
@@ -66,23 +71,25 @@ async def create_run(
 ) -> RunJobOut:
     """Persist and enqueue a run. Heavy model work never runs in the request."""
     config = normalize_dataset_params(_resolve_run_config(config))
-    preflight = runner.preflight(config)
-    if preflight.fatal_errors:
-        raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
     if _remote_enabled():
         settings = get_settings()
+        requested_cells = max(1, len(config.attacks) or 1) * max(1, len(config.severities))
+        total_units = max(1, (config.limit or settings.default_sample_limit) * requested_cells)
         job = platform_jobs.create(
             project_id=settings.platform_default_project_id,
             owner_user_id=settings.platform_default_user_id,
             job_type="benchmark_run",
             request=config.model_dump(mode="json"),
-            total_units=max(1, runner.estimate(config).n_cells),
+            total_units=total_units,
         )
         # Keep the durable status QUEUED until the GCE worker claims it, while
         # giving the UI a truthful cold-start status immediately.
         platform_jobs.waiting_for_gpu(job["id"], "GPU đang khởi động, job sẽ tự chạy sau khi worker sẵn sàng...")
         compute.dispatch(job["id"])
         return _platform_job_out(platform_jobs.get(settings.platform_default_project_id, job["id"]) or job)
+    preflight = runner.preflight(config)
+    if preflight.fatal_errors:
+        raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
     run_id = store.create(config)
     worker.enqueue(run_id, config)
     return _job_out(store.get(run_id))

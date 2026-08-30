@@ -17,6 +17,7 @@ from fastapi import Request as FastAPIRequest
 from src.config import get_settings
 from src.demo_bootstrap import (
     ensure_anonymized_catalog_bundle,
+    ensure_catalog_checkpoint,
     ensure_demo_catalog,
     ensure_demo_checkpoint,
     ensure_demo_kitti,
@@ -26,7 +27,7 @@ from src.pipeline.runner import RunConfig, TestRunner
 _bootstrap_lock = Lock()
 
 
-def _bootstrap_demo_assets() -> None:
+def _bootstrap_demo_assets(*, dataset_name: str | None = None) -> None:
     """Prepare the disposable Cloud Run filesystem once per cold start."""
     settings = get_settings()
     if not (
@@ -56,7 +57,7 @@ def _bootstrap_demo_assets() -> None:
         ensure_demo_catalog(enabled=True, storage=storage,
                             storage_prefix=settings.demo_catalog_storage_prefix,
                             data_root=settings.data_root)
-    if settings.bootstrap_cityscapes_catalog:
+    if settings.bootstrap_cityscapes_catalog and dataset_name in {None, "cityscapes_segmentation"}:
         ensure_anonymized_catalog_bundle(
             enabled=True,
             storage=storage,
@@ -64,7 +65,7 @@ def _bootstrap_demo_assets() -> None:
             data_root=settings.data_root,
             bundle_name="cityscapes-200",
         )
-    if settings.bootstrap_kitti_catalog:
+    if settings.bootstrap_kitti_catalog and dataset_name in {None, "kitti"}:
         ensure_anonymized_catalog_bundle(
             enabled=True,
             storage=storage,
@@ -72,7 +73,7 @@ def _bootstrap_demo_assets() -> None:
             data_root=settings.data_root,
             bundle_name="kitti-200",
         )
-    if settings.bootstrap_kitti3d_catalog:
+    if settings.bootstrap_kitti3d_catalog and dataset_name in {None, "kitti3d"}:
         ensure_anonymized_catalog_bundle(
             enabled=True,
             storage=storage,
@@ -135,17 +136,31 @@ class CloudRunBenchmarkWorker:
 
     def process(self, job_id: str) -> None:
         try:
-            # Large reviewed bundles must not be materialized in the FastAPI
-            # lifespan: Cloud Run's startup probe would time out before the
-            # service can become healthy.  A job already has a visible queue
-            # state while this one-time cold-start preparation runs.
-            with _bootstrap_lock:
-                _bootstrap_demo_assets()
             job = self._control.claim(job_id)
             if job is None:  # duplicate Pub/Sub delivery or a cancelled job
                 return
             config = RunConfig.model_validate(job["request"])
             settings = get_settings()
+            # Large reviewed bundles are fetched only after the job is claimed
+            # and only for its selected dataset.  This keeps startup probes
+            # fast and avoids downloading unrelated datasets on a cold start.
+            with _bootstrap_lock:
+                _bootstrap_demo_assets(dataset_name=config.dataset)
+            if config.checkpoint_id:
+                from src.models.catalog import catalog_model
+
+                catalog_item = catalog_model(config.checkpoint_id)
+                if catalog_item is not None:
+                    from src.api.platform_dependencies import get_platform_storage
+
+                    checkpoint = ensure_catalog_checkpoint(
+                        model_id=config.checkpoint_id,
+                        checkpoint_root=settings.checkpoint_root,
+                        storage=get_platform_storage(),
+                    )
+                    params = dict(config.adapter_params)
+                    params["weights"] = str(checkpoint)
+                    config = config.model_copy(update={"adapter_params": params})
             evidence_root = Path(settings.runs_root).expanduser().resolve() / "platform-evidence" / job_id
             config = config.model_copy(update={"evidence_dir": str(evidence_root)})
             if config.model == "yolo11":

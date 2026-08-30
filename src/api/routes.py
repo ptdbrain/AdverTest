@@ -60,6 +60,7 @@ from src.core.hashing import stable_digest
 from src.datasets import load_datasets
 from src.evaluation.export import export_comparison
 from src.models import list_known_versions, scan_base_checkpoints, scan_model_artifacts
+from src.models.catalog import catalog_model_versions
 from src.models.families import FAMILIES, adapter_request, approved_model_config
 from src.models.versions import ModelVersion
 from src.pipeline import RunConfig
@@ -1538,6 +1539,8 @@ def _registered_model_versions() -> list[Any]:
     versions = {item.id: item for item in placeholders}
     for base in scan_base_checkpoints(Path(get_settings().checkpoint_root)):
         versions[base.id] = base
+    for base in catalog_model_versions(platform=get_settings().run_execution_backend == "platform"):
+        versions[base.id] = base
     for discovered in scan_model_artifacts(Path(get_settings().runs_root)):
         placeholder = by_role.get(str(discovered.training_metadata.get("role", "")))
         if placeholder:
@@ -1769,12 +1772,16 @@ def _resolve_run_config(config: RunConfig, *, allow_defence: bool = False) -> Ru
                 "reason": version.blocked_reason,
             },
         )
+    settings = get_settings()
     checkpoint = Path(version.checkpoint_path).resolve()
-    if not checkpoint.is_file():
+    is_remote_catalog = (
+        settings.run_execution_backend == "platform"
+        and version.training_metadata.get("source") == "catalog"
+    )
+    if not checkpoint.is_file() and not is_remote_catalog:
         raise HTTPException(
             status_code=409, detail={"code": "CHECKPOINT_MISSING", "model_version_id": config.model_version_id}
         )
-    settings = get_settings()
     try:
         adapter_name, adapter_params = adapter_request(
             version, checkpoint=str(checkpoint), config=config, settings=settings

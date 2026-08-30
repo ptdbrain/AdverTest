@@ -31,8 +31,7 @@ FAMILIES = {
         frozenset({"detection2d"}),
         frozenset({".pt"}),
         "rtdetr",
-        False,
-        "BASE_CHECKPOINT_UNAVAILABLE",
+        True,
     ),
     "faster_rcnn": ModelFamilySpec(
         "faster_rcnn",
@@ -40,8 +39,7 @@ FAMILIES = {
         frozenset({"detection2d"}),
         frozenset({".pt", ".pth"}),
         "faster_rcnn",
-        False,
-        "BASE_CHECKPOINT_UNAVAILABLE",
+        True,
     ),
     "centerpoint3d": ModelFamilySpec(
         "centerpoint3d",
@@ -119,6 +117,20 @@ def adapter_request(
             "config": str(sam_config),
             "device": settings.model_device,
             "mask_threshold": config.confidence_threshold,
+        }
+    if family.id == "rtdetr":
+        return family.adapter_name, {
+            "weights": checkpoint,
+            "device": settings.model_device,
+            "batch_size": settings.model_batch_size,
+            "half": settings.model_half_precision and settings.model_device.startswith("cuda"),
+            "score_threshold": config.confidence_threshold,
+        }
+    if family.id == "faster_rcnn":
+        return family.adapter_name, {
+            "weights": checkpoint,
+            "device": settings.model_device,
+            "score_threshold": config.confidence_threshold,
         }
     if family.id == "pointpillars3d":
         model_config = version.training_metadata.get("model_config")

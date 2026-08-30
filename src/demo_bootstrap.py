@@ -33,6 +33,24 @@ def ensure_demo_checkpoint(
     return target
 
 
+def ensure_catalog_checkpoint(*, model_id: str, checkpoint_root: str, storage: ArtifactStorage) -> Path:
+    """Fetch one fixed catalog checkpoint into the disposable worker volume."""
+    from src.models.catalog import catalog_model
+
+    item = catalog_model(model_id)
+    if item is None:
+        raise RuntimeError(f"unknown catalog model: {model_id}")
+    target = Path(checkpoint_root).expanduser().resolve() / "catalog" / item.filename
+    if target.is_file() and target.stat().st_size > 0:
+        return target
+    payload = storage.get_bytes(item.storage_key)
+    if not payload:
+        raise RuntimeError(f"catalog checkpoint download failed: {item.storage_key}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(payload)
+    return target
+
+
 def ensure_demo_kitti(
     *, enabled: bool, storage: ArtifactStorage, storage_prefix: str, data_root: str
 ) -> Path | None:
