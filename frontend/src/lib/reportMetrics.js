@@ -91,8 +91,12 @@ export function buildRunDecisionView(report = {}) {
   const dataState = !benchmarkAvailable ? "NO_GROUND_TRUTH" : clean == null || attacked == null ? "NO_DATA" : "MEASURED";
   const limitations = [];
   if (!benchmarkAvailable) limitations.push("Không có ground truth; không thể tính benchmark metric.");
+  const implementation = cleanMetrics.metric_implementation || null;
+  if (implementation === "advertest-greedy-interpolated-v1") {
+    limitations.push("AP/mAP được tính bằng matcher nội bộ AdverTest; không được trình bày là COCO API/pycocotools chính thức.");
+  }
   if (report.simulation_only !== false) limitations.push("SIMULATION: chưa phải bằng chứng an toàn production.");
-  if (benchmarkAvailable && report.n_samples > 0 && report.n_samples < 30) limitations.push("Cỡ mẫu nhỏ; chưa phù hợp làm deployment gate.");
+  if (benchmarkAvailable && report.n_samples > 0 && report.n_samples < 100) limitations.push("Cỡ mẫu dưới 100; chỉ phù hợp smoke test, chưa phù hợp làm deployment gate.");
 
   return {
     taskId,
@@ -113,6 +117,7 @@ export function buildRunDecisionView(report = {}) {
       seed: config.seed ?? null,
       iouThreshold: config.iou_threshold ?? null,
     },
+    implementation,
     limitations,
   };
 }

@@ -1,8 +1,10 @@
 """Live Model Inference & Dynamic Adversarial Evaluation Pipeline.
 
 Executes actual PyTorch / Ultralytics YOLO model inference on dataset samples,
-applies single or chained multi-attack transformations, and dynamically calculates
-100% of mathematical metrics (PSNR, SSIM, L2 norm, L-infinity, mAP@0.5, mIoU).
+applies single or chained multi-attack transformations, and calculates image
+distortion plus inference observations. This endpoint deliberately does not
+manufacture AP/mAP/mIoU from model confidence on one image: those metrics need
+locked ground truth and the benchmark runner.
 """
 
 from __future__ import annotations
@@ -49,8 +51,8 @@ class PredictionStat(BaseModel):
 class MetricSummary(BaseModel):
     bbox_count: int = Field(alias="bboxCount")
     conf_avg: float = Field(alias="confAvg")
-    map50: float
-    miou: float
+    map50: float | None = None
+    miou: float | None = None
     top: list[PredictionStat]
 
     model_config = ConfigDict(populate_by_name=True)
@@ -260,7 +262,8 @@ async def run_live_inference(payload: LiveInferenceRequest) -> LiveInferenceResp
                 )
             )
 
-    # 6. Compute 100% Real Mathematical Metrics
+    # 6. Compute directly observed inference and image-quality values.
+    # This request has no locked ground truth, so AP/mAP/mIoU are unavailable.
     clean_count = len(clean_detections)
     attacked_count = len(attacked_detections)
     missed_objects = max(0, clean_count - attacked_count)
@@ -268,12 +271,6 @@ async def run_live_inference(payload: LiveInferenceRequest) -> LiveInferenceResp
 
     avg_clean_conf = round(float(np.mean([d.conf for d in clean_detections])), 2) if clean_detections else 0.90
     avg_atk_conf = round(float(np.mean([d.conf for d in attacked_detections])), 2) if attacked_detections else 0.00
-
-    clean_map50 = round(float(avg_clean_conf * 0.89), 2)
-    atk_map50 = round(float(avg_atk_conf * 0.72 * (attacked_count / max(1, clean_count))), 2)
-
-    clean_miou = round(float(avg_clean_conf * 0.78), 2)
-    atk_miou = round(float(avg_atk_conf * 0.65 * (attacked_count / max(1, clean_count))), 2)
 
     top_clean = [PredictionStat(name=d.label.lower(), conf=d.conf) for d in clean_detections[:3]]
     top_atk = [PredictionStat(name=d.label.lower(), conf=d.conf) for d in attacked_detections[:3]]
@@ -292,7 +289,7 @@ async def run_live_inference(payload: LiveInferenceRequest) -> LiveInferenceResp
 
     observations = [
         f"Tác động [{attack_vector_str}] đã làm giảm số lượng đối tượng phát hiện từ {clean_count} -> {attacked_count}.",
-        f"Độ tin cậy trung bình giảm {conf_drop_pct:.1f}% và mAP@0.5 sụt giảm từ {clean_map50} -> {atk_map50}.",
+        f"Độ tin cậy trung bình của các detection giữ lại giảm {conf_drop_pct:.1f}%; đây không phải AP/mAP vì request không có ground truth khóa.",
         f"Chỉ số chất lượng ảnh PSNR đạt {psnr_val}, SSIM đạt {ssim_val} phản ánh độ biến dạng cấu trúc thị giác.",
     ]
 
@@ -311,10 +308,10 @@ async def run_live_inference(payload: LiveInferenceRequest) -> LiveInferenceResp
         clean_detections=clean_detections,
         attacked_detections=attacked_detections,
         clean_stats=MetricSummary(
-            bboxCount=clean_count, confAvg=avg_clean_conf, map50=clean_map50, miou=clean_miou, top=top_clean
+            bboxCount=clean_count, confAvg=avg_clean_conf, top=top_clean
         ),
         atk_stats=MetricSummary(
-            bboxCount=attacked_count, confAvg=avg_atk_conf, map50=atk_map50, miou=atk_miou, top=top_atk
+            bboxCount=attacked_count, confAvg=avg_atk_conf, top=top_atk
         ),
         l2_norm=l2_norm_val,
         linf=linf_val,
@@ -329,5 +326,7 @@ async def run_live_inference(payload: LiveInferenceRequest) -> LiveInferenceResp
             "falsePositives": false_positives,
             "confidenceDrop": f"{conf_drop_pct:.1f}%",
             "attackVector": attack_vector_str,
+            "metric_status": "QUALITATIVE_ONLY",
+            "metric_limitation": "AP/mAP/mIoU require locked ground truth and are only reported by benchmark runs.",
         },
     )

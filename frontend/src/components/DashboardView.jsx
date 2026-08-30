@@ -32,6 +32,7 @@ import Button from "@/components/common/Button";
 import MetricCard from "@/components/metrics/MetricCard";
 import DonutChart from "@/components/metrics/DonutChart";
 import { listRuns, getCatalogModels, getCatalogDatasets, getCatalogAttacks } from "@/lib/api";
+import { buildRunDecisionView, formatRatio } from "@/lib/reportMetrics";
 
 const PIPELINE_STEPS = [
   { step: 1, title: "Cấu hình bài toán", desc: "Nạp mô hình & dữ liệu gốc", icon: "database", route: "/experiments/new" },
@@ -84,12 +85,13 @@ export default function DashboardView() {
   }, []);
 
   const completedRuns = runs.filter((r) => r.status === "COMPLETED" && r.report);
-  const avgCleanMapVal = completedRuns.length
-    ? (completedRuns.reduce((acc, r) => acc + (r.report?.ap_clean || 0), 0) / completedRuns.length * 100).toFixed(1) + "%"
-    : "—";
-  const avgRobustVal = completedRuns.length
-    ? (completedRuns.reduce((acc, r) => acc + (r.report?.mPC || 0.7), 0) / completedRuns.length).toFixed(2)
-    : "—";
+  // Do not average runs from different models, datasets or protocols. The
+  // dashboard therefore exposes the latest measured run rather than a fake
+  // global score (the former code used a hard-coded 0.7 fallback).
+  const latestMeasuredRun = [...completedRuns].reverse().find((run) => buildRunDecisionView(run.report).dataState === "MEASURED");
+  const latestDecision = latestMeasuredRun ? buildRunDecisionView(latestMeasuredRun.report) : null;
+  const latestCleanMetric = latestDecision ? formatRatio(latestDecision.primary.clean) : "—";
+  const latestRobustness = latestDecision ? `${latestDecision.robustnessRetained.toFixed(1)}%` : "—";
 
   const liveKpis = [
     {
@@ -130,19 +132,19 @@ export default function DashboardView() {
     },
     {
       id: "asr",
-      title: "Clean mAP trung bình",
-      value: isLoading ? "..." : avgCleanMapVal,
-      trend: "0%",
-      trendLabel: "so với baseline",
+      title: "Clean metric mới nhất",
+      value: isLoading ? "..." : latestCleanMetric,
+      trend: "measured",
+      trendLabel: latestDecision?.primary.label || "chưa có benchmark",
       trendType: "neutral",
       color: "amber",
     },
     {
       id: "robustness",
-      title: "Điểm Robustness TB",
-      value: isLoading ? "..." : avgRobustVal,
-      trend: "0.0",
-      trendLabel: "mPC score",
+      title: "Hiệu năng giữ lại",
+      value: isLoading ? "..." : latestRobustness,
+      trend: "attacked / clean",
+      trendLabel: latestMeasuredRun ? "run đo được mới nhất" : "chưa có benchmark",
       trendType: "neutral",
       color: "emerald",
     },
@@ -453,10 +455,15 @@ export default function DashboardView() {
                       </Badge>
                     </td>
                     <td className="py-2.5 px-3 font-semibold text-red-600">
-                      {exp.report ? ((exp.report.asr || 0) * 100).toFixed(1) + "%" : "—"}
+                      {exp.report?.metrics?.robustness?.attack_success_rate != null
+                        ? `${(exp.report.metrics.robustness.attack_success_rate * 100).toFixed(1)}%`
+                        : "—"}
                     </td>
                     <td className="py-2.5 px-3 font-semibold text-emerald-600">
-                      {exp.report ? (exp.report.mPC || exp.report.ap_clean || 0).toFixed(2) : "—"}
+                      {exp.report ? (() => {
+                        const decision = buildRunDecisionView(exp.report);
+                        return decision.dataState === "MEASURED" ? `${decision.robustnessRetained.toFixed(1)}%` : "—";
+                      })() : "—"}
                     </td>
                     <td className="py-2.5 px-3 text-slate-500">
                       {exp.created_at ? new Date(exp.created_at).toLocaleTimeString() : "—"}
@@ -507,8 +514,8 @@ export default function DashboardView() {
                   { name: "Độ bền vững", value: 75, color: "#2563EB" },
                   { name: "Tổn thương", value: 25, color: "#E2E8F0" },
                 ]}
-                centerValue={avgRobustVal}
-                centerLabel="mPC Score"
+                centerValue={latestRobustness}
+                centerLabel="Hiệu năng giữ lại"
                 height={160}
               />
             </div>
