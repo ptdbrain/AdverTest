@@ -31,7 +31,7 @@ import Badge from "@/components/common/Badge";
 import Button from "@/components/common/Button";
 import MetricCard from "@/components/metrics/MetricCard";
 import DonutChart from "@/components/metrics/DonutChart";
-import { listRuns, getCatalogModels, getCatalogDatasets, getCatalogAttacks } from "@/lib/api";
+import { listRuns, getModelVersions, getCatalogDatasets, getCatalogAttacks } from "@/lib/api";
 import { buildRunDecisionView, formatRatio } from "@/lib/reportMetrics";
 
 const PIPELINE_STEPS = [
@@ -63,7 +63,7 @@ export default function DashboardView() {
       try {
         const [runsRes, modelsRes, datasetsRes, attacksRes] = await Promise.allSettled([
           listRuns(),
-          getCatalogModels(),
+          getModelVersions(),
           getCatalogDatasets(),
           getCatalogAttacks(),
         ]);
@@ -303,7 +303,7 @@ export default function DashboardView() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <Card
           title="Mô hình đang khả dụng"
-          subtitle="Catalog adapter đã được nạp trên hệ thống"
+          subtitle="Checkpoint catalog đã đăng ký; trạng thái thể hiện khả năng benchmark thực tế"
           headerAction={<Link href="/experiments/new" className="text-xs font-semibold text-blue-600 hover:text-blue-800">Cấu hình test →</Link>}
         >
           {models.length === 0 ? (
@@ -311,12 +311,12 @@ export default function DashboardView() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {models.map((model) => (
-                <div key={model.name} className="flex items-center justify-between gap-2 rounded-lg border border-slate-150 bg-slate-50/70 px-3 py-2">
+                <div key={model.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-150 bg-slate-50/70 px-3 py-2">
                   <div className="min-w-0">
-                    <p className="truncate text-xs font-semibold text-slate-800">{model.name}</p>
-                    <p className="text-[10px] text-slate-500">{model.version} · {model.modality}</p>
+                    <p className="truncate text-xs font-semibold text-slate-800">{model.id}</p>
+                    <p className="text-[10px] text-slate-500">{model.model_name} · {model.task}</p>
                   </div>
-                  <Badge variant={model.runnable ? "success" : "secondary"}>{model.task}</Badge>
+                  <Badge variant={model.runnable ? "success" : "secondary"}>{model.runnable ? "Sẵn sàng" : "Chưa sẵn sàng"}</Badge>
                 </div>
               ))}
             </div>
@@ -541,7 +541,7 @@ export default function DashboardView() {
               <div className="space-y-1.5 text-xs font-medium">
                 {models.slice(0, 4).map((m, idx) => (
                   <div key={m.id || idx} className="flex items-center justify-between p-1.5 rounded bg-white border border-slate-150">
-                    <span className="font-mono text-slate-800">{m.name || m.id}</span>
+                    <span className="font-mono text-slate-800">{m.id}</span>
                     <Badge variant="primary">{m.task || "2D"}</Badge>
                   </div>
                 ))}
