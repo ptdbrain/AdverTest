@@ -25,9 +25,11 @@ def _demo_dataset_params(name: str) -> dict[str, object]:
         "folder_dataset": {"root": f"{root}/folder_dataset", "input_format": "kitti"},
         "generated_dataset": {"root": f"{root}/generated_dataset"},
         "kitti3d": {
-            "root": f"{root}/kitti3d", "split": "all", "anonymization_manifest": "manifest.jsonl",
+            "root": "/app/data/catalog/kitti3d-200", "split": "all", "anonymization_manifest": "manifest.jsonl",
         },
-        "kitti": {"root": "/app/data/anonymized/kitti-de", "split": "val"},
+        "kitti": {
+            "root": "/app/data/catalog/kitti-200", "split": "val", "anonymization_manifest": "manifest.jsonl",
+        },
     }
     return params.get(name, {})
 

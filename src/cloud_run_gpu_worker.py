@@ -34,6 +34,8 @@ def _bootstrap_demo_assets() -> None:
         or settings.bootstrap_demo_kitti
         or settings.bootstrap_demo_catalog
         or settings.bootstrap_cityscapes_catalog
+        or settings.bootstrap_kitti_catalog
+        or settings.bootstrap_kitti3d_catalog
     ):
         return
     from src.api.platform_dependencies import get_platform_storage
@@ -61,6 +63,22 @@ def _bootstrap_demo_assets() -> None:
             storage_prefix=settings.cityscapes_catalog_storage_prefix,
             data_root=settings.data_root,
             bundle_name="cityscapes-200",
+        )
+    if settings.bootstrap_kitti_catalog:
+        ensure_anonymized_catalog_bundle(
+            enabled=True,
+            storage=storage,
+            storage_prefix=settings.kitti_catalog_storage_prefix,
+            data_root=settings.data_root,
+            bundle_name="kitti-200",
+        )
+    if settings.bootstrap_kitti3d_catalog:
+        ensure_anonymized_catalog_bundle(
+            enabled=True,
+            storage=storage,
+            storage_prefix=settings.kitti3d_catalog_storage_prefix,
+            data_root=settings.data_root,
+            bundle_name="kitti3d-200",
         )
 
 

@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     demo_catalog_storage_prefix: str = "catalog/datasets/demo-catalog/v1/"
     bootstrap_cityscapes_catalog: bool = False
     cityscapes_catalog_storage_prefix: str = "catalog/datasets/cityscapes-200/v1/"
+    bootstrap_kitti_catalog: bool = False
+    kitti_catalog_storage_prefix: str = "catalog/datasets/kitti-200/v1/"
+    bootstrap_kitti3d_catalog: bool = False
+    kitti3d_catalog_storage_prefix: str = "catalog/datasets/kitti3d-200/v1/"
 
     # Execution hardware defaults
     model_device: str = "cpu"
