@@ -213,8 +213,8 @@ export default function ConfigureProblemPage() {
       name: dataset.title || dataset.name,
       task: dataset.task_id,
       description: `${dataset.modality} · ${dataset.ground_truth_status || "ground truth có sẵn"}`,
-      samples: dataset.demo ? "bundle demo" : "chưa chuẩn bị",
-      size: dataset.demo ? "GCS sẵn sàng" : "cần tải về",
+      sampleCount: dataset.sample_count,
+      samples: dataset.sample_count != null ? `${dataset.sample_count} ảnh` : "chưa có ảnh",
       isLocal: Boolean(dataset.demo && dataset.anonymized),
       reason: dataset.demo && dataset.anonymized
         ? null
@@ -687,7 +687,7 @@ export default function ConfigureProblemPage() {
                           </span>
                         )}
                       </div>
-                      <span className="font-mono text-slate-500">{ds.samples} mẫu · {ds.size}</span>
+                      <span className="font-mono text-slate-500">{ds.sampleCount != null ? `${ds.sampleCount} ảnh` : ds.samples}</span>
                     </div>
                   </div>
                 );
