@@ -9,6 +9,7 @@ from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from PIL import Image, UnidentifiedImageError
@@ -1524,6 +1525,25 @@ def _artifact_uri(path_value: Any) -> str | None:
         return None
     raw_value = str(path_value)
     if raw_value.startswith(("https://", "http://")):
+        # Persisted reports contain object URLs whose signatures expire.  Re-sign
+        # GCS objects on every read so old runs remain viewable in the UI.
+        settings = get_settings()
+        parsed = urlparse(raw_value)
+        bucket_prefix = f"/{settings.object_storage_bucket}/"
+        if (
+            settings.object_storage_backend != "local"
+            and parsed.netloc == "storage.googleapis.com"
+            and parsed.path.startswith(bucket_prefix)
+        ):
+            key = unquote(parsed.path[len(bucket_prefix):])
+            try:
+                from src.api.platform_dependencies import get_platform_storage
+
+                return get_platform_storage().signed_download_url(
+                    key, settings.object_storage_signed_url_ttl_seconds
+                )
+            except Exception:  # noqa: BLE001 - keep the stored URL as a fallback
+                return raw_value
         return raw_value
     candidate = Path(raw_value).expanduser().resolve()
     data_root = Path(get_settings().data_root).expanduser().resolve()
