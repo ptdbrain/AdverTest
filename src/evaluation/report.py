@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.core.types import AttackGroup
+from src.evaluation.evidence import EvidenceSnapshot, evaluate_evidence
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +114,16 @@ class RunReport:
     #: Never remove: this platform evaluates in simulation only (plan §7).
     simulation_only: bool = True
     benchmark_metrics_available: bool = True
+    evidence: EvidenceSnapshot = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Classify unproven reports rather than allowing them to overclaim."""
+        self.evidence = evaluate_evidence(self.provenance, simulation_only=self.simulation_only)
+        self.benchmark_metrics_available = self.evidence.status == "VERIFIED"
+
+    @property
+    def is_promotion_eligible(self) -> bool:
+        return self.evidence.promotion_eligible
 
     def degradation(self, cell: CellResult) -> float:
         """``D(c, s)`` as a fraction in ``[0, 1]``; 0.0 when the baseline is 0."""
@@ -159,4 +170,6 @@ class RunReport:
             "seconds": round(self.seconds, 3),
             "simulation_only": bool(self.simulation_only),
             "benchmark_metrics_available": self.benchmark_metrics_available,
+            "evidence": self.evidence.as_dict(),
+            "promotion_eligible": self.is_promotion_eligible,
         }
