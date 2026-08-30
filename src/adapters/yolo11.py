@@ -226,8 +226,11 @@ class Yolo11Adapter(ModelAdapter):
         # the model dtype while retaining a float32 numpy gradient at the
         # adapter boundary.
         model_parameter = next(backend.model.parameters(), None)
+        if model_parameter is not None and str(model_parameter.device) != str(self.device):
+            backend.model.to(self.device)
+            model_parameter = next(backend.model.parameters(), None)
         if model_parameter is not None:
-            tensor = tensor.to(dtype=model_parameter.dtype)
+            tensor = tensor.to(device=model_parameter.device, dtype=model_parameter.dtype)
         tensor.requires_grad_(requires_grad)
         model_input = _letterbox_tensor(tensor, self.image_size)
         raw = backend.model(model_input)
