@@ -25,7 +25,7 @@ services:
       - key: S3_ENDPOINT_URL
         value: https://s3.ap-southeast-1.amazonaws.com
       - key: CORS_ORIGINS
-        value: https://advertest.onrender.com,http://localhost:3000
+        value: https://c4-app-advertest-arqt.onrender.com,https://c4-app-195-advertest.is-pro.dev,http://localhost:3000
 
   - type: worker
     name: advertest-compute-worker
