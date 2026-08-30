@@ -342,7 +342,7 @@ export default function DefensePage() {
         </span>
         <div>
           <p className="font-bold">Huấn luyện cục bộ, đánh giá tập trung</p>
-          <p className="mt-0.5 max-w-3xl text-[11px] leading-5 text-blue-800">
+          <p className="mt-0.5 max-w-3xl text-[12px] leading-5 text-blue-800">
             Lệnh training dùng đúng model, dataset và attack của run đã chọn. Checkpoint phải qua validation trước khi đánh giá.
           </p>
         </div>
@@ -375,7 +375,7 @@ export default function DefensePage() {
                         onChange={(event) => setStrategy(event.target.value)}
                       />
                       <span className="block font-bold text-slate-800">{name}</span>
-                      <span className="mt-1 block text-[11px] leading-4 text-slate-500">{description}</span>
+                      <span className="mt-1 block text-[12px] leading-4 text-slate-500">{description}</span>
                     </label>
                   ))}
                 </div>
@@ -487,7 +487,7 @@ export default function DefensePage() {
               <label className={cn("flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-5 text-center", canUpload ? "cursor-pointer border-slate-300 bg-slate-50 hover:border-blue-500" : "cursor-not-allowed border-slate-200 bg-slate-100 opacity-60")}>
                 <Upload className="h-6 w-6 text-slate-500" aria-hidden="true" />
                 <span className="font-bold text-slate-700">{candidateFileName || "Tải lên checkpoint đã phòng thủ (.pt / .pth)"}</span>
-                <span className="text-[11px] text-slate-500">{canUpload ? "Checkpoint sẽ được gắn với model gốc của run." : "Cần baseline backend có task, model family và parent checkpoint."}</span>
+                <span className="text-[12px] text-slate-500">{canUpload ? "Checkpoint sẽ được gắn với model gốc của run." : "Cần baseline backend có task, model family và parent checkpoint."}</span>
                 <input aria-label="Tải lên checkpoint đã phòng thủ" type="file" accept=".pt,.pth" disabled={!canUpload || uploadState === "uploading"} className="sr-only" onChange={handleCandidateUpload} />
               </label>
 
@@ -500,15 +500,15 @@ export default function DefensePage() {
               <Button variant="primary" onClick={handleRunLockedEvaluation} disabled={!canEvaluate} icon={isEvaluating ? RefreshCw : ShieldCheck} className={cn("w-full justify-center py-2.5 text-xs font-bold", canEvaluate && "bg-emerald-700 hover:bg-emerald-800")}>
                 {isEvaluating ? "Đang tạo đánh giá phòng thủ..." : "Chạy Đánh Giá Đối Chiếu (Locked Protocol)"}
               </Button>
-              {!candidateId && <p className="text-center text-[11px] leading-4 text-slate-500">Nút chạy chỉ mở khi checkpoint đã qua validation.</p>}
+              {!candidateId && <p className="text-center text-[12px] leading-4 text-slate-500">Nút chạy chỉ mở khi checkpoint đã qua validation.</p>}
               {evaluationError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-red-800">{evaluationError}</p>}
 
               {evaluationJob ? (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">
                   <p className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" />Đã tạo evaluation job thật</p>
                   <dl className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <div><dt className="text-[11px] text-emerald-700">Job ID</dt><dd className="mt-0.5 break-all font-mono font-semibold">{evaluationJob.run_id}</dd></div>
-                    <div><dt className="text-[11px] text-emerald-700">Trạng thái</dt><dd className="mt-0.5 font-mono font-semibold">{evaluationJob.status}</dd></div>
+                    <div><dt className="text-[12px] text-emerald-700">Job ID</dt><dd className="mt-0.5 break-all font-mono font-semibold">{evaluationJob.run_id}</dd></div>
+                    <div><dt className="text-[12px] text-emerald-700">Trạng thái</dt><dd className="mt-0.5 font-mono font-semibold">{evaluationJob.status}</dd></div>
                   </dl>
                   <Button variant="secondary" size="sm" className="mt-3" onClick={refreshCanonicalComparison} disabled={comparisonLoading} icon={comparisonLoading ? RefreshCw : ShieldCheck}>
                     {comparisonLoading ? "Đang tải evidence..." : "Làm mới kết luận evidence"}

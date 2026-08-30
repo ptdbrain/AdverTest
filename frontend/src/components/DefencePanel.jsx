@@ -241,8 +241,8 @@ export default function DefencePanel({
                 <strong style={{ fontSize: "0.85rem", color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "6px" }}>
                   <span>{t("defence.compareTitle")}</span>
                 </strong>
-                <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "2px 8px", borderRadius: "4px", background: "rgba(16, 185, 129, 0.15)", color: "#10B981" }}>
-                  {t("defence.pairedBadge")}
+                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "2px 8px", borderRadius: "4px", background: canonicalReport.isEligible ? "rgba(16, 185, 129, 0.15)" : "rgba(245, 158, 11, 0.15)", color: canonicalReport.isEligible ? "#10B981" : "#D97706" }}>
+                  {canonicalReport.eligibility.status}
                 </span>
               </div>
 
