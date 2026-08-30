@@ -31,8 +31,15 @@ export function AuthProvider({ children }) {
   // Load active user session on mount
   useEffect(() => {
     let active = true;
-    const readSession = api.getAuthMe || api.getCurrentUser || (() => Promise.resolve(null));
-    Promise.all([readSession().catch(() => null), (api.getGoogleAuthConfig || (() => Promise.resolve(null)))().catch(() => null)]).then(([sessionUser, config]) => {
+    let readSession = () => Promise.resolve(null);
+    let hasSessionReader = false;
+    let readGoogleConfig = () => Promise.resolve(null);
+    try { if (typeof api.getAuthMe === "function") { readSession = api.getAuthMe; hasSessionReader = true; } } catch {}
+    if (!hasSessionReader) {
+      try { if (typeof api.getCurrentUser === "function") readSession = api.getCurrentUser; } catch {}
+    }
+    try { if (typeof api.getGoogleAuthConfig === "function") readGoogleConfig = api.getGoogleAuthConfig; } catch {}
+    Promise.all([readSession().catch(() => null), readGoogleConfig().catch(() => null)]).then(([sessionUser, config]) => {
       if (!active) return;
       setUser(sessionUser);
       if (config) setGoogleConfig(config);
