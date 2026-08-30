@@ -62,6 +62,12 @@ class TokenOut(BaseModel):
     user: UserOut
 
 
+class BrowserSessionOut(BaseModel):
+    """Browser-safe authentication response; the JWT is HttpOnly-only."""
+
+    user: UserOut
+
+
 class UserStatusUpdateIn(BaseModel):
     """Admin payload for updating user account status, role, or quotas."""
 

@@ -22,19 +22,11 @@ export function artifactUrl(pathValue) {
 
 export async function apiFetch(path, options = {}) {
   const url = `${getApiBase()}${path}`;
-  let authHeaders = {};
-  if (typeof window !== "undefined") {
-    try {
-      const token = localStorage.getItem("advertest_auth_token");
-      if (token) {
-        authHeaders["Authorization"] = `Bearer ${token}`;
-      }
-    } catch {}
-  }
-  const headers = { "Content-Type": "application/json", ...authHeaders, ...options.headers };
+  const headers = { "Content-Type": "application/json", ...options.headers };
 
   const res = await fetch(url, {
     ...options,
+    credentials: "include",
     headers,
   });
   if (!res.ok) {
@@ -74,6 +66,10 @@ export function registerUser(payloadOrEmail, passwordArg, displayNameArg) {
 
 export function getCurrentUser() {
   return apiFetch("/api/v1/auth/me");
+}
+
+export function logoutUser() {
+  return apiFetch("/api/v1/auth/logout", { method: "POST" });
 }
 
 export function getCatalogAttacks(params = {}) {

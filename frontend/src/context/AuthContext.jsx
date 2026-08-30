@@ -1,11 +1,10 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { loginGoogleSSO, getGoogleAuthConfig, getAuthMe, loginUser, registerUser } from "@/lib/api";
+import { loginGoogleSSO, getGoogleAuthConfig, getAuthMe, loginUser, logoutUser, registerUser } from "@/lib/api";
 
 const DEFAULT_AUTH_FALLBACK = {
   user: null,
-  token: null,
   isAuthenticated: false,
   role: "ENGINEER",
   isLoading: false,
@@ -25,7 +24,6 @@ const AuthContext = createContext(DEFAULT_AUTH_FALLBACK);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
   const [googleConfig, setGoogleConfig] = useState({ client_id: "", configured: false, demo_profiles: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -33,23 +31,12 @@ export function AuthProvider({ children }) {
   // Load active user session on mount
   useEffect(() => {
     let active = true;
-    try {
-      const savedToken = localStorage.getItem("advertest_auth_token");
-      const savedUser = localStorage.getItem("advertest_auth_user");
-      if (savedToken && savedUser) {
-        setToken(savedToken);
-        setUser(JSON.parse(savedUser));
-      }
-    } catch {}
-
-    getGoogleAuthConfig()
-      .then((cfg) => {
-        if (active && cfg) setGoogleConfig(cfg);
-      })
-      .catch(console.warn)
-      .finally(() => {
-        if (active) setIsLoading(false);
-      });
+    Promise.all([getAuthMe().catch(() => null), getGoogleAuthConfig().catch(() => null)]).then(([sessionUser, config]) => {
+      if (!active) return;
+      setUser(sessionUser);
+      if (config) setGoogleConfig(config);
+      setIsLoading(false);
+    });
 
     return () => {
       active = false;
@@ -57,13 +44,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const handleAuthSuccess = useCallback((payload) => {
-    if (payload?.access_token && payload?.user) {
-      setToken(payload.access_token);
+    if (payload?.user) {
       setUser(payload.user);
-      try {
-        localStorage.setItem("advertest_auth_token", payload.access_token);
-        localStorage.setItem("advertest_auth_user", JSON.stringify(payload.user));
-      } catch {}
       setIsAuthModalOpen(false);
     }
   }, []);
@@ -117,23 +99,15 @@ export function AuthProvider({ children }) {
     }
   }, [handleAuthSuccess]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    await logoutUser();
     setUser(null);
-    setToken(null);
-    try {
-      localStorage.removeItem("advertest_auth_token");
-      localStorage.removeItem("advertest_auth_user");
-    } catch {}
   }, []);
 
   const switchRole = useCallback((newRole) => {
     setUser((prev) => {
       if (!prev) return prev;
-      const updated = { ...prev, role: newRole };
-      try {
-        localStorage.setItem("advertest_auth_user", JSON.stringify(updated));
-      } catch {}
-      return updated;
+      return { ...prev, role: newRole };
     });
   }, []);
 
@@ -141,7 +115,6 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider
       value={{
         user,
-        token,
         isAuthenticated: !!user,
         role: user?.role || "ENGINEER",
         isLoading,

@@ -92,7 +92,8 @@ async def lifespan(app: FastAPI):
     attacks, models, datasets = load_attacks(), load_adapters(), load_datasets()
     from src.auth.dependencies import get_auth_service
 
-    get_auth_service().ensure_default_accounts()
+    if settings.app_env == "test" or settings.allow_dev_bootstrap_accounts:
+        get_auth_service().ensure_default_accounts()
     print(
         f"Starting {settings.app_name} in {settings.app_env} mode — "
         f"{len(attacks)} attacks, {len(models)} adapters, {len(datasets)} datasets"

@@ -25,6 +25,10 @@ class Settings(BaseSettings):
 
     # Security & Auth
     jwt_secret: str = "advertest-insecure-development-secret-key-2026"
+    auth_cookie_name: str = "advertest_session"
+    auth_cookie_secure: bool = False
+    auth_cookie_samesite: Literal["lax", "strict"] = "lax"
+    allow_dev_bootstrap_accounts: bool = False
     admin_default_password: str = "AdminPassword123!"
     google_client_id: str = ""
     google_client_secret: str | None = None

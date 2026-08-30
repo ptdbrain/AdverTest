@@ -5,45 +5,47 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from src.auth.contracts import GoogleAuthIn, LoginIn, TokenOut, UserCreateIn, UserOut
+from src.auth.contracts import BrowserSessionOut, GoogleAuthIn, LoginIn, TokenOut, UserCreateIn, UserOut
 from src.auth.dependencies import get_auth_service, get_current_user
 from src.auth.service import AuthService
+from src.config import get_settings
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-@router.post("/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
+def _set_browser_session(response: Response, token: str) -> None:
+    settings = get_settings()
+    response.set_cookie(key=settings.auth_cookie_name, value=token, httponly=True, secure=settings.auth_cookie_secure, samesite=settings.auth_cookie_samesite, max_age=24 * 3600)
+
+
+@router.post("/register", response_model=BrowserSessionOut, status_code=status.HTTP_201_CREATED)
 async def register_user(
     payload: UserCreateIn,
+    response: Response,
     auth_service: AuthService = Depends(get_auth_service),
-) -> TokenOut:
+    ) -> BrowserSessionOut:
     """Register a new user account with default RESEARCHER privileges."""
     try:
         user_out, token = auth_service.register(payload)
-        return TokenOut(
-            access_token=token,
-            expires_in_seconds=24 * 3600,
-            user=user_out,
-        )
+        _set_browser_session(response, token)
+        return BrowserSessionOut(user=user_out)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
-@router.post("/login", response_model=TokenOut)
+@router.post("/login", response_model=BrowserSessionOut)
 async def login_user(
     payload: LoginIn,
+    response: Response,
     auth_service: AuthService = Depends(get_auth_service),
-) -> TokenOut:
+) -> BrowserSessionOut:
     """Authenticate user credentials and receive a JWT Bearer access token."""
     try:
         user_out, token = auth_service.authenticate(payload.email, payload.password)
-        return TokenOut(
-            access_token=token,
-            expires_in_seconds=24 * 3600,
-            user=user_out,
-        )
+        _set_browser_session(response, token)
+        return BrowserSessionOut(user=user_out)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
@@ -96,3 +98,12 @@ async def get_my_profile(
 ) -> UserOut:
     """Get the authenticated user's profile and active quotas."""
     return current_user
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+async def logout_user() -> Response:
+    """End the browser session by expiring its HttpOnly cookie."""
+    settings = get_settings()
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.delete_cookie(key=settings.auth_cookie_name, httponly=True, secure=settings.auth_cookie_secure, samesite=settings.auth_cookie_samesite)
+    return response

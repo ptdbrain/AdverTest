@@ -29,12 +29,10 @@ def test_user_registration_and_login_flow(client) -> None:
     )
     assert reg_res.status_code == 201
     reg_data = reg_res.json()
-    assert "access_token" in reg_data
     assert reg_data["user"]["email"] == unique_email
-    token = reg_data["access_token"]
 
-    # 2. Introspect /auth/me with Bearer token
-    me_res = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    # 2. Introspect /auth/me through the persistent browser cookie.
+    me_res = client.get("/api/v1/auth/me")
     assert me_res.status_code == 200
     assert me_res.json()["email"] == unique_email
 
@@ -44,7 +42,7 @@ def test_user_registration_and_login_flow(client) -> None:
         json={"email": unique_email, "password": "Password123!"},
     )
     assert login_res.status_code == 200
-    assert "access_token" in login_res.json()
+    assert login_res.json()["user"]["email"] == unique_email
 
 
 def test_duplicate_registration_rejected(client) -> None:

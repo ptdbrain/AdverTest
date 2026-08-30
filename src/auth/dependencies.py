@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import functools
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 
 from src.api.dependencies import get_store
 from src.api.platform_dependencies import get_platform_database
@@ -24,13 +24,13 @@ def get_auth_service() -> AuthService | PostgresAuthService:
 
 async def get_current_user_optional(
     authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Cookie(default=None, alias="advertest_session"),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> UserOut | None:
-    """Extract current user if Authorization header is provided, or return None."""
-    if not authorization or not authorization.startswith("Bearer "):
+    """Resolve a CLI Bearer token or browser-only HttpOnly session cookie."""
+    token = authorization.removeprefix("Bearer ").strip() if authorization and authorization.startswith("Bearer ") else session_token
+    if not token:
         return None
-
-    token = authorization.removeprefix("Bearer ").strip()
     claims = decode_access_token(token)
     if not claims or "sub" not in claims:
         return None
@@ -40,10 +40,11 @@ async def get_current_user_optional(
 
 async def get_current_user(
     authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Cookie(default=None, alias="advertest_session"),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> UserOut:
     """Require valid Bearer token and return active user profile."""
-    user = await get_current_user_optional(authorization, auth_service)
+    user = await get_current_user_optional(authorization, session_token, auth_service)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
