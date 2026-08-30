@@ -101,11 +101,57 @@ def ensure_demo_catalog(
     return destination
 
 
+def ensure_anonymized_catalog_bundle(
+    *, enabled: bool, storage: ArtifactStorage, storage_prefix: str, data_root: str, bundle_name: str
+) -> Path | None:
+    """Materialize a reviewed anonymised catalog bundle on a disposable worker.
+
+    Unlike ``ensure_demo_catalog``, this is for a real, versioned benchmark
+    bundle and verifies the dataset descriptor before exposing it to a loader.
+    """
+    if not enabled:
+        return None
+    prefix = storage_prefix.rstrip("/") + "/"
+    destination = Path(data_root).expanduser().resolve() / "catalog" / bundle_name
+    if _is_completed_anonymized_bundle(destination):
+        return destination
+    if destination.exists():
+        raise RuntimeError(f"catalog destination is invalid: {destination}")
+    keys = storage.list_keys(prefix)
+    if not keys:
+        raise RuntimeError(f"no catalog objects found at storage prefix {prefix!r}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="advertest-catalog-bundle-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / bundle_name
+        for key in keys:
+            relative = key.removeprefix(prefix)
+            if not relative or relative.startswith("/") or ".." in Path(relative).parts:
+                raise RuntimeError(f"unsafe catalog object key: {key!r}")
+            output = staged / relative
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(storage.get_bytes(key))
+        if not _is_completed_anonymized_bundle(staged):
+            raise RuntimeError("catalog bundle lacks a completed anonymization descriptor or manifest")
+        os.replace(staged, destination)
+    return destination
+
+
 def _is_anonymized_kitti(root: Path) -> bool:
     descriptor, manifest = root / "dataset.json", root / "manifest.jsonl"
     if not descriptor.is_file() or not manifest.is_file():
         return False
     try:
         return bool(json.loads(descriptor.read_text(encoding="utf-8")).get("anonymized"))
+    except (OSError, json.JSONDecodeError):
+        return False
+
+
+def _is_completed_anonymized_bundle(root: Path) -> bool:
+    descriptor, manifest = root / "dataset.json", root / "manifest.jsonl"
+    if not descriptor.is_file() or not manifest.is_file() or not manifest.read_text(encoding="utf-8").strip():
+        return False
+    try:
+        value = json.loads(descriptor.read_text(encoding="utf-8"))
+        return bool(value.get("anonymized")) and value.get("status") == "complete"
     except (OSError, json.JSONDecodeError):
         return False

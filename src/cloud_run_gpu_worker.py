@@ -14,14 +14,24 @@ from fastapi import FastAPI, HTTPException
 from fastapi import Request as FastAPIRequest
 
 from src.config import get_settings
-from src.demo_bootstrap import ensure_demo_catalog, ensure_demo_checkpoint, ensure_demo_kitti
+from src.demo_bootstrap import (
+    ensure_anonymized_catalog_bundle,
+    ensure_demo_catalog,
+    ensure_demo_checkpoint,
+    ensure_demo_kitti,
+)
 from src.pipeline.runner import RunConfig, TestRunner
 
 
 def _bootstrap_demo_assets() -> None:
     """Prepare the disposable Cloud Run filesystem once per cold start."""
     settings = get_settings()
-    if not (settings.bootstrap_demo_model or settings.bootstrap_demo_kitti or settings.bootstrap_demo_catalog):
+    if not (
+        settings.bootstrap_demo_model
+        or settings.bootstrap_demo_kitti
+        or settings.bootstrap_demo_catalog
+        or settings.bootstrap_cityscapes_catalog
+    ):
         return
     from src.api.platform_dependencies import get_platform_storage
 
@@ -41,6 +51,14 @@ def _bootstrap_demo_assets() -> None:
         ensure_demo_catalog(enabled=True, storage=storage,
                             storage_prefix=settings.demo_catalog_storage_prefix,
                             data_root=settings.data_root)
+    if settings.bootstrap_cityscapes_catalog:
+        ensure_anonymized_catalog_bundle(
+            enabled=True,
+            storage=storage,
+            storage_prefix=settings.cityscapes_catalog_storage_prefix,
+            data_root=settings.data_root,
+            bundle_name="cityscapes-200",
+        )
 
 
 class ControlPlaneClient:

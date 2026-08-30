@@ -20,7 +20,7 @@ def _demo_dataset_params(name: str) -> dict[str, object]:
             "root": f"{root}/bdd100k_semantic", "split": "train", "anonymization_manifest": "manifest.jsonl",
         },
         "cityscapes_segmentation": {
-            "root": f"{root}/cityscapes_segmentation", "split": "train", "anonymization_manifest": "manifest.jsonl",
+            "root": "/app/data/catalog/cityscapes-200", "split": "val", "anonymization_manifest": "manifest.jsonl",
         },
         "folder_dataset": {"root": f"{root}/folder_dataset", "input_format": "kitti"},
         "generated_dataset": {"root": f"{root}/generated_dataset"},
