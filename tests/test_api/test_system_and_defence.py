@@ -25,10 +25,10 @@ def test_system_runtime_specs_endpoint():
     assert data["recommended_precision"] in ("FP16", "FP32")
 
 
-def test_download_zip_endpoint_404_for_unknown_run():
-    """Verify GET /api/v1/runs/{run_id}/download-zip returns 404 on missing run."""
+def test_download_zip_endpoint_requires_authentication():
+    """Artifact routes do not disclose run existence to anonymous callers."""
     response = client.get("/api/v1/runs/non-existent-run-id-999/download-zip")
-    assert response.status_code == 404
+    assert response.status_code == 401
 
 
 def test_standalone_train_defence_script_execution():
@@ -60,21 +60,12 @@ def test_standalone_train_defence_script_execution():
     assert "DEFENCE TRAINING COMPLETED SUCCESSFULLY!" in result.stdout
 
 
-def test_live_inference_endpoint():
-    """Verify POST /api/v1/runs/live-inference executes model inference and returns real detections."""
+def test_live_inference_endpoint_requires_project_authentication():
+    """Visual inference must not create unscoped public artifacts."""
     response = client.post(
         "/api/v1/runs/live-inference",
         json={
-            "sample_id": "000000",
-            "attack_type": "depth_fog",
-            "severity": 3,
+            "sample_id": "000000", "attack_type": "depth_fog", "severity": 3, "run_id": "public-run"
         },
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert "clean_detections" in data
-    assert "attacked_detections" in data
-    assert "inference_time_clean_ms" in data
-    assert "metrics" in data
-    assert data["sample_id"] == "000000"
-    assert len(data["clean_detections"]) >= 1
+    assert response.status_code == 401

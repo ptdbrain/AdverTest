@@ -1,23 +1,31 @@
 """Live Model Inference & Dynamic Adversarial Evaluation Pipeline.
 
-Executes actual PyTorch / Ultralytics YOLO model inference on dataset samples,
-applies single or chained multi-attack transformations, and dynamically calculates
-100% of mathematical metrics (PSNR, SSIM, L2 norm, L-infinity, mAP@0.5, mIoU).
+Executes visual inference on one image and preserves project-scoped evidence.
+
+This endpoint is deliberately not a dataset benchmark: it reports detections
+and image perturbation measurements, never AP/mAP/mIoU/NDS or promotion data.
 """
 
 from __future__ import annotations
 
+import io
+import json
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
 
 import cv2
-import imagecorruptions
 import numpy as np
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from PIL import Image, ImageEnhance
 from pydantic import BaseModel, ConfigDict, Field
 from ultralytics import YOLO
+
+from src.api.platform_dependencies import get_platform_artifacts, require_project_member
+from src.attacks.corruption._base import corrupt as imagecorruptions_corrupt
+from src.core.platform_contracts import ArtifactKind, ArtifactState
+from src.storage.service import ArtifactService
 
 router = APIRouter(prefix="/runs/live-inference", tags=["Live Model Inference"])
 
@@ -30,6 +38,7 @@ class LiveInferenceRequest(BaseModel):
         description="Attack type or comma-separated recipe (depth_rain, snow, depth_fog, pgd, motion_blur, gaussian_noise)",
     )
     severity: int = Field(default=3, ge=1, le=5, description="Severity ladder 1..5")
+    run_id: str = Field(min_length=1, max_length=128, description="Existing visual or benchmark run namespace")
 
 
 class DetectionItem(BaseModel):
@@ -46,17 +55,19 @@ class PredictionStat(BaseModel):
     conf: float
 
 
-class MetricSummary(BaseModel):
+class DetectionSummary(BaseModel):
     bbox_count: int = Field(alias="bboxCount")
-    conf_avg: float = Field(alias="confAvg")
-    map50: float
-    miou: float
+    conf_avg: float | None = Field(alias="confAvg")
     top: list[PredictionStat]
 
     model_config = ConfigDict(populate_by_name=True)
 
 
 class LiveInferenceResponse(BaseModel):
+    project_id: str
+    run_id: str
+    visual_only: bool = True
+    evidence_status: str = "NOT_ELIGIBLE"
     sample_id: str
     filename: str
     resolution: str
@@ -70,13 +81,12 @@ class LiveInferenceResponse(BaseModel):
     perturbation_image_url: str
     clean_detections: list[DetectionItem]
     attacked_detections: list[DetectionItem]
-    clean_stats: MetricSummary
-    atk_stats: MetricSummary
+    clean_stats: DetectionSummary
+    atk_stats: DetectionSummary
     l2_norm: float
     linf: str
     psnr: str
     ssim: str
-    impact_pct: float
     observations: list[str]
     metrics: dict[str, Any]
 
@@ -126,6 +136,37 @@ def _compute_ssim(img1: np.ndarray, img2: np.ndarray) -> float:
     return float(np.clip(ssim_map.mean(), 0.0, 1.0))
 
 
+def _image_bytes(image: Image.Image, image_format: str = "PNG") -> bytes:
+    output = io.BytesIO()
+    image.save(output, format=image_format)
+    return output.getvalue()
+
+
+def _store_visual_artifact(
+    artifacts: ArtifactService,
+    *,
+    project_id: str,
+    run_id: str,
+    actor_id: str,
+    filename: str,
+    content: bytes,
+    mime_type: str,
+    kind: ArtifactKind,
+) -> str:
+    artifact = artifacts.create_internal(
+        project_id=project_id,
+        run_id=run_id,
+        actor_id=actor_id,
+        kind=kind,
+        original_filename=filename,
+        mime_type=mime_type,
+        content=content,
+        state=ArtifactState.READY,
+        metadata={"visual_only": True},
+    )
+    return f"/api/v1/projects/{project_id}/runs/{run_id}/artifacts/{artifact['id']}/content"
+
+
 def _apply_realistic_rain(img_arr: np.ndarray, severity: int = 3) -> np.ndarray:
     """Generate authentic depth rain streaks and atmospheric contrast attenuation."""
     h, w, c = img_arr.shape
@@ -150,8 +191,18 @@ def _apply_realistic_rain(img_arr: np.ndarray, severity: int = 3) -> np.ndarray:
 
 
 @router.post("", response_model=LiveInferenceResponse)
-async def run_live_inference(payload: LiveInferenceRequest) -> LiveInferenceResponse:
-    """Run real YOLO model inference with dynamic multi-attack rendering and mathematical metrics."""
+async def run_live_inference(
+    payload: LiveInferenceRequest,
+    project_id: str,
+    actor_id: str = Depends(require_project_member),
+    artifacts: ArtifactService = Depends(get_platform_artifacts),
+) -> LiveInferenceResponse:
+    """Run image-level visual inference without making a benchmark claim."""
+    if imagecorruptions_corrupt is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Image corruption runtime is unavailable; live visual corruption cannot be executed.",
+        )
     sample_stem = payload.sample_id.replace(".png", "")
     src_clean = Path(f"frontend/public/samples/kitti/{sample_stem}_clean.png")
     if not src_clean.exists():
@@ -202,25 +253,21 @@ async def run_live_inference(payload: LiveInferenceRequest) -> LiveInferenceResp
         if "rain" in atk:
             arr_current = _apply_realistic_rain(arr_current, severity=sev)
         elif "snow" in atk:
-            arr_current = imagecorruptions.corrupt(arr_current, corruption_name="snow", severity=sev)
+            arr_current = imagecorruptions_corrupt(arr_current, corruption_name="snow", severity=sev)
         elif "frost" in atk:
-            arr_current = imagecorruptions.corrupt(arr_current, corruption_name="frost", severity=sev)
+            arr_current = imagecorruptions_corrupt(arr_current, corruption_name="frost", severity=sev)
         elif "fog" in atk or "depth_fog" in atk:
-            arr_current = imagecorruptions.corrupt(arr_current, corruption_name="fog", severity=sev)
+            arr_current = imagecorruptions_corrupt(arr_current, corruption_name="fog", severity=sev)
         elif "blur" in atk or "motion" in atk:
-            arr_current = imagecorruptions.corrupt(arr_current, corruption_name="motion_blur", severity=sev)
+            arr_current = imagecorruptions_corrupt(arr_current, corruption_name="motion_blur", severity=sev)
         elif "noise" in atk or "pgd" in atk or "fgsm" in atk:
-            arr_current = imagecorruptions.corrupt(arr_current, corruption_name="gaussian_noise", severity=sev)
+            arr_current = imagecorruptions_corrupt(arr_current, corruption_name="gaussian_noise", severity=sev)
         else:
-            arr_current = imagecorruptions.corrupt(arr_current, corruption_name="fog", severity=sev)
+            arr_current = imagecorruptions_corrupt(arr_current, corruption_name="fog", severity=sev)
 
-    # 4. Save dynamic visual assets
-    dynamic_dir = Path("frontend/public/samples/kitti")
-    dynamic_dir.mkdir(parents=True, exist_ok=True)
-
-    timestamp = int(time.time())
-    dynamic_atk_path = dynamic_dir / f"dynamic_{sample_stem}.png"
-    Image.fromarray(arr_current).save(dynamic_atk_path)
+    # 4. Compute visual differences. The attacked image is temporary only while
+    # inference runs; persistent results go through project/run artifact storage.
+    attacked_image = Image.fromarray(arr_current)
 
     # Compute difference and metrics
     diff = np.abs(arr_current.astype(np.float32) - arr_clean.astype(np.float32))
@@ -228,17 +275,19 @@ async def run_live_inference(payload: LiveInferenceRequest) -> LiveInferenceResp
     diff_norm = np.clip((diff_gray / (diff_gray.max() + 1e-5)) * 255 * 2.2, 0, 255).astype(np.uint8)
     diff_colored = cv2.applyColorMap(diff_norm, cv2.COLORMAP_INFERNO)
     diff_img = Image.fromarray(cv2.cvtColor(diff_colored, cv2.COLOR_BGR2RGB))
-    diff_img.save(dynamic_dir / f"dynamic_{sample_stem}_diff.png")
 
     perturbation = arr_current.astype(np.float32) - arr_clean.astype(np.float32)
     pert_vis = ((perturbation - perturbation.min()) / (perturbation.max() - perturbation.min() + 1e-5) * 255).astype(
         np.uint8
     )
-    Image.fromarray(pert_vis).save(dynamic_dir / f"dynamic_{sample_stem}_perturbation.png")
+    perturbation_image = Image.fromarray(pert_vis)
 
     # 5. Real Attacked Inference on All 80 Classes
     t1 = time.perf_counter()
-    res_atk = model(dynamic_atk_path, verbose=False)[0]
+    with tempfile.TemporaryDirectory(prefix="advertest-live-") as temporary_directory:
+        dynamic_atk_path = Path(temporary_directory) / "attacked.png"
+        attacked_image.save(dynamic_atk_path)
+        res_atk = model(dynamic_atk_path, verbose=False)[0]
     attacked_duration_ms = (time.perf_counter() - t1) * 1000
 
     attacked_detections: list[DetectionItem] = []
@@ -260,43 +309,54 @@ async def run_live_inference(payload: LiveInferenceRequest) -> LiveInferenceResp
                 )
             )
 
-    # 6. Compute 100% Real Mathematical Metrics
+    # 6. Compute image-level values and prediction deltas, not benchmark metrics.
     clean_count = len(clean_detections)
     attacked_count = len(attacked_detections)
-    missed_objects = max(0, clean_count - attacked_count)
-    false_positives = sum(1 for d in attacked_detections if d.status == "false_positive")
-
-    avg_clean_conf = round(float(np.mean([d.conf for d in clean_detections])), 2) if clean_detections else 0.90
-    avg_atk_conf = round(float(np.mean([d.conf for d in attacked_detections])), 2) if attacked_detections else 0.00
-
-    clean_map50 = round(float(avg_clean_conf * 0.89), 2)
-    atk_map50 = round(float(avg_atk_conf * 0.72 * (attacked_count / max(1, clean_count))), 2)
-
-    clean_miou = round(float(avg_clean_conf * 0.78), 2)
-    atk_miou = round(float(avg_atk_conf * 0.65 * (attacked_count / max(1, clean_count))), 2)
+    avg_clean_conf = round(float(np.mean([d.conf for d in clean_detections])), 2) if clean_detections else None
+    avg_atk_conf = round(float(np.mean([d.conf for d in attacked_detections])), 2) if attacked_detections else None
 
     top_clean = [PredictionStat(name=d.label.lower(), conf=d.conf) for d in clean_detections[:3]]
     top_atk = [PredictionStat(name=d.label.lower(), conf=d.conf) for d in attacked_detections[:3]]
-    if not top_atk:
-        top_atk = [PredictionStat(name="background", conf=0.15)]
 
     l2_norm_val = round(float(np.linalg.norm(diff) / np.sqrt(diff.size)), 2)
     linf_val = f"{float(np.max(diff) / 255.0):.4f}"
     psnr_val = f"{float(cv2.PSNR(arr_clean, arr_current)):.2f} dB"
     ssim_val = f"{_compute_ssim(arr_clean, arr_current):.3f}"
 
-    conf_drop_pct = max(0.0, (avg_clean_conf - avg_atk_conf) / (avg_clean_conf + 1e-5) * 100)
-    impact_pct = round(float(min(99.0, (missed_objects / max(1, clean_count)) * 60 + (conf_drop_pct * 0.4))), 1)
-
     attack_vector_str = " + ".join(a.replace("_", " ").title() for a in raw_attacks) + f" (Cấp {payload.severity})"
 
     observations = [
-        f"Tác động [{attack_vector_str}] đã làm giảm số lượng đối tượng phát hiện từ {clean_count} -> {attacked_count}.",
-        f"Độ tin cậy trung bình giảm {conf_drop_pct:.1f}% và mAP@0.5 sụt giảm từ {clean_map50} -> {atk_map50}.",
-        f"Chỉ số chất lượng ảnh PSNR đạt {psnr_val}, SSIM đạt {ssim_val} phản ánh độ biến dạng cấu trúc thị giác.",
+        "Visual inference only: this single image does not establish benchmark accuracy or robustness.",
+        f"[{attack_vector_str}] changed detections from {clean_count} to {attacked_count}.",
+        f"PSNR {psnr_val} and SSIM {ssim_val} describe image perturbation, not model accuracy.",
     ]
 
+    clean_url = _store_visual_artifact(
+        artifacts, project_id=project_id, run_id=payload.run_id, actor_id=actor_id,
+        filename=f"{sample_stem}_clean.png", content=_image_bytes(img_pil), mime_type="image/png", kind=ArtifactKind.EVIDENCE,
+    )
+    attacked_url = _store_visual_artifact(
+        artifacts, project_id=project_id, run_id=payload.run_id, actor_id=actor_id,
+        filename=f"{sample_stem}_attacked.png", content=_image_bytes(attacked_image), mime_type="image/png", kind=ArtifactKind.EVIDENCE,
+    )
+    diff_url = _store_visual_artifact(
+        artifacts, project_id=project_id, run_id=payload.run_id, actor_id=actor_id,
+        filename=f"{sample_stem}_diff.png", content=_image_bytes(diff_img), mime_type="image/png", kind=ArtifactKind.EVIDENCE,
+    )
+    perturbation_url = _store_visual_artifact(
+        artifacts, project_id=project_id, run_id=payload.run_id, actor_id=actor_id,
+        filename=f"{sample_stem}_perturbation.png", content=_image_bytes(perturbation_image), mime_type="image/png", kind=ArtifactKind.EVIDENCE,
+    )
+    _store_visual_artifact(
+        artifacts, project_id=project_id, run_id=payload.run_id, actor_id=actor_id,
+        filename=f"{sample_stem}_predictions.json",
+        content=json.dumps({"clean": [item.model_dump() for item in clean_detections], "attacked": [item.model_dump() for item in attacked_detections]}).encode(),
+        mime_type="application/json", kind=ArtifactKind.PREDICTION,
+    )
+
     return LiveInferenceResponse(
+        project_id=project_id,
+        run_id=payload.run_id,
         sample_id=sample_stem,
         filename=f"{sample_stem}.png (KITTI Dataset)",
         resolution=f"{w} × {h} px",
@@ -304,30 +364,28 @@ async def run_live_inference(payload: LiveInferenceRequest) -> LiveInferenceResp
         total_model_classes=len(model.names),
         inference_time_clean_ms=round(clean_duration_ms, 2),
         inference_time_attacked_ms=round(attacked_duration_ms, 2),
-        clean_image_url=f"/samples/kitti/{sample_stem}_clean.png",
-        attacked_image_url=f"/samples/kitti/dynamic_{sample_stem}.png?t={timestamp}",
-        diff_image_url=f"/samples/kitti/dynamic_{sample_stem}_diff.png?t={timestamp}",
-        perturbation_image_url=f"/samples/kitti/dynamic_{sample_stem}_perturbation.png?t={timestamp}",
+        clean_image_url=clean_url,
+        attacked_image_url=attacked_url,
+        diff_image_url=diff_url,
+        perturbation_image_url=perturbation_url,
         clean_detections=clean_detections,
         attacked_detections=attacked_detections,
-        clean_stats=MetricSummary(
-            bboxCount=clean_count, confAvg=avg_clean_conf, map50=clean_map50, miou=clean_miou, top=top_clean
-        ),
-        atk_stats=MetricSummary(
-            bboxCount=attacked_count, confAvg=avg_atk_conf, map50=atk_map50, miou=atk_miou, top=top_atk
-        ),
+        clean_stats=DetectionSummary(bboxCount=clean_count, confAvg=avg_clean_conf, top=top_clean),
+        atk_stats=DetectionSummary(bboxCount=attacked_count, confAvg=avg_atk_conf, top=top_atk),
         l2_norm=l2_norm_val,
         linf=linf_val,
         psnr=psnr_val,
         ssim=ssim_val,
-        impact_pct=impact_pct,
         observations=observations,
         metrics={
             "cleanCount": clean_count,
             "attackedCount": attacked_count,
-            "missedObjects": missed_objects,
-            "falsePositives": false_positives,
-            "confidenceDrop": f"{conf_drop_pct:.1f}%",
+            "detectionCountDelta": attacked_count - clean_count,
+            "meanConfidenceDelta": (
+                round(avg_atk_conf - avg_clean_conf, 4)
+                if avg_clean_conf is not None and avg_atk_conf is not None
+                else None
+            ),
             "attackVector": attack_vector_str,
         },
     )
