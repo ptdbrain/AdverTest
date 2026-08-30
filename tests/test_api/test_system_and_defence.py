@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 
@@ -31,8 +32,8 @@ def test_download_zip_endpoint_requires_authentication():
     assert response.status_code == 401
 
 
-def test_standalone_train_defence_script_execution():
-    """Verify scripts/train_defence.py executes properly and produces a defended checkpoint."""
+def test_standalone_train_defence_script_refuses_to_fake_a_defended_checkpoint():
+    """A missing registered trainer must not manufacture a .pt file or AP evidence."""
     cmd = [
         sys.executable,
         "scripts/train_defence.py",
@@ -56,8 +57,30 @@ def test_standalone_train_defence_script_execution():
         "cpu",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
+    assert result.returncode == 2
+    assert "TRAINER_NOT_AVAILABLE" in result.stdout
+
+
+def test_standalone_train_defence_demo_is_explicitly_non_scientific(tmp_path):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/train_defence.py",
+            "--model",
+            "tests/fixtures/dummy_model.pt",
+            "--output-dir",
+            str(tmp_path),
+            "--demo",
+        ],
+        capture_output=True,
+        text=True,
+    )
     assert result.returncode == 0
-    assert "DEFENCE TRAINING COMPLETED SUCCESSFULLY!" in result.stdout
+    payload = json.loads(result.stdout.splitlines()[-1])
+    assert payload["source_kind"] == "demo"
+    assert payload["scientific_evidence"] is False
+    assert "demo_display_estimates" in payload
+    assert not list(tmp_path.glob("*.pt"))
 
 
 def test_live_inference_endpoint_requires_project_authentication():
