@@ -14,8 +14,8 @@ from src.analytics.run_analytics import (
     compute_run_severity_breakdown,
     compute_run_summary,
 )
-from src.api.dependencies import get_store
 from src.api.defense_scope import require_scoped_record
+from src.api.dependencies import get_store
 from src.api.jobs import SqliteRunStore
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])

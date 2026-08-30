@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
 
+from src.api.defense_scope import require_scoped_record, require_scoped_run, require_scoped_workflow_job
 from src.api.dependencies import (
     get_runner,
     get_store,
@@ -16,8 +17,6 @@ from src.api.dependencies import (
     get_worker,
     get_workflow_store,
 )
-from src.api.defense_scope import require_scoped_record, require_scoped_run, require_scoped_workflow_job
-from src.api.platform_dependencies import require_project_member
 from src.api.helpers import (
     is_failure_case,
     job_out,
@@ -26,6 +25,7 @@ from src.api.helpers import (
     resolve_run_config,
 )
 from src.api.jobs import LocalRunWorker, SqliteRunStore
+from src.api.platform_dependencies import require_project_member
 from src.api.schemas import (
     ClosedLoopAdvanceIn,
     ClosedLoopSnapshotOut,
@@ -44,8 +44,8 @@ from src.api.training_service import TrainingJobService
 from src.api.workflow_store import WorkflowJobStore
 from src.config import get_settings
 from src.core.hashing import stable_digest
-from src.evaluation.export import export_comparison
 from src.evaluation.defense_report import build_defense_report
+from src.evaluation.export import export_comparison
 from src.models import scan_model_artifacts
 from src.pipeline.runner import RunConfig, TestRunner
 from src.training.contracts import DefenseProfile, TrainingRunConfig

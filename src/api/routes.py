@@ -58,7 +58,6 @@ from src.attacks.recipes import RecipeBuilder
 from src.config import get_settings
 from src.core.hashing import stable_digest
 from src.datasets import load_datasets
-from src.evaluation.export import export_comparison
 from src.models import list_known_versions, scan_base_checkpoints, scan_model_artifacts
 from src.models.families import FAMILIES, adapter_request, approved_model_config
 from src.models.versions import ModelVersion
@@ -372,43 +371,10 @@ async def approve_retraining_backlog(backlog_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
 
 
-@router.post("/model-comparisons", status_code=201, include_in_schema=False)
+@router.post("/_deprecated/model-comparisons", status_code=410, include_in_schema=False)
 async def create_model_comparison(body: ModelComparisonIn) -> dict[str, Any]:
-    baseline, candidate = _require_run(body.baseline_run_id), _require_run(body.candidate_run_id)
-    if baseline["report"] is None or candidate["report"] is None:
-        raise HTTPException(status_code=409, detail="both runs must complete before comparison")
-    left, right = baseline["report"], candidate["report"]
-    baseline_signature = _comparison_signature(left)
-    candidate_signature = _comparison_signature(right)
-    paired = baseline_signature == candidate_signature
-    comparison_id = f"comparison-{stable_digest(body.model_dump(mode='json'), length=20)}"
-    metric_deltas = _comparison_metric_deltas(left, right) if paired else {}
-    baseline_attack_score = _mean_attack_score(left)
-    candidate_attack_score = _mean_attack_score(right)
-    lost_score = left["ap_clean"] - baseline_attack_score
-    recovered_score = candidate_attack_score - baseline_attack_score
-    recovery_ratio = None if not paired or lost_score <= 0 else recovered_score / lost_score
-    payload = {
-        "comparison_id": comparison_id,
-        **body.model_dump(mode="json"),
-        "paired": paired,
-        "baseline_signature": baseline_signature,
-        "candidate_signature": candidate_signature,
-        "incompatibilities": []
-        if paired
-        else [key for key in baseline_signature if baseline_signature.get(key) != candidate_signature.get(key)],
-        "metric_deltas": metric_deltas,
-        "recovery_report": {
-            "baseline_clean": left["ap_clean"],
-            "candidate_clean": right["ap_clean"],
-            "recovery_rate": {
-                "ratio_value": recovery_ratio,
-                "percent_value": None if recovery_ratio is None else recovery_ratio * 100,
-                "unit": "percent",
-            },
-        },
-    }
-    return _store.put_record("model_comparison", comparison_id, payload)
+    del body
+    raise HTTPException(status_code=410, detail="PROJECT_SCOPED_ROUTE_REQUIRED")
 
 
 def _comparison_metric_deltas(left: dict[str, Any], right: dict[str, Any]) -> dict[str, dict[str, float | str]]:
@@ -450,57 +416,34 @@ def _metric_value(report: dict[str, Any], metric: str, *, attacked: bool) -> flo
     return float(values.get(metric, cells[-1].get("ap", 0.0)))
 
 
-@router.get("/model-comparisons/{comparison_id}", include_in_schema=False)
+@router.get("/_deprecated/model-comparisons/{comparison_id}", include_in_schema=False)
 async def get_model_comparison(comparison_id: str) -> dict[str, Any]:
-    record = _store.get_record("model_comparison", comparison_id)
-    if record is None:
-        raise HTTPException(status_code=404, detail=f"unknown comparison {comparison_id!r}")
-    return record
+    del comparison_id
+    raise HTTPException(status_code=410, detail="PROJECT_SCOPED_ROUTE_REQUIRED")
 
 
-@router.get("/model-comparisons/{comparison_id}/export", include_in_schema=False)
+@router.get("/_deprecated/model-comparisons/{comparison_id}/export", include_in_schema=False)
 async def export_model_comparison(comparison_id: str, format: str = Query(default="json")) -> Response:
-    comparison = await get_model_comparison(comparison_id)
-    try:
-        artifact = export_comparison(comparison, format)  # type: ignore[arg-type]
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return Response(
-        artifact.content,
-        media_type=artifact.media_type,
-        headers={
-            "Content-Disposition": f'attachment; filename="{artifact.filename}"',
-            "X-Content-SHA256": artifact.sha256,
-        },
-    )
+    del comparison_id, format
+    raise HTTPException(status_code=410, detail="PROJECT_SCOPED_ROUTE_REQUIRED")
 
 
-@router.get("/model-comparisons/{comparison_id}/metric-deltas", include_in_schema=False)
+@router.get("/_deprecated/model-comparisons/{comparison_id}/metric-deltas", include_in_schema=False)
 async def get_model_comparison_metric_deltas(comparison_id: str) -> dict[str, Any]:
-    return (await get_model_comparison(comparison_id)).get("metric_deltas", {})
+    del comparison_id
+    raise HTTPException(status_code=410, detail="PROJECT_SCOPED_ROUTE_REQUIRED")
 
 
-@router.get("/model-comparisons/{comparison_id}/recovery-report", include_in_schema=False)
+@router.get("/_deprecated/model-comparisons/{comparison_id}/recovery-report", include_in_schema=False)
 async def get_model_comparison_recovery_report(comparison_id: str) -> dict[str, Any]:
-    return (await get_model_comparison(comparison_id)).get("recovery_report", {})
+    del comparison_id
+    raise HTTPException(status_code=410, detail="PROJECT_SCOPED_ROUTE_REQUIRED")
 
 
-@router.get("/model-comparisons/{comparison_id}/failures", include_in_schema=False)
+@router.get("/_deprecated/model-comparisons/{comparison_id}/failures", include_in_schema=False)
 async def get_model_comparison_failures(comparison_id: str) -> dict[str, Any]:
-    """Return failure deltas between baseline and candidate runs in a comparison."""
-    comp = await get_model_comparison(comparison_id)
-    baseline_id = comp.get("baseline_run_id")
-    candidate_id = comp.get("candidate_run_id")
-    base_run = _store.get(baseline_id) if baseline_id else None
-    cand_run = _store.get(candidate_id) if candidate_id else None
-    base_failures = (base_run.get("report") or {}).get("worst_cases", []) if base_run else []
-    cand_failures = (cand_run.get("report") or {}).get("worst_cases", []) if cand_run else []
-    return {
-        "comparison_id": comparison_id,
-        "baseline_failures": base_failures,
-        "candidate_failures": cand_failures,
-        "recovered_count": max(0, len(base_failures) - len(cand_failures)),
-    }
+    del comparison_id
+    raise HTTPException(status_code=410, detail="PROJECT_SCOPED_ROUTE_REQUIRED")
 
 
 @router.post("/attack-recipes", status_code=201)
