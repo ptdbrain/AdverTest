@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -42,7 +42,7 @@ import {
   CLASS_LABELS_DATA,
 } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { getApiBase } from "@/lib/api";
+import { getApiBase, getCatalogDatasets, getModelVersions } from "@/lib/api";
 
 export default function ConfigureProblemPage() {
   const router = useRouter();
@@ -52,6 +52,9 @@ export default function ConfigureProblemPage() {
   // Active selected dataset and model objects
   const [selectedDatasetId, setSelectedDatasetId] = useState("kitti_anonymized_de");
   const [selectedModelId, setSelectedModelId] = useState("local_yolo11s_clean");
+  const [catalogDatasets, setCatalogDatasets] = useState([]);
+  const [catalogModels, setCatalogModels] = useState([]);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
 
   const [dataSource, setDataSource] = useState("repository");
   const [modelSource, setModelSource] = useState("default_lib");
@@ -143,21 +146,84 @@ export default function ConfigureProblemPage() {
     };
   }, []);
 
+  // The experiment form must show the deployable catalog, not the old design
+  // mock data.  Dataset `demo` means an anonymised bundle is mounted by the
+  // worker; model `runnable` means its checkpoint has passed the run gate.
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoadingCatalog(true);
+    Promise.allSettled([
+      getModelVersions(),
+      getCatalogDatasets({ task_id: selectedTask }),
+    ]).then(([modelsResult, datasetsResult]) => {
+      if (!isMounted) return;
+      if (modelsResult.status === "fulfilled" && Array.isArray(modelsResult.value)) {
+        setCatalogModels(modelsResult.value);
+      }
+      if (datasetsResult.status === "fulfilled" && Array.isArray(datasetsResult.value)) {
+        setCatalogDatasets(datasetsResult.value);
+      }
+      if (modelsResult.status === "rejected" || datasetsResult.status === "rejected") {
+        console.warn("Could not load the live model/dataset catalog; showing local fallback entries.");
+      }
+    }).finally(() => {
+      if (isMounted) setIsLoadingCatalog(false);
+    });
+    return () => { isMounted = false; };
+  }, [selectedTask]);
+
   // 2. Cascade Filter: Filter Models & Architectures based on Selected Task
-  const filteredModels = AVAILABLE_MODELS.filter((m) => {
+  const fallbackModels = useMemo(() => AVAILABLE_MODELS.filter((m) => {
     if (selectedTask === "detection2d") return m.task === "detection2d";
     if (selectedTask === "segmentation") return m.task === "segmentation";
     if (selectedTask === "detection3d") return m.task === "detection3d";
     if (selectedTask === "classification") return m.task === "classification" || m.task === "detection2d";
     return true;
-  });
+  }), [selectedTask]);
 
-  const filteredDatasets = AVAILABLE_DATASETS.filter((d) => {
+  const fallbackDatasets = useMemo(() => AVAILABLE_DATASETS.filter((d) => {
     if (selectedTask === "detection2d") return d.task === "detection2d";
     if (selectedTask === "segmentation") return d.task === "segmentation";
     if (selectedTask === "detection3d") return d.task === "detection3d";
     return true;
-  });
+  }), [selectedTask]);
+
+  const filteredModels = useMemo(() => {
+    const liveModels = catalogModels
+      .filter((model) => model.task === selectedTask && model.checkpoint_role === "base")
+      .map((model) => ({
+        id: model.id,
+        name: model.model_name || model.id,
+        family: model.model_family_id || "Catalog",
+        task: model.task,
+        params: model.checkpoint_hash ? "đã xác thực" : "catalog",
+        format: model.checkpoint_path?.split(".").pop()?.toUpperCase() || "checkpoint",
+        isLocal: Boolean(model.runnable),
+        runnable: Boolean(model.runnable),
+        reason: model.blocked_reason || (model.runnable ? null : "Checkpoint chưa sẵn sàng"),
+        architecture: model.model_family_id || "catalog",
+      }));
+    return liveModels.length ? liveModels : fallbackModels;
+  }, [catalogModels, fallbackModels]);
+
+  const filteredDatasets = useMemo(() => {
+    const liveDatasets = catalogDatasets.map((dataset) => ({
+      id: dataset.name,
+      name: dataset.title || dataset.name,
+      task: dataset.task_id,
+      description: `${dataset.modality} · ${dataset.ground_truth_status || "ground truth có sẵn"}`,
+      samples: dataset.demo ? "bundle demo" : "chưa chuẩn bị",
+      size: dataset.demo ? "GCS sẵn sàng" : "cần tải về",
+      isLocal: Boolean(dataset.demo && dataset.anonymized),
+      reason: dataset.demo && dataset.anonymized
+        ? null
+        : !dataset.anonymized
+          ? "Chưa anonymize"
+          : "Chưa có bundle trên worker",
+      classLabels: Object.entries(dataset.class_map || {}).map(([id, name]) => ({ id, name })),
+    }));
+    return liveDatasets.length ? liveDatasets : fallbackDatasets;
+  }, [catalogDatasets, fallbackDatasets]);
 
   // Keep selected model and dataset synchronized with task
   useEffect(() => {
@@ -168,10 +234,10 @@ export default function ConfigureProblemPage() {
     if (filteredDatasets.length > 0 && !filteredDatasets.some((d) => d.id === selectedDatasetId)) {
       setSelectedDatasetId(filteredDatasets[0].id);
     }
-  }, [selectedTask]);
+  }, [selectedTask, filteredModels, filteredDatasets, selectedModelId, selectedDatasetId]);
 
-  const currentDataset = AVAILABLE_DATASETS.find((d) => d.id === selectedDatasetId) || filteredDatasets[0] || AVAILABLE_DATASETS[0];
-  const currentModel = AVAILABLE_MODELS.find((m) => m.id === selectedModelId) || filteredModels[0] || AVAILABLE_MODELS[0];
+  const currentDataset = filteredDatasets.find((d) => d.id === selectedDatasetId) || filteredDatasets[0] || AVAILABLE_DATASETS[0];
+  const currentModel = filteredModels.find((m) => m.id === selectedModelId) || filteredModels[0] || AVAILABLE_MODELS[0];
 
   // Derive Model Classes and Dataset Classes for Label Mapping Matrix
   const modelClasses = currentModel.architecture === "pointpillars"
@@ -510,7 +576,7 @@ export default function ConfigureProblemPage() {
           {/* 2. Chọn Mô hình (Cascade Filtered by Task) */}
           <Card
             title={`2. Chọn mô hình tương thích với [${PROBLEM_TYPES.find((t) => t.id === selectedTask)?.name}]`}
-            subtitle="Danh mục mô hình đã được lọc chính xác theo bài toán được chọn (không hiển thị lẫn mô hình khác)"
+            subtitle={isLoadingCatalog ? "Đang kiểm tra checkpoint trên hệ thống..." : "Chỉ hiển thị checkpoint base tương thích; trạng thái phản ánh khả năng chạy thực tế."}
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               {filteredModels.map((model) => {
@@ -554,8 +620,8 @@ export default function ConfigureProblemPage() {
                           ✓ Sẵn sàng
                         </span>
                       ) : (
-                        <div className="flex items-center gap-1">
-                          <span className="text-slate-400 text-[10px]">Chưa tải</span>
+                        <div className="flex items-center gap-1" title={model.reason || "Checkpoint chưa sẵn sàng"}>
+                          <span className="text-amber-700 text-[10px] font-semibold">Cần tải / xác thực</span>
                           <button
                             type="button"
                             onClick={(e) => {
@@ -579,7 +645,7 @@ export default function ConfigureProblemPage() {
           {/* 3. Kho Dữ Liệu (Catalog Status & Selection) */}
           <Card
             title="3. Chọn tập dữ liệu kiểm thử (Dataset)"
-            subtitle="Chọn dữ liệu tương thích bài toán, hiển thị rõ dữ liệu có sẵn vs cần tải về"
+            subtitle={isLoadingCatalog ? "Đang kiểm tra bundle anonymized trên worker..." : "✓ Sẵn sàng = bundle anonymized đã có trên GCS/worker; còn lại cần chuẩn bị trước khi chạy."}
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {filteredDatasets.map((ds) => {
@@ -614,16 +680,9 @@ export default function ConfigureProblemPage() {
                             ✓ Sẵn sàng
                           </span>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDownloadSimulation(ds.name);
-                            }}
-                            className="text-[10px] text-blue-600 hover:underline font-semibold flex items-center gap-0.5 bg-blue-50 px-2 py-0.5 rounded border border-blue-200"
-                          >
-                            <Download className="w-3 h-3" /> Tải về Server
-                          </button>
+                          <span title={ds.reason || "Dataset chưa sẵn sàng"} className="inline-flex items-center gap-1 text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                            ⚠ {ds.reason || "Cần tải về"}
+                          </span>
                         )}
                       </div>
                       <span className="font-mono text-slate-500">{ds.samples} mẫu · {ds.size}</span>
