@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     # Benchmark jobs normally use the lightweight local worker. Production can
     # opt into the durable Postgres + dispatcher + GCE execution plane.
     run_execution_backend: Literal["local", "platform"] = "local"
+    # Presentation metadata for the remote execution plane.  This must stay
+    # separate from MODEL_DEVICE: Render hosts the API on CPU while Cloud Run
+    # materialises and executes benchmark jobs on this on-demand GPU.
+    remote_gpu_name: str = "NVIDIA L4"
+    remote_gpu_vram_gb: float = Field(default=24.0, ge=0.0)
     platform_default_project_id: str = "advertest-demo"
     platform_default_user_id: str = "demo-user"
     # Demo-only bootstrap: downloads a fixed, vendor-maintained checkpoint into

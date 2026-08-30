@@ -119,8 +119,9 @@ export default function ConfigureProblemPage() {
       .then((data) => {
         if (isMounted && data) {
           setHardwareSpecs(data);
-          setBatchSize(data.recommended_batch_size || 16);
-          setMixedPrecision(data.recommended_precision === "FP16");
+          const executionSpecs = data.execution_plane || data;
+          setBatchSize(executionSpecs.recommended_batch_size || 16);
+          setMixedPrecision(executionSpecs.recommended_precision === "FP16");
         }
       })
       .catch((err) => {
@@ -413,11 +414,12 @@ export default function ConfigureProblemPage() {
               </span>
             </div>
             <div className="text-sm font-semibold text-slate-100 mt-0.5">
-              {hardwareSpecs ? hardwareSpecs.device_name : "Đang kiểm tra phần cứng..."}
-              {hardwareSpecs?.total_vram_gb ? ` — ${hardwareSpecs.total_vram_gb} GB VRAM (${hardwareSpecs.free_vram_gb} GB khả dụng)` : ""}
+              {hardwareSpecs ? (hardwareSpecs.execution_plane || hardwareSpecs).device_name : "Đang kiểm tra phần cứng..."}
+              {(hardwareSpecs?.execution_plane || hardwareSpecs)?.total_vram_gb ? ` — ${(hardwareSpecs.execution_plane || hardwareSpecs).total_vram_gb} GB VRAM${(hardwareSpecs.execution_plane || hardwareSpecs).free_vram_gb != null ? ` (${(hardwareSpecs.execution_plane || hardwareSpecs).free_vram_gb} GB khả dụng)` : ""}` : ""}
             </div>
             <div className="text-xs text-slate-400 mt-0.5">
-              Tự động tối ưu: Batch Size = <strong>{batchSize}</strong> | Precision = <strong>{mixedPrecision ? "FP16 (Tốc độ cao)" : "FP32"}</strong> | Thiết bị = <code className="bg-slate-800 px-1 py-0.5 rounded text-indigo-300">{hardwareSpecs?.device_target || "cpu"}</code>
+              Tự động tối ưu: Batch Size = <strong>{batchSize}</strong> | Precision = <strong>{mixedPrecision ? "FP16 (Tốc độ cao)" : "FP32"}</strong> | Thiết bị = <code className="bg-slate-800 px-1 py-0.5 rounded text-indigo-300">{(hardwareSpecs?.execution_plane || hardwareSpecs)?.device_target || "cpu"}</code>
+              {hardwareSpecs?.execution_plane?.status === "on_demand" && " | GPU khởi động theo job"}
             </div>
           </div>
         </div>

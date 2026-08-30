@@ -113,13 +113,21 @@ function resolveBackendDataset(context, datasets) {
 
 function buildRealRunConfig(context, attackQueue, model, dataset, attackMode = "combined") {
   const isCombined = attackMode === "combined";
+  // Each dataset uses a strict parameter schema.  Start with the parameters
+  // advertised by the backend and add KITTI-only controls only for KITTI.
+  const datasetParams = { ...(dataset.dataset_params || {}) };
+  if (dataset.name === "kitti") {
+    datasetParams.split = datasetParams.split || "val";
+    datasetParams.difficulty = datasetParams.difficulty || "all";
+    datasetParams.merge_van_truck = true;
+  }
   if (isCombined) {
     return {
       checkpoint_id: model.id,
       model_family_id: model.model_family_id,
       task_id: context.selectedTask,
       dataset: dataset.name,
-      dataset_params: { split: "val", difficulty: "all", merge_van_truck: true },
+      dataset_params: datasetParams,
       recipe: {
         name: `recipe-${attackQueue.map((a) => a.id).join("-")}`,
         steps: attackQueue.map((attack, index) => ({
@@ -146,7 +154,7 @@ function buildRealRunConfig(context, attackQueue, model, dataset, attackMode = "
     model_family_id: model.model_family_id,
     task_id: context.selectedTask,
     dataset: dataset.name,
-    dataset_params: { split: "val", difficulty: "all", merge_van_truck: true },
+    dataset_params: datasetParams,
     attacks: attackQueue.map((attack) => attack.id),
     severities: Array.from(new Set(attackQueue.map((attack) => Number(attack.severity)))),
     limit: 8,

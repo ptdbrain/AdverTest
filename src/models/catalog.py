@@ -70,25 +70,33 @@ def catalog_model(model_id: str) -> CatalogModel | None:
 
 
 def catalog_model_versions(*, platform: bool) -> list[ModelVersion]:
-    """Expose server-owned catalog models when the worker is remote."""
+    """Expose server-owned catalog models when the worker is remote.
+
+    A catalog entry is a planned artifact, not proof that its bytes are on the
+    current worker.  Mark it runnable only after the fixed checkpoint target
+    exists; otherwise the UI could select a phantom model and every attack
+    would later fail with ``CHECKPOINT_MISSING``.
+    """
     if not platform:
         return []
-    return [
-        ModelVersion(
+    versions: list[ModelVersion] = []
+    for item in CATALOG_MODELS:
+        checkpoint_path = Path("/app/data/checkpoints/catalog") / item.filename
+        is_materialized = checkpoint_path.is_file()
+        versions.append(ModelVersion(
             id=item.id,
             model_name=item.model_name,
             task=item.task,
-            checkpoint_path=str(Path("/app/data/checkpoints/catalog") / item.filename),
+            checkpoint_path=str(checkpoint_path),
             checkpoint_hash=None,
             parent_id=None,
             training_metadata={"source": "catalog", "storage_key": item.storage_key, **(item.metadata or {})},
-            runnable=item.runnable,
-            blocked_reason=item.blocked_reason,
+            runnable=item.runnable and is_materialized,
+            blocked_reason=item.blocked_reason or (None if is_materialized else "CHECKPOINT_MISSING"),
             model_family_id=item.family_id,
             checkpoint_role="base",
-        )
-        for item in CATALOG_MODELS
-    ]
+        ))
+    return versions
 
 
 def catalog_checkpoint_target(settings: Settings, model_id: str) -> Path | None:
