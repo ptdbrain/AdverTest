@@ -6,10 +6,7 @@ const ThemeContext = createContext(null);
 const STORAGE_KEY = "advertest_theme";
 
 export function ThemeProvider({ children }) {
-  // The application currently ships a light design system. Starting in
-  // `system` mode could apply the partial dark palette on OSes using dark
-  // mode, leaving white cards on a nearly black page background.
-  const [theme, setTheme] = useState("light");
+  const [theme, setTheme] = useState("system");
   const [systemTheme, setSystemTheme] = useState("light");
   const resolvedTheme = theme === "system" ? systemTheme : theme;
 
@@ -17,7 +14,7 @@ export function ThemeProvider({ children }) {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const updateSystemTheme = () => setSystemTheme(media.matches ? "dark" : "light");
     const storedTheme = localStorage.getItem(STORAGE_KEY);
-    if (["light", "dark"].includes(storedTheme)) setTheme(storedTheme);
+    if (["light", "dark", "system"].includes(storedTheme)) setTheme(storedTheme);
     updateSystemTheme();
     media.addEventListener("change", updateSystemTheme);
     return () => media.removeEventListener("change", updateSystemTheme);
