@@ -2,6 +2,7 @@ import { render, screen, waitFor, act } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import ReviewPage from "@/app/reviews/page.jsx";
 import { AuthProvider } from "@/context/AuthContext";
+import { ProjectProvider } from "@/context/ProjectContext";
 
 // Mock API functions
 vi.mock("@/lib/api", () => ({
@@ -47,7 +48,10 @@ vi.mock("@/lib/api", () => ({
   getRiskRubric: vi.fn().mockResolvedValue([]),
   createDefenseProfile: vi.fn().mockResolvedValue({ id: "dp-1", name: "Spatial Filter" }),
   getGoogleAuthConfig: vi.fn().mockResolvedValue({ client_id: "", configured: false, demo_profiles: [] }),
+  getAuthMe: vi.fn().mockResolvedValue({ id: "user-1", email: "reviewer@example.test", display_name: "Reviewer", role: "RESEARCHER", status: "ACTIVE" }),
   getApiBase: vi.fn().mockReturnValue("http://127.0.0.1:8000"),
+  getActiveProjectId: vi.fn().mockReturnValue("project-1"),
+  listProjects: vi.fn().mockResolvedValue([{ id: "project-1", name: "Test project" }]),
 }));
 
 describe("ReviewPage", () => {
@@ -55,7 +59,7 @@ describe("ReviewPage", () => {
     await act(async () => {
       render(
         <AuthProvider>
-          <ReviewPage />
+          <ProjectProvider><ReviewPage /></ProjectProvider>
         </AuthProvider>
       );
     });
@@ -68,10 +72,10 @@ describe("ReviewPage", () => {
     );
 
     expect(screen.getAllByText(/FOG/i)[0]).toBeInTheDocument();
-    expect(screen.getByText(/Chặn triển khai/i)).toBeInTheDocument();
-    expect(screen.getByText(/Yêu cầu retrain/i)).toBeInTheDocument();
-    expect(screen.getByText(/Giới hạn ODD/i)).toBeInTheDocument();
-    expect(screen.getByText(/Sửa nhãn dữ liệu/i)).toBeInTheDocument();
-    expect(screen.getByText(/Chấp nhận rủi ro/i)).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Chặn triển khai/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Yêu cầu retrain/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Giới hạn ODD/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Sửa nhãn dữ liệu/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Chấp nhận rủi ro/i })).toBeInTheDocument();
   });
 });

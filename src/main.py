@@ -49,7 +49,6 @@ from src.datasets.base import AnonymizationRequiredError
 from src.demo_bootstrap import (
     ensure_demo_catalog,
     ensure_demo_checkpoint,
-    ensure_demo_kitti,
     ensure_drive_export_catalog,
 )
 
