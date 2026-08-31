@@ -9,6 +9,7 @@ clean predictions (cached) -> per-cell variants -> AP -> :class:`RunReport`.
 
 from __future__ import annotations
 
+import platform
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -70,6 +71,10 @@ class RunConfig(BaseModel):
     gpu_budget_cap: float | None = Field(default=None, gt=0.0)
     evidence_dir: str | None = None
     bootstrap_repetitions: int = Field(default=1000, ge=0, le=5000)
+    # Confirmation metadata is deliberately part of the public run contract,
+    # but does not affect the scientific configuration or its cache keys.
+    confirmed: bool = False
+    estimate_token: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,6 +232,10 @@ class TestRunner:
         if info.task == "segmentation":
             from src.evaluation.segmentation_metrics import segmentation_metric_suite
             clean_ap_val = segmentation_metric_suite(clean, samples).get("miou", 0.0) if config.execution_mode == "benchmark" else 0.0
+        elif info.task == "detection3d":
+            from src.evaluation.kitti3d import kitti3d_metric_suite
+
+            clean_ap_val = kitti3d_metric_suite(clean, samples, config.iou_threshold).get("kitti_3d_ap", 0.0) if config.execution_mode == "benchmark" else 0.0
         else:
             clean_ap_val = average_precision(clean, samples, config.iou_threshold) if config.execution_mode == "benchmark" else 0.0
         report = RunReport(
@@ -249,6 +258,26 @@ class TestRunner:
                     sample.sample_id: sample_digest(sample) for sample in samples
                 },
                 "run_config": config.model_dump(mode="json"),
+                "dataset_name": dataset.name,
+                "dataset_version": config.dataset_version_id or getattr(dataset, "loader_version", "unknown"),
+                "official_split": config.dataset_params.get("split", "unspecified"),
+                "split_manifest_hash": stable_digest([sample.sample_id for sample in samples], length=64),
+                "sample_ids": [sample.sample_id for sample in samples],
+                "manifest_reference": config.dataset_params.get("manifest_path", "dataset-loader"),
+                "annotation_schema": list(getattr(dataset, "annotation_schema", ())),
+                "calibration_version": getattr(dataset, "calibration_version", "not-applicable"),
+                "model_family": config.model_family_id or info.name,
+                "model_version": config.model_version_id or info.version,
+                "checkpoint_sha256": info.checkpoint_hash or "unavailable",
+                "config_sha256": stable_digest(config.model_dump(mode="json"), length=64),
+                "metric_implementation_version": "advertest-internal-v1",
+                "iou_thresholds": {"primary": config.iou_threshold},
+                "confidence_threshold": config.confidence_threshold,
+                "seed": config.seed,
+                "code_commit_sha": "unavailable",
+                "dependency_versions": {"python": platform.python_version()},
+                "hardware_metadata": {"platform": platform.platform()},
+                "simulation_only": True,
             },
         )
         selected, skipped = self._resolve_attacks(config, dataset, info, samples)
@@ -264,6 +293,10 @@ class TestRunner:
                 if info.task == "segmentation":
                     from src.evaluation.segmentation_metrics import segmentation_metric_suite
                     clean_metrics = segmentation_metric_suite(clean, samples)
+                elif info.task == "detection3d":
+                    from src.evaluation.kitti3d import kitti3d_metric_suite
+
+                    clean_metrics = kitti3d_metric_suite(clean, samples, config.iou_threshold)
                 else:
                     clean_metrics = detection_metric_suite(clean, samples)
                     clean_metrics["ap50_ci95"] = _bootstrap_interval(clean, samples, config)
@@ -323,6 +356,10 @@ class TestRunner:
             if info.task == "segmentation":
                 from src.evaluation.segmentation_metrics import segmentation_metric_suite
                 clean_metrics = segmentation_metric_suite(clean, samples)
+            elif info.task == "detection3d":
+                from src.evaluation.kitti3d import kitti3d_metric_suite
+
+                clean_metrics = kitti3d_metric_suite(clean, samples, config.iou_threshold)
             else:
                 clean_metrics = detection_metric_suite(clean, samples)
                 clean_metrics["ap50_ci95"] = _bootstrap_interval(clean, samples, config)
@@ -364,6 +401,21 @@ class TestRunner:
                     else segmentation_metric_suite(predictions, samples)
                 )
                 cell_ap = metrics.get("miou", 0.0)
+            elif adapter.metadata().task == "detection3d":
+                from src.evaluation.kitti3d import kitti3d_attack_success_rate, kitti3d_metric_suite
+
+                metrics = (
+                    {"benchmark_metrics_available": False}
+                    if config.execution_mode == "quick_inference"
+                    else kitti3d_metric_suite(predictions, samples, config.iou_threshold)
+                )
+                if config.execution_mode == "benchmark":
+                    attack_success = kitti3d_attack_success_rate(
+                        clean_predictions, predictions, samples, config.iou_threshold
+                    )
+                    metrics["objects_broken"] = attack_success.lost_truths
+                    metrics["attack_success_rate"] = attack_success.rate
+                cell_ap = metrics.get("kitti_3d_ap", 0.0) if config.execution_mode == "benchmark" else 0.0
             else:
                 metrics = (
                     {"benchmark_metrics_available": False}
@@ -675,6 +727,24 @@ def _sample_degradation_hint(clean: Prediction, attacked: Prediction) -> float:
 
 
 def _ground_truth_payload(sample: Sample) -> dict[str, Any]:
+    if sample.boxes3d:
+        return {
+            "type": "boxes3d",
+            "objects3d": [
+                {
+                    "object_id": f"{sample.sample_id}:{index}",
+                    "label": box.label,
+                    "x": box.x,
+                    "y": box.y,
+                    "z": box.z,
+                    "length": box.length,
+                    "width": box.width,
+                    "height": box.height,
+                    "yaw": box.yaw,
+                }
+                for index, box in enumerate(sample.boxes3d)
+            ],
+        }
     return {
         "type": "boxes",
         "image_width": int(sample.image.shape[1]),

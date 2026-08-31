@@ -1,4 +1,8 @@
 
+import hashlib
+import hmac
+import json
+import secrets
 from pathlib import Path
 from threading import Lock
 
@@ -27,6 +31,24 @@ _DRIVE_CATALOG_BUNDLES = {
     "cityscapes_segmentation": ("cityscapes-instance-100", "drive_export_cityscapes_storage_prefix"),
     "nuscenes": ("nuscenes-mini-100", "drive_export_nuscenes_storage_prefix"),
 }
+_ESTIMATE_TOKEN_SECRET = secrets.token_bytes(32)
+
+
+def _estimate_payload(config: RunConfig) -> bytes:
+    """Canonical workload fields bound to an estimate confirmation token."""
+    payload = config.model_dump(mode="json", exclude={"estimate_token", "confirmed"})
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _estimate_token(config: RunConfig) -> str:
+    return hmac.new(_ESTIMATE_TOKEN_SECRET, _estimate_payload(config), hashlib.sha256).hexdigest()
+
+
+def _verify_estimate_token(config: RunConfig) -> None:
+    if not config.estimate_token:
+        return
+    if not hmac.compare_digest(config.estimate_token, _estimate_token(config)):
+        raise HTTPException(status_code=409, detail="ESTIMATE_MISMATCH: request differs from the reviewed workload estimate.")
 
 
 def _hydrate_selected_catalog_bundle(config: RunConfig) -> None:
@@ -109,7 +131,7 @@ async def estimate_run(
         from pathlib import Path
         if not Path(f"{config.model}.pt").is_file():
             warnings.append(f"Model '{config.model}' requires downloading weights. Estimated time does not include download time.")
-    return CostEstimateOut(**est, warnings=warnings)
+    return CostEstimateOut(**est, estimate_token=_estimate_token(config), warnings=warnings)
 
 @router.post("/preflight", response_model=PreflightOut)
 async def preflight_run(
@@ -132,6 +154,9 @@ async def create_run(
     compute: ComputeBackend = Depends(get_platform_compute),
 ) -> RunJobOut:
     """Persist and enqueue a run. Heavy model work never runs in the request."""
+    if not config.model_fields_set:
+        raise HTTPException(status_code=422, detail="CONFIRMATION_REQUIRED: request an estimate and submit an explicit workload.")
+    _verify_estimate_token(config)
     config = _resolve_run_config(config)
     _hydrate_selected_catalog_bundle(config)
     preflight = runner.preflight(config)
