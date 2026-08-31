@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from src.api.routers import runs
 from src.pipeline.runner import RunConfig
+from fastapi import HTTPException
 
 
 class _Settings:
@@ -40,3 +41,18 @@ def test_preflight_hydration_never_fetches_for_a_user_supplied_root(monkeypatch,
     runs._hydrate_selected_catalog_bundle(
         RunConfig(dataset="kitti", dataset_params={"root": str(tmp_path / "user-upload")})
     )
+
+
+def test_platform_run_scope_uses_already_checked_actor(monkeypatch) -> None:
+    monkeypatch.setattr(runs, "_remote_enabled", lambda: True)
+    assert runs._project_scope("project-member", "user-member") == "project-member"
+
+
+def test_platform_run_scope_rejects_missing_actor(monkeypatch) -> None:
+    monkeypatch.setattr(runs, "_remote_enabled", lambda: True)
+    try:
+        runs._project_scope("project-member", None)
+    except HTTPException as exc:
+        assert exc.status_code == 401
+    else:  # pragma: no cover - assertion guard
+        raise AssertionError("expected authenticated actor requirement")

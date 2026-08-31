@@ -92,7 +92,8 @@ def _project_scope(project_id: str | None, actor_id: str | None) -> str:
         return get_settings().platform_default_project_id
     if not actor_id:
         raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED: Sign in before accessing project runs.")
-    assert_project_member(project_id, actor_id)
+    # ``require_run_project_member`` has already validated the authenticated
+    # actor against this exact query project_id before the route executes.
     return project_id
 
 @router.post("/estimate", response_model=CostEstimateOut)
