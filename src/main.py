@@ -72,20 +72,9 @@ async def lifespan(app: FastAPI):
             storage_key=settings.demo_model_storage_key,
         )
         print(f"Demo checkpoint ready: {checkpoint}")
-    # The legacy demo export is intentionally absent from production object
-    # storage. Production preflights the reviewed Drive catalog below instead;
-    # attempting this optional bootstrap here would prevent the API from
-    # starting whenever the legacy prefix has been retired.
-    if settings.bootstrap_demo_kitti and settings.app_env != "production":
-        kitti_root = ensure_demo_kitti(
-            enabled=True,
-            storage=storage or get_platform_storage(),
-            storage_prefix=settings.demo_kitti_storage_prefix,
-            data_root=settings.data_root,
-        )
-        if kitti_root is not None:
-            os.environ["ADVERTEST_KITTI_ROOT"] = str(kitti_root)
-            print(f"Demo KITTI ready: {kitti_root}")
+    # Dataset hydration belongs to the execution worker. The old KITTI demo
+    # prefix has been retired, so the API must never make its availability
+    # dependent on optional legacy objects during startup.
     # The Render API is the control plane: it must become healthy before any
     # optional object downloads. Cloud Run workers hydrate benchmark bundles
     # when they claim a job. Keeping this opt-in also prevents Render's port
