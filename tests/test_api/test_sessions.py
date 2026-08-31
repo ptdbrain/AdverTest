@@ -11,8 +11,9 @@ client = TestClient(app)
 
 def test_list_sessions_endpoint():
     """Verify GET /api/v1/sessions returns list of sessions without mock seed."""
-    response = client.get("/api/v1/sessions")
+    response = client.get("/api/v1/sessions", headers={"Origin": "http://localhost:3000"})
     assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
     data = response.json()
     assert isinstance(data, list)
 

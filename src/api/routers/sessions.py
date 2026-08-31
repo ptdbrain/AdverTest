@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from src.api.platform_dependencies import get_platform_database
-from src.persistence.models import ExperimentSessionRecord, ProjectRecord, UserRecord
+from src.persistence.models import ExperimentSessionRecord, ProjectRecord, SessionRunRecord, UserRecord
 
 router = APIRouter(prefix="/sessions", tags=["Experiment Sessions"])
 
@@ -105,21 +105,49 @@ def _ensure_workspace() -> None:
             ))
 
 
-def _to_response(row: ExperimentSessionRecord) -> SessionRecord:
-    metadata = _decode(row.metadata_json, {})
-    metadata = metadata if isinstance(metadata, dict) else {}
-    run_rows = _decode(row.runs_json, [])
-    run_rows = run_rows if isinstance(run_rows, list) else []
+def _to_run(row: SessionRunRecord) -> RunRecord:
+    return RunRecord(
+        id=row.id, name=row.name, timestamp=row.timestamp, attack_type=row.attack_type,
+        attack_name=row.attack_name, severity=row.severity, clean_map=row.clean_map,
+        attacked_map=row.attacked_map, map_drop_pct=row.map_drop_pct, clean_conf=row.clean_conf,
+        attacked_conf=row.attacked_conf, psnr=row.psnr, ssim=row.ssim,
+        inference_ms=row.inference_ms, robustness_score=row.robustness_score,
+        clean_bbox_count=row.clean_bbox_count, attacked_bbox_count=row.attacked_bbox_count,
+        sample_id=row.sample_id, clean_miou=row.clean_miou, attacked_miou=row.attacked_miou,
+        miou_drop_pct=row.miou_drop_pct, is_combined=row.is_combined,
+        attack_components=_decode(row.attack_components_json, []), note=row.note,
+        seed=row.seed, run_config_hash=row.run_config_hash, backend_run_id=row.backend_run_id,
+    )
+
+
+def _to_response(row: ExperimentSessionRecord, run_rows: list[SessionRunRecord]) -> SessionRecord:
     return SessionRecord(
         id=row.id, name=row.name, description=row.description, task_id=row.task_id,
-        task_name=str(metadata.get("task_name", "Object Detection")), model_id=row.model_id,
-        model_name=str(metadata.get("model_name", row.model_id)), dataset_id=row.dataset_id,
-        dataset_name=str(metadata.get("dataset_name", row.dataset_id)),
+        task_name=row.task_name, model_id=row.model_id, model_name=row.model_name,
+        dataset_id=row.dataset_id, dataset_name=row.dataset_name,
         created_at=_timestamp(row.created_at) or "", updated_at=_timestamp(row.updated_at) or "",
         ended_at=_timestamp(row.ended_at), status=row.status,
-        total_duration_seconds=metadata.get("total_duration_seconds"),
-        runs=[RunRecord.model_validate(item) for item in run_rows],
+        total_duration_seconds=row.total_duration_seconds,
+        runs=[_to_run(item) for item in run_rows],
     )
+
+
+def _load_response(db, row: ExperimentSessionRecord) -> SessionRecord:
+    runs = db.query(SessionRunRecord).filter_by(session_id=row.id).order_by(SessionRunRecord.created_at).all()
+    return _to_response(row, runs)
+
+
+def _apply_run(row: SessionRunRecord, run: RunRecord) -> None:
+    row.name, row.timestamp = run.name, run.timestamp
+    row.attack_type, row.attack_name, row.severity = run.attack_type, run.attack_name, run.severity
+    row.clean_map, row.attacked_map, row.map_drop_pct = run.clean_map, run.attacked_map, run.map_drop_pct
+    row.clean_conf, row.attacked_conf = run.clean_conf, run.attacked_conf
+    row.psnr, row.ssim, row.inference_ms = run.psnr, run.ssim, run.inference_ms
+    row.robustness_score = run.robustness_score
+    row.clean_bbox_count, row.attacked_bbox_count = run.clean_bbox_count, run.attacked_bbox_count
+    row.sample_id, row.clean_miou, row.attacked_miou, row.miou_drop_pct = run.sample_id, run.clean_miou, run.attacked_miou, run.miou_drop_pct
+    row.is_combined, row.attack_components_json = run.is_combined, json.dumps(run.attack_components, ensure_ascii=False)
+    row.note, row.seed, row.run_config_hash, row.backend_run_id = run.note, run.seed, run.run_config_hash, run.backend_run_id
 
 
 def _ensure_default_session() -> None:
@@ -127,22 +155,21 @@ def _ensure_default_session() -> None:
     with get_platform_database().session() as db:
         if db.get(ExperimentSessionRecord, _DEFAULT_SESSION_ID) is None:
             db.add(ExperimentSessionRecord(
-                id=_DEFAULT_SESSION_ID, user_id=_SYSTEM_USER_ID, project_id=_SYSTEM_PROJECT_ID,
+                id=_DEFAULT_SESSION_ID, owner_user_id=_SYSTEM_USER_ID, project_id=_SYSTEM_PROJECT_ID,
                 name="Default robustness experiment", description="Persistent default session for the NewUI.",
-                task_id="detection2d", model_id="yolo11n", dataset_id="kitti",
-                metadata_json=json.dumps({"task_name": "Object Detection (2D)", "model_name": "YOLO11n (Ultralytics)", "dataset_name": "KITTI Anonymized Set"}),
-                runs_json="[]",
+                task_id="detection2d", task_name="Object Detection (2D)",
+                model_id="yolo11n", model_name="YOLO11n (Ultralytics)",
+                dataset_id="kitti", dataset_name="KITTI Anonymized Set",
             ))
 
 
-def _session_or_404(session_id: str) -> ExperimentSessionRecord:
+def _session_or_404(session_id: str) -> SessionRecord:
     _ensure_workspace()
     with get_platform_database().session() as db:
         row = db.get(ExperimentSessionRecord, session_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
-        db.expunge(row)
-        return row
+        return _load_response(db, row)
 
 
 @router.get("", response_model=list[SessionRecord])
@@ -150,40 +177,48 @@ async def list_sessions() -> list[SessionRecord]:
     _ensure_default_session()
     with get_platform_database().session() as db:
         rows = db.query(ExperimentSessionRecord).order_by(ExperimentSessionRecord.updated_at.desc()).all()
-        for row in rows:
-            db.expunge(row)
-    return [_to_response(row) for row in rows]
+        return [_load_response(db, row) for row in rows]
 
 
 @router.post("", response_model=SessionRecord)
 async def create_or_update_session(session: SessionRecord) -> SessionRecord:
     _ensure_workspace()
     now = datetime.now(UTC)
-    metadata = {"task_name": session.task_name, "model_name": session.model_name, "dataset_name": session.dataset_name, "total_duration_seconds": session.total_duration_seconds}
     with get_platform_database().session() as db:
         row = db.get(ExperimentSessionRecord, session.id)
         if row is None:
             row = ExperimentSessionRecord(
-                id=session.id, user_id=_SYSTEM_USER_ID, project_id=_SYSTEM_PROJECT_ID,
+                id=session.id, owner_user_id=_SYSTEM_USER_ID, project_id=_SYSTEM_PROJECT_ID,
                 name=session.name, description=session.description, task_id=session.task_id,
-                model_id=session.model_id, dataset_id=session.dataset_id,
+                task_name=session.task_name, model_id=session.model_id, model_name=session.model_name,
+                dataset_id=session.dataset_id, dataset_name=session.dataset_name,
             )
             db.add(row)
         elif row.status == "completed":
             raise HTTPException(status_code=409, detail="Session has already been completed.")
         row.name, row.description = session.name, session.description
-        row.task_id, row.model_id, row.dataset_id = session.task_id, session.model_id, session.dataset_id
-        row.status, row.metadata_json = session.status, json.dumps(metadata, ensure_ascii=False)
-        row.runs_json, row.updated_at = json.dumps([run.model_dump() for run in session.runs], ensure_ascii=False), now
+        row.task_id, row.task_name = session.task_id, session.task_name
+        row.model_id, row.model_name = session.model_id, session.model_name
+        row.dataset_id, row.dataset_name = session.dataset_id, session.dataset_name
+        row.status, row.total_duration_seconds, row.updated_at = session.status, session.total_duration_seconds, now
         row.ended_at = now if session.status == "completed" else None
+        existing = {item.id: item for item in db.query(SessionRunRecord).filter_by(session_id=row.id).all()}
+        submitted = {run.id for run in session.runs}
+        for run in session.runs:
+            run_row = existing.get(run.id) or SessionRunRecord(id=run.id, session_id=row.id, project_id=row.project_id)
+            _apply_run(run_row, run)
+            if run.id not in existing:
+                db.add(run_row)
+        for run_id, run_row in existing.items():
+            if run_id not in submitted:
+                db.delete(run_row)
         db.flush()
-        db.expunge(row)
-    return _to_response(row)
+        return _load_response(db, row)
 
 
 @router.get("/{session_id}", response_model=SessionRecord)
 async def get_session(session_id: str) -> SessionRecord:
-    return _to_response(_session_or_404(session_id))
+    return _session_or_404(session_id)
 
 
 @router.post("/{session_id}/runs", response_model=SessionRecord)
@@ -193,27 +228,25 @@ async def add_run_to_session(session_id: str, run: RunRecord) -> SessionRecord:
         row = db.get(ExperimentSessionRecord, session_id)
         if row is None:
             row = ExperimentSessionRecord(
-                id=session_id, user_id=_SYSTEM_USER_ID, project_id=_SYSTEM_PROJECT_ID,
+                id=session_id, owner_user_id=_SYSTEM_USER_ID, project_id=_SYSTEM_PROJECT_ID,
                 name=f"Experiment {session_id}", description="", task_id="detection2d",
-                model_id="yolo11n", dataset_id="kitti", metadata_json="{}", runs_json="[]",
+                task_name="Object Detection", model_id="yolo11n", model_name="YOLO11n (Ultralytics)",
+                dataset_id="kitti", dataset_name="KITTI Anonymized Set",
             )
             db.add(row)
             db.flush()
         if row.status == "completed":
             raise HTTPException(status_code=409, detail="Session has already been completed.")
-        runs = _decode(row.runs_json, [])
-        if not isinstance(runs, list):
-            runs = []
-        serialized = run.model_dump()
-        index = next((i for i, item in enumerate(runs) if item.get("id") == run.id), None)
-        if index is None:
-            runs.append(serialized)
-        else:
-            runs[index] = serialized
-        row.runs_json, row.updated_at = json.dumps(runs, ensure_ascii=False), datetime.now(UTC)
+        run_row = db.get(SessionRunRecord, run.id)
+        if run_row is None:
+            run_row = SessionRunRecord(id=run.id, session_id=row.id, project_id=row.project_id)
+            db.add(run_row)
+        elif run_row.session_id != row.id:
+            raise HTTPException(status_code=409, detail=f"Run '{run.id}' belongs to another session.")
+        _apply_run(run_row, run)
+        row.updated_at = datetime.now(UTC)
         db.flush()
-        db.expunge(row)
-    return _to_response(row)
+        return _load_response(db, row)
 
 
 @router.delete("/{session_id}")
@@ -222,6 +255,7 @@ async def delete_session(session_id: str) -> dict[str, str]:
     with get_platform_database().session() as db:
         row = db.get(ExperimentSessionRecord, session_id)
         if row is not None:
+            db.query(SessionRunRecord).filter_by(session_id=session_id).delete()
             db.delete(row)
     return {"status": "deleted", "session_id": session_id}
 
@@ -232,13 +266,12 @@ async def delete_run(session_id: str, run_id: str) -> SessionRecord:
         row = db.get(ExperimentSessionRecord, session_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
-        runs = _decode(row.runs_json, [])
-        runs = runs if isinstance(runs, list) else []
-        row.runs_json = json.dumps([item for item in runs if item.get("id") != run_id], ensure_ascii=False)
+        run = db.query(SessionRunRecord).filter_by(session_id=session_id, id=run_id).first()
+        if run is not None:
+            db.delete(run)
         row.updated_at = datetime.now(UTC)
         db.flush()
-        db.expunge(row)
-    return _to_response(row)
+        return _load_response(db, row)
 
 
 @router.patch("/{session_id}/runs/{run_id}/note", response_model=SessionRecord)
@@ -247,16 +280,12 @@ async def update_run_note(session_id: str, run_id: str, body: UpdateRunNoteIn) -
         row = db.get(ExperimentSessionRecord, session_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
-        runs = _decode(row.runs_json, [])
-        runs = runs if isinstance(runs, list) else []
-        match = next((item for item in runs if item.get("id") == run_id), None)
+        match = db.query(SessionRunRecord).filter_by(session_id=session_id, id=run_id).first()
         if match is None:
             raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found in session.")
-        match["note"] = body.note
-        row.runs_json, row.updated_at = json.dumps(runs, ensure_ascii=False), datetime.now(UTC)
+        match.note, row.updated_at = body.note, datetime.now(UTC)
         db.flush()
-        db.expunge(row)
-    return _to_response(row)
+        return _load_response(db, row)
 
 
 @router.post("/{session_id}/end", response_model=SessionRecord)
@@ -270,5 +299,4 @@ async def end_session(session_id: str) -> SessionRecord:
         now = datetime.now(UTC)
         row.status, row.ended_at, row.updated_at = "completed", now, now
         db.flush()
-        db.expunge(row)
-    return _to_response(row)
+        return _load_response(db, row)
