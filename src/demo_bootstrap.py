@@ -154,6 +154,54 @@ def ensure_anonymized_catalog_bundle(
     return destination
 
 
+def ensure_drive_export_bundle(
+    *, storage: ArtifactStorage, storage_prefix: str, data_root: str, bundle_name: str
+) -> Path:
+    """Materialize one reviewed 100-sample Drive-export bundle.
+
+    The import is accepted only when its descriptor and manifest agree on the
+    fixed 100-sample scope.  This is intentionally separate from legacy
+    ``*-200`` catalog validation, whose ``status=complete`` contract was not
+    part of the Drive export schema.
+    """
+    prefix = storage_prefix.rstrip("/") + "/"
+    destination = Path(data_root).expanduser().resolve() / "catalog" / bundle_name
+    if _is_drive_export_bundle(destination):
+        return destination
+    if destination.exists():
+        raise RuntimeError(f"Drive export destination is invalid: {destination}")
+    keys = storage.list_keys(prefix)
+    if not keys:
+        raise RuntimeError(f"no Drive export objects found at storage prefix {prefix!r}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="advertest-drive-export-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / bundle_name
+        for key in keys:
+            relative = key.removeprefix(prefix)
+            if not relative or relative.startswith("/") or ".." in Path(relative).parts:
+                raise RuntimeError(f"unsafe Drive export object key: {key!r}")
+            output = staged / relative
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(storage.get_bytes(key))
+        if not _is_drive_export_bundle(staged):
+            raise RuntimeError("Drive export bundle lacks a valid 100-sample descriptor or manifest")
+        os.replace(staged, destination)
+    return destination
+
+
+def ensure_drive_export_catalog(*, storage: ArtifactStorage, data_root: str, prefixes: dict[str, str]) -> dict[str, Path]:
+    """Materialize the three datasets shipped in the reviewed Drive export."""
+    return {
+        bundle_name: ensure_drive_export_bundle(
+            storage=storage,
+            storage_prefix=storage_prefix,
+            data_root=data_root,
+            bundle_name=bundle_name,
+        )
+        for bundle_name, storage_prefix in prefixes.items()
+    }
+
+
 def _is_anonymized_kitti(root: Path) -> bool:
     descriptor, manifest = root / "dataset.json", root / "manifest.jsonl"
     if not descriptor.is_file() or not manifest.is_file():
@@ -173,3 +221,15 @@ def _is_completed_anonymized_bundle(root: Path) -> bool:
         return bool(value.get("anonymized")) and value.get("status") == "complete"
     except (OSError, json.JSONDecodeError):
         return False
+
+
+def _is_drive_export_bundle(root: Path) -> bool:
+    descriptor, manifest = root / "dataset.json", root / "manifest.jsonl"
+    if not descriptor.is_file() or not manifest.is_file():
+        return False
+    try:
+        payload = json.loads(descriptor.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    rows = [line for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return payload.get("sample_count") == 100 and len(rows) == 100 and bool(payload.get("task_id"))

@@ -21,6 +21,7 @@ from src.demo_bootstrap import (
     ensure_demo_catalog,
     ensure_demo_checkpoint,
     ensure_demo_kitti,
+    ensure_drive_export_catalog,
 )
 from src.pipeline.runner import RunConfig, TestRunner
 
@@ -37,6 +38,8 @@ def _bootstrap_demo_assets(*, dataset_name: str | None = None) -> None:
         or settings.bootstrap_cityscapes_catalog
         or settings.bootstrap_kitti_catalog
         or settings.bootstrap_kitti3d_catalog
+        or settings.bootstrap_drive_export_catalog
+        or settings.app_env == "production"
     ):
         return
     from src.api.platform_dependencies import get_platform_storage
@@ -57,6 +60,16 @@ def _bootstrap_demo_assets(*, dataset_name: str | None = None) -> None:
         ensure_demo_catalog(enabled=True, storage=storage,
                             storage_prefix=settings.demo_catalog_storage_prefix,
                             data_root=settings.data_root)
+    if settings.bootstrap_drive_export_catalog or settings.app_env == "production":
+        ensure_drive_export_catalog(
+            storage=storage,
+            data_root=settings.data_root,
+            prefixes={
+                "kitti2d-100": settings.drive_export_kitti2d_storage_prefix,
+                "cityscapes-instance-100": settings.drive_export_cityscapes_storage_prefix,
+                "nuscenes-mini-100": settings.drive_export_nuscenes_storage_prefix,
+            },
+        )
     if settings.bootstrap_cityscapes_catalog and dataset_name in {None, "cityscapes_segmentation"}:
         ensure_anonymized_catalog_bundle(
             enabled=True,

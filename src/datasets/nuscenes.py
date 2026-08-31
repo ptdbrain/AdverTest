@@ -18,6 +18,7 @@ import numpy as np
 from pydantic import Field
 
 from src.core.types import Box3D, CameraView, LidarFrame, Sample
+from src.datasets import DATASETS
 from src.datasets.base import DatasetParams, DatasetSource
 from src.datasets.io import load_image
 
@@ -54,6 +55,7 @@ class NuScenesParams(DatasetParams):
     limit: int | None = Field(default=None, ge=1)
 
 
+@DATASETS.register
 class NuScenesDataset(DatasetSource):
     """nuScenes Multimodal Dataset Loader."""
 

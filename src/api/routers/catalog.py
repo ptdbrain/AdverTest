@@ -12,37 +12,25 @@ router = APIRouter(prefix="/catalog", tags=["Catalog"])
 # them in the control-plane response so the UI never has to label a dataset as
 # a vague "demo bundle" or probe object storage from the browser.
 _CATALOG_SAMPLE_COUNTS: dict[str, int] = {
-    "bdd100k_detection": 1,
-    "bdd100k_semantic": 1,
-    "cityscapes_segmentation": 200,
-    "folder_dataset": 6,
-    "generated_dataset": 1,
-    "kitti": 200,
-    "kitti3d": 200,
-    "synthetic_shapes": 24,
+    "cityscapes_segmentation": 100,
+    "kitti": 100,
+    "nuscenes": 100,
 }
 
 
 def _demo_dataset_params(name: str) -> dict[str, object]:
-    """Runtime paths for the maintained smoke bundles on the GPU worker."""
-    root = "/app/data/demo-catalog"
+    """Runtime paths for the reviewed Drive-export bundles on the GPU worker."""
+    root = "/app/data/catalog"
     params: dict[str, dict[str, object]] = {
-        "bdd100k_detection": {
-            "root": f"{root}/bdd100k_detection", "split": "val", "anonymization_manifest": "manifest.jsonl",
-        },
-        "bdd100k_semantic": {
-            "root": f"{root}/bdd100k_semantic", "split": "train", "anonymization_manifest": "manifest.jsonl",
-        },
         "cityscapes_segmentation": {
-            "root": "/app/data/catalog/cityscapes-200", "split": "val", "anonymization_manifest": "manifest.jsonl",
-        },
-        "folder_dataset": {"root": f"{root}/folder_dataset", "input_format": "kitti"},
-        "generated_dataset": {"root": f"{root}/generated_dataset"},
-        "kitti3d": {
-            "root": "/app/data/catalog/kitti3d-200", "split": "all", "anonymization_manifest": "manifest.jsonl",
+            "root": f"{root}/cityscapes-instance-100", "split": "val", "anonymization_manifest": "manifest.jsonl",
         },
         "kitti": {
-            "root": "/app/data/catalog/kitti-200", "split": "val", "manifest_path": "manifest.jsonl",
+            "root": f"{root}/kitti2d-100", "split": "val", "manifest_path": "manifest.jsonl",
+        },
+        "nuscenes": {
+            "dataroot": f"{root}/nuscenes-mini-100", "version": "v1.0-mini", "split": "mini_val",
+            "anonymization_manifest": f"{root}/nuscenes-mini-100/manifest.jsonl",
         },
     }
     return params.get(name, {})
@@ -96,7 +84,7 @@ async def list_datasets(task_id: str | None = None) -> list[DatasetCatalogItem]:
         item = dataset.describe()
         params = _demo_dataset_params(dataset.name)
         item["dataset_params"] = params
-        item["demo"] = bool(params)
+        item["demo"] = False
         item["sample_count"] = _CATALOG_SAMPLE_COUNTS.get(dataset.name)
         if params:
             item["anonymized"] = True

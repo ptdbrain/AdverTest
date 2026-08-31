@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from src.demo_bootstrap import ensure_anonymized_catalog_bundle, ensure_demo_checkpoint, ensure_demo_kitti
+from src.demo_bootstrap import (
+    ensure_anonymized_catalog_bundle,
+    ensure_demo_checkpoint,
+    ensure_demo_kitti,
+    ensure_drive_export_bundle,
+)
 from src.models.versions import scan_base_checkpoints
 from src.storage.local import LocalArtifactStorage
 
@@ -63,3 +68,26 @@ def test_bootstrap_catalog_bundle_requires_completed_anonymization(tmp_path: Pat
 
     assert root == tmp_path / "data" / "catalog" / "cityscapes-200"
     assert (root / "manifest.jsonl").is_file()
+
+
+def test_drive_export_bundle_requires_the_reviewed_100_sample_contract(tmp_path: Path) -> None:
+    storage = LocalArtifactStorage(str(tmp_path / "objects"))
+    prefix = "catalog/datasets/kitti2d-100/v1/"
+    storage.put_bytes(
+        f"{prefix}dataset.json",
+        b'{"task_id": "detection2d", "sample_count": 100}',
+        mime_type="application/json",
+    )
+    manifest = b"".join(f'{{"sample_id": "{index:06d}"}}\n'.encode() for index in range(100))
+    storage.put_bytes(f"{prefix}manifest.jsonl", manifest, mime_type="application/json")
+    storage.put_bytes(f"{prefix}image_2/000000.png", b"image", mime_type="image/png")
+
+    root = ensure_drive_export_bundle(
+        storage=storage,
+        storage_prefix=prefix,
+        data_root=str(tmp_path / "data"),
+        bundle_name="kitti2d-100",
+    )
+
+    assert root == tmp_path / "data" / "catalog" / "kitti2d-100"
+    assert (root / "manifest.jsonl").read_bytes() == manifest

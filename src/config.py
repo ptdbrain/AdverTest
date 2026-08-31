@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     kitti_catalog_storage_prefix: str = "catalog/datasets/kitti-200/v1/"
     bootstrap_kitti3d_catalog: bool = False
     kitti3d_catalog_storage_prefix: str = "catalog/datasets/kitti3d-200/v1/"
+    # Reviewed replacement catalog imported from the 2026-08-31 Drive export.
+    # Production materialises these fixed 100-sample bundles on demand.
+    bootstrap_drive_export_catalog: bool = False
+    drive_export_kitti2d_storage_prefix: str = "catalog/datasets/kitti2d-100/v1/"
+    drive_export_cityscapes_storage_prefix: str = "catalog/datasets/cityscapes-instance-100/v1/"
+    drive_export_nuscenes_storage_prefix: str = "catalog/datasets/nuscenes-mini-100/v1/"
 
     # Execution hardware defaults
     model_device: str = "cpu"

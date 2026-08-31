@@ -45,7 +45,12 @@ from src.config import get_settings
 from src.core.registry import UnknownPluginError
 from src.datasets import load_datasets
 from src.datasets.base import AnonymizationRequiredError
-from src.demo_bootstrap import ensure_demo_catalog, ensure_demo_checkpoint, ensure_demo_kitti
+from src.demo_bootstrap import (
+    ensure_demo_catalog,
+    ensure_demo_checkpoint,
+    ensure_demo_kitti,
+    ensure_drive_export_catalog,
+)
 
 SIMULATION_BANNER = "SIMULATION ONLY — chưa validate, không dùng để quyết định triển khai"
 
@@ -77,11 +82,20 @@ async def lifespan(app: FastAPI):
         if kitti_root is not None:
             os.environ["ADVERTEST_KITTI_ROOT"] = str(kitti_root)
             print(f"Demo KITTI ready: {kitti_root}")
-    # The public production catalog advertises only server-maintained demo
-    # bundles.  The API preflights jobs before the GPU worker receives them,
-    # so it must materialize the same catalog rather than relying on the
-    # worker's private filesystem.
-    if settings.bootstrap_demo_catalog or settings.app_env == "production":
+    # Production now uses the reviewed 100-sample Drive export.  The API
+    # preflights jobs, so it materialises the same bundles as the GPU worker.
+    if settings.bootstrap_drive_export_catalog or settings.app_env == "production":
+        catalog_roots = ensure_drive_export_catalog(
+            storage=storage or get_platform_storage(),
+            data_root=settings.data_root,
+            prefixes={
+                "kitti2d-100": settings.drive_export_kitti2d_storage_prefix,
+                "cityscapes-instance-100": settings.drive_export_cityscapes_storage_prefix,
+                "nuscenes-mini-100": settings.drive_export_nuscenes_storage_prefix,
+            },
+        )
+        print(f"Drive export catalog ready: {catalog_roots}")
+    elif settings.bootstrap_demo_catalog:
         catalog_root = ensure_demo_catalog(
             enabled=True,
             storage=storage or get_platform_storage(),
