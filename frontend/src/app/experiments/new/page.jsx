@@ -14,7 +14,6 @@ import {
   Cpu,
   Save,
   ArrowRight,
-  ArrowLeft,
   Check,
   Sparkles,
   Info,
@@ -277,15 +276,6 @@ export default function ConfigureProblemPage() {
           { label: "Cấu hình bài toán", href: "/experiments/new" },
           { label: "Tạo thí nghiệm mới" },
         ]}
-        actions={
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Quay lại tổng quan
-          </Link>
-        }
       />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
