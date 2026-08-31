@@ -1,10 +1,14 @@
 
+from pathlib import Path
+from threading import Lock
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.dependencies import get_runner, get_store, get_worker
 from src.api.jobs import LocalRunWorker, SqliteRunStore
 from src.api.platform_dependencies import get_platform_compute, get_platform_jobs
 from src.api.routes import _resolve_run_config, _sample_with_artifact_urls
+from src.demo_bootstrap import ensure_drive_export_bundle
 from src.api.schemas.run import CostEstimateOut, PreflightOut, RunJobOut, RunReportOut
 from src.compute.backends import ComputeBackend
 from src.config import get_settings
@@ -12,6 +16,45 @@ from src.jobs.service import PlatformJobService
 from src.pipeline.runner import RunConfig, TestRunner
 
 router = APIRouter(prefix="/runs", tags=["Runs"])
+
+_CATALOG_HYDRATION_LOCK = Lock()
+_DRIVE_CATALOG_BUNDLES = {
+    "kitti": ("kitti2d-100", "drive_export_kitti2d_storage_prefix"),
+    "cityscapes_segmentation": ("cityscapes-instance-100", "drive_export_cityscapes_storage_prefix"),
+    "nuscenes": ("nuscenes-mini-100", "drive_export_nuscenes_storage_prefix"),
+}
+
+
+def _hydrate_selected_catalog_bundle(config: RunConfig) -> None:
+    """Hydrate only the reviewed bundle selected by this run.
+
+    The control plane must validate the exact same anonymisation manifest as
+    the worker, but downloading every catalog during Render startup delays
+    readiness.  Only catalog-owned roots are eligible; user-provided paths
+    never trigger storage reads here.
+    """
+    selection = _DRIVE_CATALOG_BUNDLES.get(config.dataset)
+    if selection is None:
+        return
+    settings = get_settings()
+    bundle_name, prefix_attribute = selection
+    expected_root = (Path(settings.data_root).expanduser().resolve() / "catalog" / bundle_name)
+    requested_root = config.dataset_params.get("root")
+    if requested_root is None or Path(str(requested_root)).expanduser().resolve() != expected_root:
+        return
+    if (expected_root / "dataset.json").is_file() and (expected_root / "manifest.jsonl").is_file():
+        return
+    with _CATALOG_HYDRATION_LOCK:
+        if (expected_root / "dataset.json").is_file() and (expected_root / "manifest.jsonl").is_file():
+            return
+        from src.api.platform_dependencies import get_platform_storage
+
+        ensure_drive_export_bundle(
+            storage=get_platform_storage(),
+            storage_prefix=getattr(settings, prefix_attribute),
+            data_root=settings.data_root,
+            bundle_name=bundle_name,
+        )
 
 def _job_out(record: dict) -> RunJobOut:
     return RunJobOut(**record)
@@ -38,6 +81,7 @@ async def estimate_run(
     config: RunConfig,
     runner: TestRunner = Depends(get_runner)
 ) -> CostEstimateOut:
+    _hydrate_selected_catalog_bundle(config)
     est = runner.estimate(config).as_dict()
     # Add a custom warning if YOLO model requires download
     warnings = []
@@ -52,7 +96,9 @@ async def preflight_run(
     config: RunConfig,
     runner: TestRunner = Depends(get_runner)
 ) -> PreflightOut:
-    return PreflightOut(**runner.preflight(_resolve_run_config(config)).as_dict())
+    config = _resolve_run_config(config)
+    _hydrate_selected_catalog_bundle(config)
+    return PreflightOut(**runner.preflight(config).as_dict())
 
 @router.post("", status_code=202, response_model=RunJobOut)
 async def create_run(
@@ -65,6 +111,7 @@ async def create_run(
 ) -> RunJobOut:
     """Persist and enqueue a run. Heavy model work never runs in the request."""
     config = _resolve_run_config(config)
+    _hydrate_selected_catalog_bundle(config)
     preflight = runner.preflight(config)
     if preflight.fatal_errors:
         raise HTTPException(status_code=422, detail={"fatal_errors": list(preflight.fatal_errors)})
