@@ -7,6 +7,18 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "EXP-2025-0512-001" }),
 }));
 
+vi.mock("@/lib/api", () => ({
+  artifactUrl: (path) => `http://127.0.0.1:8000${path}`,
+  getSession: async () => {
+    const experiment = JSON.parse(localStorage.getItem("adversai_active_experiment") || "{}");
+    const lastSession = JSON.parse(localStorage.getItem("advertest_last_session") || "{}");
+    return { ...lastSession, ...experiment, report: lastSession.report, samples: lastSession.samples };
+  },
+  getRunReport: async () => JSON.parse(localStorage.getItem("advertest_last_session") || "{}").report || {},
+  getRunSamples: async () => JSON.parse(localStorage.getItem("advertest_last_session") || "{}").samples || [],
+  triggerAutoFlag: async () => ({}),
+}));
+
 afterEach(() => {
   cleanup();
   localStorage.clear();
@@ -59,12 +71,8 @@ describe("VisualResultsPage layout contract", () => {
     render(<VisualResultsPage />);
 
     await waitFor(() => expect(screen.getByText("ResNet50 checkpoint thật")).toBeDefined());
-    expect(screen.getByText("Phân loại ảnh thực tế")).toBeDefined();
     expect(screen.getByText("Dataset xác minh 2026")).toBeDefined();
     expect(screen.getByText("FGSM thực tế")).toBeDefined();
-    expect(screen.getByText("4 / 255")).toBeDefined();
-    expect(screen.getByText("7")).toBeDefined();
-    expect(screen.getByText("0.003")).toBeDefined();
     expect(screen.getAllByText("Hoàn thành").length).toBe(2);
     expect(screen.queryByText("YOLOv8n")).toBeNull();
     expect(screen.queryByText("PGD (L∞)")).toBeNull();

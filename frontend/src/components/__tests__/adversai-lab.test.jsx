@@ -53,9 +53,11 @@ describe("AdversAI Lab Design System & Common Components", () => {
     expect(screen.getAllByText("Quản trị").length).toBeGreaterThan(0);
   });
 
-  it("renders TopNavigation with tabs", () => {
+  it("renders compact TopNavigation controls", () => {
     render(<TopNavigation />);
-    expect(screen.getAllByText("Metrics & Benchmark").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Phân tích & Báo cáo").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Toggle Sidebar" })).toBeDefined();
+    expect(screen.getByTitle("Thông báo hệ thống")).toBeDefined();
+    expect(screen.getByTitle("Cài đặt & Tích hợp")).toBeDefined();
+    expect(screen.queryByText("Metrics & Benchmark")).toBeNull();
   });
 });

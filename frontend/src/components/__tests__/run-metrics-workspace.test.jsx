@@ -35,7 +35,7 @@ describe("RunMetricsContent", () => {
   it("shows measured findings and limitations instead of generated advice", () => {
     render(
       <RunMetricsContent
-        report={{ ...report3d, simulation_only: true, n_samples: 8 }}
+        report={{ ...report3d, simulation_only: true, n_samples: 8, provenance: { run_config: { task_id: "detection3d", benchmark_protocol_id: "kitti-val-v1", split: "val", seed: 42 }, ground_truth_available: true } }}
         mode="analysis"
         analytics={{
           summary: { worst_attack: { attack: "lidar_fog", mean_degradation_percent: 37.1 } },
@@ -47,7 +47,7 @@ describe("RunMetricsContent", () => {
     expect(screen.getAllByText(/lidar_fog/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Car/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/SIMULATION/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Cỡ mẫu nhỏ/i).length).toBeGreaterThan(0);
+    expect(screen.getByText("Giới hạn cần đọc trước khi quyết định")).toBeVisible();
     expect(screen.queryByText(/L_adv = 0.4/i)).toBeNull();
   });
 });
