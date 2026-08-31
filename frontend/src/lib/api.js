@@ -66,7 +66,7 @@ export function registerUser(payloadOrEmail, passwordArg, displayNameArg) {
 }
 
 export function getCurrentUser() {
-  return apiFetch("/api/v1/auth/me");
+  return apiFetch("/api/v1/auth/session");
 }
 
 export function logoutUser() {
@@ -540,7 +540,7 @@ export function getGoogleAuthConfig() {
 }
 
 export function getAuthMe() {
-  return apiFetch("/api/v1/auth/me");
+  return apiFetch("/api/v1/auth/session");
 }
 
 /* ---- Settings & W&B Integration ---- */

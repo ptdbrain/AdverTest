@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from src.auth.contracts import BrowserSessionOut, GoogleAuthIn, LoginIn, TokenOut, UserCreateIn, UserOut
-from src.auth.dependencies import get_auth_service, get_current_user
+from src.auth.dependencies import get_auth_service, get_current_user, get_current_user_optional
 from src.auth.service import AuthService
 from src.config import get_settings
 
@@ -53,11 +53,13 @@ async def login_user(
 @router.post("/google", response_model=TokenOut)
 async def login_google_sso(
     payload: GoogleAuthIn,
+    response: Response,
     auth_service: AuthService = Depends(get_auth_service),
 ) -> TokenOut:
     """Authenticate via Google Single Sign-On (ID Token or OAuth2 credential)."""
     try:
         user_out, token = auth_service.authenticate_google(payload)
+        _set_browser_session(response, token)
         return TokenOut(
             access_token=token,
             expires_in_seconds=24 * 3600,
@@ -97,6 +99,14 @@ async def get_my_profile(
     current_user: UserOut = Depends(get_current_user),
 ) -> UserOut:
     """Get the authenticated user's profile and active quotas."""
+    return current_user
+
+
+@router.get("/session", response_model=UserOut | None)
+async def get_browser_session(
+    current_user: UserOut | None = Depends(get_current_user_optional),
+) -> UserOut | None:
+    """Return the optional browser session without turning a logged-out visit into a 401."""
     return current_user
 
 

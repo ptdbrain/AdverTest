@@ -29,3 +29,10 @@ def test_logout_clears_cookie_and_blocks_me() -> None:
     )
     assert client.post("/api/v1/auth/logout").status_code == 204
     assert client.get("/api/v1/auth/me").status_code == 401
+
+
+def test_optional_browser_session_is_not_an_error_when_logged_out() -> None:
+    client = TestClient(app)
+    response = client.get("/api/v1/auth/session")
+    assert response.status_code == 200
+    assert response.json() is None
