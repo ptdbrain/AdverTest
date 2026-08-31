@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   BarChart3, Boxes, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3,
   Cpu, Crosshair, Database, Download, Fingerprint, Gauge, History,
@@ -330,7 +330,7 @@ function ExperimentRail({ className = "", metadata }) {
   return (
     <aside data-testid="experiment-info-panel" className={cn("flex min-w-0 flex-col justify-between rounded-xl border border-slate-200 bg-white p-3 shadow-sm", className)}>
       <div>
-        <div className="flex items-center gap-2 border-b border-slate-100 pb-2"><div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><Info className="h-4 w-4" aria-hidden="true" /></div><h2 className="text-sm font-bold text-slate-900">Thông tin thí nghiệm</h2></div>
+        <div className="flex items-center gap-2 border-b border-slate-100 pb-2"><div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><Info className="h-4 w-4" aria-hidden="true" /></div><h2 className="text-sm font-bold text-slate-900">Ngữ cảnh run</h2></div>
         <dl className="mt-2 divide-y divide-slate-100 text-[10px]">
           {(metadata?.details || buildExperimentMetadata(undefined, null, null).details).map((detail) => { const Icon = detail.icon; return <div key={detail.label} className="grid grid-cols-2 items-center gap-2 py-1.5"><dt className="flex min-w-0 items-center gap-1.5 text-slate-500"><Icon className="h-3.5 w-3.5 shrink-0 text-blue-600" aria-hidden="true" /><span className="truncate">{detail.label}</span></dt><dd className={cn("min-w-0 text-right font-semibold leading-tight text-slate-800", detail.valueClass, detail.mono && "font-mono text-[9px]")}>{displayValue(detail.value)}</dd></div>; })}
         </dl>
@@ -338,7 +338,7 @@ function ExperimentRail({ className = "", metadata }) {
       <div className="mt-4 border-t border-slate-200 pt-3">
         <h3 className="mb-2 text-xs font-bold text-slate-900">Trạng thái</h3>
         <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2"><span className={cn("flex h-7 w-7 items-center justify-center rounded-full text-white shadow-sm", metadata?.status ? "bg-emerald-500" : "bg-slate-300")}><StatusIcon className="h-4 w-4" aria-hidden="true" /></span><div><div className="text-xs font-bold text-slate-900">{displayStatus(metadata?.status)}</div><div className="text-[10px] text-slate-500">{metadata?.status ? "Trạng thái từ phiên chạy" : NO_DATA}</div></div></div><span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-600">{displayStatus(metadata?.status)}</span></div>
-        <div className="mt-3"><div className="mb-1 flex justify-between text-[10px] font-medium text-slate-500"><span>Mức độ ảnh hưởng</span><span className="font-bold text-slate-800">{metadata?.impact !== undefined ? `${metadata.impact}%` : NO_DATA}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-red-500" style={{ width: `${Math.min(100, Math.max(0, Number(metadata?.impact) || 0))}%` }} /></div></div>
+        <p className="mt-3 text-[10px] text-slate-500">Chỉ số khoa học chỉ hiển thị trong report có bằng chứng đã xác minh.</p>
       </div>
     </aside>
   );
@@ -1272,6 +1272,7 @@ function QuickObservation({ expId, sample, report }) {
 
 export default function VisualResultsPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const [zoomRegion, setZoomRegion] = useState("vehicle_rear");
   const [zoom, setZoom] = useState(1);
   const [metadata, setMetadata] = useState(null);
@@ -1279,6 +1280,8 @@ export default function VisualResultsPage() {
   const [samples, setSamples] = useState([]);
   const [activeSampleIndex, setActiveSampleIndex] = useState(0);
   const expId = params?.id || "";
+  const deepLinkRunId = searchParams?.get("run_id") || searchParams?.get("runId") || "";
+  const deepLinkProjectId = searchParams?.get("project_id") || "";
 
   const [activeRunId, setActiveRunId] = useState(null);
   const [sessionData, setSessionData] = useState(null);
@@ -1295,20 +1298,24 @@ export default function VisualResultsPage() {
     setActiveSampleIndex(0);
     try {
       const [fetchedReport, fetchedSamples] = await Promise.all([
-        getRunReport(runId),
-        getRunSamples(runId),
+        getRunReport(runId, deepLinkProjectId || undefined),
+        getRunSamples(runId, {}, deepLinkProjectId || undefined),
       ]);
       setReport(fetchedReport);
       setSamples(fetchedSamples?.length ? fetchedSamples : fetchedReport?.sample_results || []);
     } catch (err) {
       console.warn("Could not load run report:", err);
     }
-  }, []);
+  }, [deepLinkProjectId]);
 
   useEffect(() => {
+    if (deepLinkRunId) {
+      if (deepLinkRunId !== activeRunId) handleSelectRun(deepLinkRunId);
+      return;
+    }
     const initialRun = sessionData?.runs?.at(-1)?.id || sessionData?.run_id || sessionData?.runId;
     if (initialRun && !activeRunId) handleSelectRun(initialRun);
-  }, [sessionData, activeRunId, handleSelectRun]);
+  }, [deepLinkRunId, sessionData, activeRunId, handleSelectRun]);
 
   const handleAutoFlag = useCallback(async () => {
     const runId = activeRunId;
@@ -1350,7 +1357,7 @@ export default function VisualResultsPage() {
     || "detection2d"
   );
 
-  const currentRunId = activeRunId || sessionData?.runId || sessionData?.run_id || "";
+  const currentRunId = activeRunId || deepLinkRunId || sessionData?.runId || sessionData?.run_id || "";
   const currentRunNote = sessionData?.runs?.find(r => r.id === currentRunId)?.note || "";
 
   return (

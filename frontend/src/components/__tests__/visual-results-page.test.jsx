@@ -5,6 +5,7 @@ import VisualResultsPage from "@/app/experiments/[id]/results/page";
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "EXP-2025-0512-001" }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -144,7 +145,7 @@ describe("VisualResultsPage layout contract", () => {
     expect(screen.getByTestId("attacked-prediction-label-0").textContent).toContain("truck-attacked-real");
     expect(screen.getByTestId("clean-prediction-box-0").getAttribute("x")).toBe("10");
     expect(screen.getByTestId("clean-prediction-box-0").getAttribute("y")).toBe("12");
-    expect(screen.getByText("71.23%")).toBeDefined();
+    expect(screen.queryByText("71.23%")).toBeNull();
     expect(screen.queryByText("car 0.96")).toBeNull();
     expect(screen.queryByText("1024 × 768")).toBeNull();
     expect(screen.queryByAltText("Bản đồ khác biệt")).toBeNull();
