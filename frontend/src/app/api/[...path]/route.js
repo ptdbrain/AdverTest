@@ -25,6 +25,7 @@ async function proxy(request, { params }) {
     });
     const responseHeaders = new Headers(upstream.headers);
     responseHeaders.delete("content-encoding");
+    responseHeaders.delete("content-length");
     return new NextResponse(upstream.body, { status: upstream.status, headers: responseHeaders });
   } catch (error) {
     return NextResponse.json({ detail: `API proxy unavailable: ${error.message}` }, { status: 502 });
