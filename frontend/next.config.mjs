@@ -15,6 +15,23 @@ const nextConfig = {
       },
     ];
   },
+  // The frontend is deployed independently from the API.  Never let a shared
+  // cache keep an old HTML shell after a release: it can reference a previous
+  // client bundle (including obsolete full-page overlays) and make navigation
+  // appear unresponsive.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-store, max-age=0, must-revalidate",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
