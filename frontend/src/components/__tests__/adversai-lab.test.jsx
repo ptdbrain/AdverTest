@@ -49,6 +49,10 @@ describe("AdversAI Lab Design System & Common Components", () => {
     expect(screen.getByText("AdversAI Lab")).toBeDefined();
     expect(screen.getAllByText("Tổng quan hệ thống").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cấu hình bài toán").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: /Cấu hình tấn công/i })).toHaveAttribute(
+      "href",
+      "/experiments/EXP-2025-0512-001/attack",
+    );
     expect(screen.getAllByText("Phòng thủ").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Quản trị").length).toBeGreaterThan(0);
   });

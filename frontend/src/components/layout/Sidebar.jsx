@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Shield,
@@ -127,8 +126,11 @@ export default function Sidebar() {
         {MENU_ITEMS.map((item) => {
           const active = isActive(item.href);
           const Icon = item.icon;
+          // Use a native anchor for global shell navigation. This deliberate
+          // full-navigation fallback keeps the shell usable if a page's
+          // client bundle or router transition fails during loading.
           return (
-            <Link
+            <a
               key={item.name}
               href={item.href}
               title={collapsed ? item.name : undefined}
@@ -142,7 +144,7 @@ export default function Sidebar() {
             >
               <Icon className={cn("w-[18px] h-[18px] flex-shrink-0", active ? "text-white" : "text-slate-500")} />
               {!collapsed && <span className="truncate leading-none">{item.name}</span>}
-            </Link>
+            </a>
           );
         })}
       </nav>
