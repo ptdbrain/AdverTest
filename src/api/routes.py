@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import hashlib
+import io
+import json
 import uuid
+import zipfile
 from copy import deepcopy
 from dataclasses import replace
 from io import BytesIO
@@ -1060,6 +1064,37 @@ async def get_report(run_id: str) -> RunReportOut:
     if item["report"] is None:
         raise HTTPException(status_code=409, detail=f"run {run_id!r} is {item['status'].lower()}")
     return RunReportOut(**item["report"])
+
+
+@router.get("/runs/{run_id}/download-zip")
+async def download_run_zip(run_id: str) -> Response:
+    """Download immutable run evidence as a portable report-and-summary ZIP."""
+    item = _require_run(run_id)
+    report = item["report"]
+    if report is None:
+        raise HTTPException(status_code=409, detail="run evidence is not available until the run completes")
+    archive = BytesIO()
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        bundle.writestr("metrics_report.json", json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+        output = io.StringIO(newline="")
+        writer = csv.writer(output)
+        writer.writerow(("run_id", "attack", "severity", "ap", "degradation_percent"))
+        for cell in report.get("cells", []):
+            writer.writerow(
+                (
+                    run_id,
+                    cell.get("attack", ""),
+                    cell.get("severity", ""),
+                    cell.get("ap", ""),
+                    cell.get("degradation_percent", ""),
+                )
+            )
+        bundle.writestr("summary.csv", output.getvalue())
+    return Response(
+        content=archive.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{run_id}.zip"'},
+    )
 
 
 @router.get("/runs/{run_id}/samples")

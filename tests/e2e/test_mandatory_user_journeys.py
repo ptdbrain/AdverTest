@@ -45,7 +45,7 @@ def test_journey_a_authentication_and_authorization(client, auth_service) -> Non
     """Journey A:
     1. Register researcher with attempted privilege escalation in payload.
     2. Verify assigned role defaults strictly to RESEARCHER (no escalation).
-    3. Login and receive Bearer token.
+    3. Login and receive an HttpOnly browser session.
     4. Access valid researcher resources.
     5. Attempt vertical role elevation via admin endpoint -> 403 Forbidden.
     6. Attempt forged Google login -> 401 Unauthorized.
@@ -69,21 +69,22 @@ def test_journey_a_authentication_and_authorization(client, auth_service) -> Non
     assert reg_data["user"]["role"] == "RESEARCHER", "Role escalation in registration payload must be ignored"
     researcher_id = reg_data["user"]["id"]
 
-    # Step 3: Login to obtain token
+    # Step 3: Login establishes the HttpOnly browser session.  The client
+    # deliberately does not read a token from JSON or browser storage.
     login_res = client.post(
         "/api/v1/auth/login",
         json={"email": researcher_email, "password": "SecurePassword123!"},
     )
     assert login_res.status_code == 200
-    token = login_res.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    assert "access_token" not in login_res.json()
+    assert "advertest_session" in login_res.headers.get("set-cookie", "")
 
     # Step 4: Access valid researcher resources
-    me_res = client.get("/api/v1/auth/me", headers=headers)
+    me_res = client.get("/api/v1/auth/me")
     assert me_res.status_code == 200
     assert me_res.json()["email"] == researcher_email
 
-    catalog_res = client.get("/api/v1/catalog/attacks", headers=headers)
+    catalog_res = client.get("/api/v1/catalog/attacks")
     assert catalog_res.status_code == 200
     assert isinstance(catalog_res.json(), list)
 
@@ -91,7 +92,6 @@ def test_journey_a_authentication_and_authorization(client, auth_service) -> Non
     admin_escalate_res = client.post(
         f"/api/v1/admin/users/{researcher_id}/status",
         json={"role": "ADMIN"},
-        headers=headers,
     )
     assert admin_escalate_res.status_code == 403
 
@@ -290,4 +290,3 @@ def test_journey_d_3d_perception_pipeline(tmp_path) -> None:
     except RuntimeError as exc:
         # P1.6 / Journey D contract: exact missing dependency/CUDA runtime recorded
         assert "PointPillars requires MMDetection3D 1.4.0" in str(exc) or "CUDA" in str(exc)
-

@@ -14,13 +14,33 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from src.api.platform_dependencies import get_platform_database
 from src.auth.security import create_access_token
 from src.main import app
+from src.persistence.models import ProjectRecord, UserRecord
 
 
 @pytest.fixture
 def client() -> TestClient:
     return TestClient(app)
+
+
+def _create_owned_project(project_id: str, user_id: str) -> None:
+    """Seed the ownership required by project-scoped artifact routes."""
+    database = get_platform_database()
+    with database.session() as session:
+        if session.get(UserRecord, user_id) is None:
+            session.add(
+                UserRecord(
+                    id=user_id,
+                    email=f"{user_id}@example.test",
+                    password_hash="!test-only!",
+                    display_name=user_id,
+                    role="RESEARCHER",
+                    status="ACTIVE",
+                )
+            )
+        session.add(ProjectRecord(id=project_id, name=project_id, owner_user_id=user_id))
 
 
 def test_public_registration_ignores_or_rejects_admin_role(client: TestClient) -> None:
@@ -43,9 +63,10 @@ def test_public_registration_ignores_or_rejects_admin_role(client: TestClient) -
             assert assigned_role in ("RESEARCHER", "USER", "ENGINEER"), f"Role elevation allowed: {assigned_role}"
             assert assigned_role.upper() != "ADMIN"
 
-            token = data["access_token"]
+            assert "access_token" not in data
+            assert "advertest_session" in res.headers.get("set-cookie", "")
             # Verify user cannot access admin endpoints
-            admin_res = client.get("/api/v1/admin/users", headers={"Authorization": f"Bearer {token}"})
+            admin_res = client.get("/api/v1/admin/users")
             assert admin_res.status_code == 403, f"Expected 403 on admin endpoint, got {admin_res.status_code}"
 
 
@@ -66,8 +87,9 @@ def test_public_registration_default_role_is_non_privileged(client: TestClient) 
     assert role in ("RESEARCHER", "USER", "ENGINEER")
     assert role.upper() != "ADMIN"
 
-    token = data["access_token"]
-    admin_res = client.get("/api/v1/admin/audit-logs", headers={"Authorization": f"Bearer {token}"})
+    assert "access_token" not in data
+    assert "advertest_session" in res.headers.get("set-cookie", "")
+    admin_res = client.get("/api/v1/admin/audit-logs")
     assert admin_res.status_code == 403
 
 
@@ -182,6 +204,7 @@ def test_cross_project_artifact_access_is_blocked(client: TestClient) -> None:
     user_b = f"usr-bob-{uuid.uuid4().hex[:6]}"
     token_a = create_access_token({"sub": user_a, "role": "researcher"})
     token_b = create_access_token({"sub": user_b, "role": "researcher"})
+    _create_owned_project(proj_a, user_a)
 
     # 1. Unauthenticated request with spoofed X-User-Id header MUST be rejected (401)
     spoof_res = client.post(
@@ -253,10 +276,12 @@ def test_forged_x_user_id_does_not_override_jwt_bearer_identity(client: TestClie
         json={"email": email_alice, "password": "AlicePassword123!", "display_name": "Alice"},
     )
     assert res_alice.status_code == 201
-    token_alice = res_alice.json()["access_token"]
+    user_alice = res_alice.json()["user"]["id"]
+    token_alice = create_access_token({"sub": user_alice, "role": "researcher"})
 
     # Spoofed request sending Alice's Bearer token but claiming X-User-Id: admin
     proj_test = f"proj-test-{uuid.uuid4().hex[:8]}"
+    _create_owned_project(proj_test, user_alice)
     upload_res = client.post(
         f"/api/v1/projects/{proj_test}/artifact-upload-sessions",
         headers={"Authorization": f"Bearer {token_alice}", "X-User-Id": "admin_spoofed_id"},
@@ -324,4 +349,3 @@ def test_dev_and_test_environments_pass_validation() -> None:
 
     test_settings = Settings(app_env="test")
     test_settings.validate_production_environment()
-

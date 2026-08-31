@@ -6,7 +6,6 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from src.api.dependencies import get_store
 from src.api.jobs import SqliteRunStore
 from src.evaluation.risk_rubric import (
     RISK_RUBRIC_TABLE,
@@ -15,6 +14,13 @@ from src.evaluation.risk_rubric import (
 )
 
 router = APIRouter(prefix="/risk-rubric", tags=["Risk Rubric"])
+
+
+def _get_current_store() -> SqliteRunStore:
+    """Resolve the active store after application/test dependency reloads."""
+    from src.api.dependencies import get_store
+
+    return get_store()
 
 
 @router.get("")
@@ -26,7 +32,7 @@ async def get_risk_rubric() -> list[dict[str, Any]]:
 @router.post("/assess")
 async def assess_review_risk(
     review_id: str = Query(...),
-    store: SqliteRunStore = Depends(get_store),
+    store: SqliteRunStore = Depends(_get_current_store),
 ) -> dict[str, Any]:
     """Compute a risk assessment for a specific review item."""
     review = store.get_review(review_id)
@@ -56,7 +62,7 @@ async def assess_review_risk(
 async def get_risk_session_summary(
     run_id: str = Query(default=None),
     status: str = Query(default="PENDING"),
-    store: SqliteRunStore = Depends(get_store),
+    store: SqliteRunStore = Depends(_get_current_store),
 ) -> dict[str, Any]:
     """Aggregate risk summary across reviews, optionally filtered by run or status."""
     reviews = store.list_reviews(status=status if status != "ALL" else None)
