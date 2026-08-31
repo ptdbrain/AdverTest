@@ -108,13 +108,13 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
     >
       <div
         style={{
-          background: "var(--bg-elevated, #131B2A)",
-          border: "1px solid var(--border-subtle, rgba(148, 163, 184, 0.2))",
+          background: "var(--app-surface)",
+          border: "1px solid var(--app-border)",
           borderRadius: "12px",
           width: "100%",
           maxWidth: "460px",
           padding: "24px 28px",
-          boxShadow: "0 20px 40px rgba(0, 0, 0, 0.5)",
+          boxShadow: "0 20px 40px rgba(15, 23, 42, 0.16)",
           display: "flex",
           flexDirection: "column",
           gap: "18px",
@@ -124,7 +124,7 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <h2 style={{ fontSize: "1.2rem", fontWeight: 800, color: "var(--text-primary, #FFF)", margin: 0 }}>
+            <h2 style={{ fontSize: "1.2rem", fontWeight: 800, color: "var(--app-text)", margin: 0 }}>
               {activeTab === "register" ? "Đăng ký tài khoản mới" : t("auth.title")}
             </h2>
             <p style={{ fontSize: "0.78rem", color: "var(--text-muted, #94A3B8)", margin: "4px 0 0 0" }}>
@@ -151,7 +151,7 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
         <div
           style={{
             display: "flex",
-            background: "var(--bg-primary, #0B0F17)",
+            background: "var(--app-bg)",
             padding: "3px",
             borderRadius: "6px",
             border: "1px solid var(--border-subtle)",
@@ -165,8 +165,8 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
               padding: "8px 8px",
               border: "none",
               borderRadius: "4px",
-              background: activeTab === "google" ? "var(--bg-elevated, #1E293B)" : "transparent",
-              color: activeTab === "google" ? "var(--text-primary)" : "var(--text-muted)",
+              background: activeTab === "google" ? "var(--app-surface)" : "transparent",
+              color: activeTab === "google" ? "var(--app-text)" : "var(--text-muted)",
               fontWeight: 700,
               fontSize: "0.75rem",
               cursor: "pointer",
@@ -186,8 +186,8 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
               padding: "8px 8px",
               border: "none",
               borderRadius: "4px",
-              background: activeTab === "login" ? "var(--bg-elevated, #1E293B)" : "transparent",
-              color: activeTab === "login" ? "var(--text-primary)" : "var(--text-muted)",
+              background: activeTab === "login" ? "var(--app-surface)" : "transparent",
+              color: activeTab === "login" ? "var(--app-text)" : "var(--text-muted)",
               fontWeight: 700,
               fontSize: "0.75rem",
               cursor: "pointer",
@@ -203,8 +203,8 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
               padding: "8px 8px",
               border: "none",
               borderRadius: "4px",
-              background: activeTab === "register" ? "var(--bg-elevated, #1E293B)" : "transparent",
-              color: activeTab === "register" ? "var(--text-primary)" : "var(--text-muted)",
+              background: activeTab === "register" ? "var(--app-surface)" : "transparent",
+              color: activeTab === "register" ? "var(--app-text)" : "var(--text-muted)",
               fontWeight: 700,
               fontSize: "0.75rem",
               cursor: "pointer",
@@ -222,7 +222,7 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
               borderRadius: "6px",
               padding: "10px 12px",
               fontSize: "0.75rem",
-              color: "#FCA5A5",
+              color: "#B91C1C",
             }}
           >
             {error}
@@ -258,8 +258,8 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
                   padding: "8px 10px",
                   borderRadius: "6px",
                   border: "1px solid var(--border-subtle)",
-                  background: "var(--bg-primary, #0B0F17)",
-                  color: "var(--text-primary, #FFF)",
+                  background: "var(--app-bg)",
+                  color: "var(--app-text)",
                   fontSize: "0.8rem",
                   boxSizing: "border-box",
                 }}
@@ -280,8 +280,8 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
                   padding: "8px 10px",
                   borderRadius: "6px",
                   border: "1px solid var(--border-subtle)",
-                  background: "var(--bg-primary, #0B0F17)",
-                  color: "var(--text-primary, #FFF)",
+                  background: "var(--app-bg)",
+                  color: "var(--app-text)",
                   fontSize: "0.8rem",
                   boxSizing: "border-box",
                 }}
@@ -295,7 +295,7 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
                 padding: "10px",
                 borderRadius: "6px",
                 border: "none",
-                background: "var(--primary-accent, #3B82F6)",
+                background: "var(--primary)",
                 color: "#FFF",
                 fontWeight: 700,
                 fontSize: "0.8rem",
@@ -326,8 +326,8 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
                   padding: "8px 10px",
                   borderRadius: "6px",
                   border: "1px solid var(--border-subtle)",
-                  background: "var(--bg-primary, #0B0F17)",
-                  color: "var(--text-primary, #FFF)",
+                  background: "var(--app-bg)",
+                  color: "var(--app-text)",
                   fontSize: "0.8rem",
                   boxSizing: "border-box",
                 }}
@@ -348,8 +348,8 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
                   padding: "8px 10px",
                   borderRadius: "6px",
                   border: "1px solid var(--border-subtle)",
-                  background: "var(--bg-primary, #0B0F17)",
-                  color: "var(--text-primary, #FFF)",
+                  background: "var(--app-bg)",
+                  color: "var(--app-text)",
                   fontSize: "0.8rem",
                   boxSizing: "border-box",
                 }}
@@ -370,8 +370,8 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
                   padding: "8px 10px",
                   borderRadius: "6px",
                   border: "1px solid var(--border-subtle)",
-                  background: "var(--bg-primary, #0B0F17)",
-                  color: "var(--text-primary, #FFF)",
+                  background: "var(--app-bg)",
+                  color: "var(--app-text)",
                   fontSize: "0.8rem",
                   boxSizing: "border-box",
                 }}
@@ -385,7 +385,7 @@ export default function AuthModal({ isOpen: propsIsOpen, onClose: propsOnClose }
                 padding: "10px",
                 borderRadius: "6px",
                 border: "none",
-                background: "var(--primary-accent, #3B82F6)",
+                background: "var(--primary)",
                 color: "#FFF",
                 fontWeight: 700,
                 fontSize: "0.8rem",
