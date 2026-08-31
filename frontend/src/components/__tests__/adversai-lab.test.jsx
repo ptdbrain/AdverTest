@@ -46,7 +46,7 @@ describe("AdversAI Lab Design System & Common Components", () => {
 
   it("renders Sidebar brand and menu links", () => {
     render(<Sidebar />);
-    expect(screen.getByText("AdversAI Lab")).toBeDefined();
+    expect(screen.getByText("AdverTest")).toBeDefined();
     expect(screen.getAllByText("Tổng quan hệ thống").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cấu hình bài toán").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: /Cấu hình tấn công/i })).toHaveAttribute(

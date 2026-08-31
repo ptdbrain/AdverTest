@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { useSidebar } from "@/context/SidebarContext";
+import { useProject } from "@/context/ProjectContext";
 
 const MENU_ITEMS = [
   { name: "Tổng quan hệ thống", href: "/dashboard", icon: LayoutDashboard },
@@ -42,6 +43,8 @@ export default function Sidebar() {
   const { isCollapsed, toggleSidebar } = useSidebar();
   const collapsed = isCollapsed;
   const { user, isAuthenticated, openAuthModal } = useAuth();
+  const { activeProjectId } = useProject();
+  const scopedHref = (href) => activeProjectId ? `${href}${href.includes("?") ? "&" : "?"}project_id=${encodeURIComponent(activeProjectId)}` : href;
 
   const isActive = (href) => {
     if (!pathname) return false;
@@ -104,14 +107,14 @@ export default function Sidebar() {
           <div
             onClick={toggleSidebar}
             className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-sm flex-shrink-0 cursor-pointer hover:bg-blue-700 transition-colors"
-            title={collapsed ? "Mở rộng sidebar" : "AdversAI Lab"}
+            title={collapsed ? "Mở rộng sidebar" : "AdverTest"}
           >
             <Shield className="w-5 h-5" />
           </div>
           {!collapsed && (
             <div className="overflow-hidden">
               <h1 className="text-[16px] font-bold text-[#153E9D] tracking-tight leading-tight whitespace-nowrap">
-                AdversAI Lab
+                AdverTest
               </h1>
               <p className="text-[10px] text-slate-500 font-medium leading-tight whitespace-nowrap">
                 Đánh giá & phòng thủ AI
@@ -132,7 +135,7 @@ export default function Sidebar() {
           return (
             <a
               key={item.name}
-              href={item.href}
+              href={scopedHref(item.href)}
               title={collapsed ? item.name : undefined}
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-150",

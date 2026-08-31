@@ -204,6 +204,7 @@ export default function ConfigureProblemPage() {
       setProjects((items) => [...items, created]);
       setProjectId(created.id);
       window.localStorage.setItem("advertest.activeProjectId", created.id);
+      window.dispatchEvent(new Event("advertest-project-changed"));
       setNewProjectName("");
     } catch (error) { setProjectError(error.message); }
   };
@@ -635,7 +636,7 @@ export default function ConfigureProblemPage() {
         <div className="space-y-5">
           <Card title="Asset của project" subtitle={projectId ? `Project: ${projectId}` : "Chọn hoặc tạo project để upload asset"}>
             <div className="space-y-4">
-              <label className="block text-sm font-medium">Project<select className="mt-1 block w-full rounded border border-slate-300 p-2" value={projectId} onChange={(event) => { setProjectId(event.target.value); window.localStorage.setItem("advertest.activeProjectId", event.target.value); }}><option value="">Chọn project…</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+              <label className="block text-sm font-medium">Project<select className="mt-1 block w-full rounded border border-slate-300 p-2" value={projectId} onChange={(event) => { setProjectId(event.target.value); window.localStorage.setItem("advertest.activeProjectId", event.target.value); window.dispatchEvent(new Event("advertest-project-changed")); }}><option value="">Chọn project…</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
               <div className="flex gap-2"><input className="min-w-0 flex-1 rounded border border-slate-300 p-2 text-sm" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} placeholder="Tên project mới" /><Button size="sm" disabled={!newProjectName.trim()} onClick={createNewProject}>Tạo project</Button></div>
               {projectError && <p role="alert" className="text-xs text-amber-700">{projectError}</p>}
               <ProjectAssetPicker projectId={projectId} taskId={selectedTask} kind="model" modelFamilyId={currentModel.architecture} onComplete={() => getModelVersions().then(setCatalogModels).catch(() => {})} />

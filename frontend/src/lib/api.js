@@ -77,6 +77,17 @@ export function createProject(payload) {
   return apiFetch("/api/v1/projects", { method: "POST", body: JSON.stringify(payload) });
 }
 
+export function getActiveProjectId() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem("advertest.activeProjectId") || "";
+}
+
+function projectPath(path, projectId = getActiveProjectId()) {
+  if (!projectId) return path;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}project_id=${encodeURIComponent(projectId)}`;
+}
+
 export function logoutUser() {
   return apiFetch("/api/v1/auth/logout", { method: "POST" });
 }
@@ -142,8 +153,8 @@ export function preflightRun(config) {
   });
 }
 
-export function createRun(config) {
-  return apiFetch("/api/v1/runs", {
+export function createRun(config, projectId) {
+  return apiFetch(projectPath("/api/v1/runs", projectId), {
     method: "POST",
     body: JSON.stringify(config),
   });
@@ -156,21 +167,23 @@ export function createInferenceExperiment(payload) {
   });
 }
 
-export function listRuns() {
-  return apiFetch("/api/v1/runs");
+export function listRuns(projectId) {
+  return apiFetch(projectPath("/api/v1/runs", projectId));
 }
 
-export function getRun(runId) {
-  return apiFetch(`/api/v1/runs/${runId}`);
+export function getRun(runId, projectId) {
+  return apiFetch(projectPath(`/api/v1/runs/${encodeURIComponent(runId)}`, projectId));
 }
 
-export function getRunReport(runId) {
-  return apiFetch(`/api/v1/runs/${runId}/report`);
+export function getRunReport(runId, projectId) {
+  return apiFetch(projectPath(`/api/v1/runs/${encodeURIComponent(runId)}/report`, projectId));
 }
 
-export function getRunSamples(runId, params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  return apiFetch(`/api/v1/runs/${runId}/samples${qs ? `?${qs}` : ""}`);
+export function getRunSamples(runId, params = {}, projectId) {
+  const query = new URLSearchParams(params);
+  const activeProjectId = projectId || getActiveProjectId();
+  if (activeProjectId) query.set("project_id", activeProjectId);
+  return apiFetch(`/api/v1/runs/${encodeURIComponent(runId)}/samples${query.size ? `?${query}` : ""}`);
 }
 
 export function getRunAnalyticsSummary(runId) {
@@ -190,8 +203,7 @@ export function getRunAnalyticsDistance(runId) {
 }
 
 export function cancelRun(runId, projectId) {
-  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
-  return apiFetch(`/api/v1/runs/${encodeURIComponent(runId)}/cancel${query}`, { method: "POST" });
+  return apiFetch(projectPath(`/api/v1/runs/${encodeURIComponent(runId)}/cancel`, projectId), { method: "POST" });
 }
 
 export function connectRunWebSocket(runId, onEvent) {

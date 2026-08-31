@@ -7,9 +7,11 @@ import { cn } from "@/lib/utils";
 import UserMenu from "@/components/UserMenu";
 import { useSidebar } from "@/context/SidebarContext";
 import ThemeToggle from "@/components/ThemeToggle";
+import { useProject } from "@/context/ProjectContext";
 
 export default function TopNavigation() {
   const { isCollapsed, toggleSidebar } = useSidebar();
+  const { projects, activeProjectId, isLoadingProjects, setActiveProjectId } = useProject();
 
 
   return (
@@ -29,6 +31,13 @@ export default function TopNavigation() {
           >
             <Menu className="w-5 h-5" />
           </button>
+          <label className="hidden sm:flex items-center gap-2 ml-2 text-xs text-slate-500">
+            <span className="whitespace-nowrap">Project</span>
+            <select aria-label="Project đang hoạt động" value={activeProjectId} onChange={(event) => setActiveProjectId(event.target.value)} disabled={isLoadingProjects || !projects.length} className="max-w-52 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm font-medium text-slate-700 disabled:text-slate-400">
+              <option value="">{isLoadingProjects ? "Đang tải…" : "Chọn project"}</option>
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+          </label>
 
         </div>
 

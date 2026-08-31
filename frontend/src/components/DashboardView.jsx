@@ -8,6 +8,7 @@ import Badge from "@/components/common/Badge";
 import Button from "@/components/common/Button";
 import { getCatalogAttacks, getCatalogDatasets, getModelVersions, listRuns } from "@/lib/api";
 import { buildRunDecisionView, formatRatio } from "@/lib/reportMetrics";
+import { useProject } from "@/context/ProjectContext";
 
 const PIPELINE_STEPS = [
   { step: 1, title: "Cấu hình bài toán", desc: "Nạp mô hình & dữ liệu gốc", icon: Database, route: "/experiments/new" },
@@ -18,6 +19,7 @@ const PIPELINE_STEPS = [
 ];
 
 export default function DashboardView() {
+  const { activeProject, activeProjectId, projects, isLoadingProjects } = useProject();
   const [runs, setRuns] = useState([]);
   const [models, setModels] = useState([]);
   const [datasets, setDatasets] = useState([]);
@@ -42,14 +44,18 @@ export default function DashboardView() {
   const latestMeasuredRun = [...completedRuns].reverse().find((run) => buildRunDecisionView(run.report).dataState === "MEASURED");
   const latestDecision = latestMeasuredRun ? buildRunDecisionView(latestMeasuredRun.report) : null;
   const highRiskRun = runs.some((run) => run.report && (run.report.asr || run.report.metrics?.robustness?.attack_success_rate || 0) > 0.4);
+  const scopedHref = (href) => activeProjectId ? `${href}${href.includes("?") ? "&" : "?"}project_id=${encodeURIComponent(activeProjectId)}` : href;
 
   return (
     <div className="space-y-5 animate-fade-in">
+      <Card title="Project đang làm việc" subtitle="Mọi asset, run và kết quả đều nằm trong project đã chọn ở thanh trên cùng">
+        {activeProject ? <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-800">{activeProject.name}</p><p className="mt-1 text-xs text-slate-500">{activeProject.description || "Không có mô tả"} · {projects.length} project có thể truy cập</p></div><Link href={scopedHref("/experiments/new")} className="text-xs font-semibold text-blue-600">Quản lý asset →</Link></div> : <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4"><p className="text-sm text-slate-600">{isLoadingProjects ? "Đang tải project…" : "Chưa có project. Hãy tạo project trước khi cấu hình benchmark."}</p><Link href="/experiments/new" className="rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">Tạo project mới</Link></div>}
+      </Card>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
         <Card className="xl:col-span-3" title="Quy trình đánh giá & phòng thủ AI đối kháng" subtitle="Từ cấu hình bài toán đến báo cáo và huấn luyện phòng thủ">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
             {PIPELINE_STEPS.map(({ step, title, desc, icon: Icon, route }) => (
-              <Link key={step} href={route} className="group rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 transition-all hover:border-blue-300 hover:bg-blue-50">
+              <Link key={step} href={scopedHref(route)} className="group rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 transition-all hover:border-blue-300 hover:bg-blue-50">
                 <div className="mb-2 flex items-center justify-between"><span className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-blue-600 group-hover:bg-blue-600 group-hover:text-white"><Icon className="h-3.5 w-3.5" /></span><span className="text-[10px] font-bold text-slate-400">0{step}</span></div>
                 <div className="text-[11px] font-bold leading-tight text-slate-800 group-hover:text-blue-700">{title}</div><p className="mt-1.5 line-clamp-2 text-[10px] leading-snug text-slate-500">{desc}</p>
               </Link>
@@ -59,10 +65,10 @@ export default function DashboardView() {
 
         <Card title="Thao tác nhanh" subtitle="Lối tắt hành động thường dùng">
           <div className="grid grid-cols-2 gap-2">
-            <Link href="/experiments/new" className="rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-center text-xs font-semibold text-blue-700 hover:bg-blue-100"><Plus className="mx-auto mb-1 h-4 w-4" />Tạo thí nghiệm</Link>
-            <Link href="/experiments/new" className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-700 hover:bg-slate-100"><Upload className="mx-auto mb-1 h-4 w-4" />Nạp mô hình</Link>
-            <Link href="/experiments/new" className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-700 hover:bg-slate-100"><CloudUpload className="mx-auto mb-1 h-4 w-4" />Nạp dataset</Link>
-            <Link href="/analysis" className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-700 hover:bg-slate-100"><FileText className="mx-auto mb-1 h-4 w-4" />Xuất báo cáo</Link>
+            <Link href={scopedHref("/experiments/new")} className="rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-center text-xs font-semibold text-blue-700 hover:bg-blue-100"><Plus className="mx-auto mb-1 h-4 w-4" />Tạo thí nghiệm</Link>
+            <Link href={scopedHref("/experiments/new")} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-700 hover:bg-slate-100"><Upload className="mx-auto mb-1 h-4 w-4" />Nạp mô hình</Link>
+            <Link href={scopedHref("/experiments/new")} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-700 hover:bg-slate-100"><CloudUpload className="mx-auto mb-1 h-4 w-4" />Nạp dataset</Link>
+            <Link href={scopedHref("/analysis")} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center text-xs font-semibold text-slate-700 hover:bg-slate-100"><FileText className="mx-auto mb-1 h-4 w-4" />Xuất báo cáo</Link>
           </div>
           <Link href="/defense"><Button variant="outline" size="sm" className="mt-3 w-full justify-center text-xs"><Workflow className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Quy trình phòng thủ đóng loop</Button></Link>
         </Card>

@@ -40,6 +40,59 @@ def require_platform_actor(
     raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED: Valid Bearer token required.")
 
 
+def optional_platform_actor(
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Cookie(default=None, alias="advertest_session"),
+) -> str | None:
+    """Return the authenticated actor when a session is present.
+
+    Local/offline benchmark routes deliberately remain usable without product
+    authentication.  The platform backend turns this optional identity into a
+    strict requirement before it touches durable project data.
+    """
+    try:
+        return require_platform_actor(authorization, session_token)
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            return None
+        raise
+
+
+def require_run_project_member(
+    project_id: str | None = None,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    session_token: str | None = Cookie(default=None, alias="advertest_session"),
+) -> str | None:
+    """Enforce a selected project only for the durable platform run API."""
+    if get_settings().run_execution_backend != "platform":
+        return None
+    if not project_id:
+        raise HTTPException(status_code=422, detail="PROJECT_REQUIRED: Select a project before accessing benchmark runs.")
+    return require_project_member(project_id, authorization, session_token)
+
+
+def assert_project_member(project_id: str, actor_id: str) -> None:
+    """Raise unless *actor_id* is allowed to access *project_id*."""
+    from src.persistence.models import ProjectMembershipRecord, ProjectRecord
+
+    db = get_platform_database()
+    with db.session() as session:
+        membership = session.query(ProjectMembershipRecord).filter(
+            ProjectMembershipRecord.project_id == project_id,
+            ProjectMembershipRecord.user_id == actor_id,
+            ProjectMembershipRecord.status == "ACTIVE",
+        ).first()
+        if membership:
+            return
+        project = session.query(ProjectRecord).filter(
+            ProjectRecord.id == project_id,
+            ProjectRecord.owner_user_id == actor_id,
+        ).first()
+        if project:
+            return
+    raise HTTPException(status_code=403, detail="FORBIDDEN: User is not an active member or owner of this project.")
+
+
 def require_project_member(
     project_id: str,
     authorization: str | None = Header(default=None, alias="Authorization"),
@@ -58,26 +111,8 @@ def require_project_member(
     if user_role == "ADMIN":
         return actor_id
 
-    from src.persistence.models import ProjectMembershipRecord, ProjectRecord
-
-    db = get_platform_database()
-    with db.session() as session:
-        membership = session.query(ProjectMembershipRecord).filter(
-            ProjectMembershipRecord.project_id == project_id,
-            ProjectMembershipRecord.user_id == actor_id,
-            ProjectMembershipRecord.status == "ACTIVE",
-        ).first()
-        if membership:
-            return actor_id
-
-        project = session.query(ProjectRecord).filter(
-            ProjectRecord.id == project_id,
-            ProjectRecord.owner_user_id == actor_id,
-        ).first()
-        if project:
-            return actor_id
-
-    raise HTTPException(status_code=403, detail="FORBIDDEN: User is not an active member or owner of this project.")
+    assert_project_member(project_id, actor_id)
+    return actor_id
 
 
 @functools.lru_cache
