@@ -42,7 +42,6 @@ export default function Sidebar() {
   const pathname = rawPathname || "/";
   const { isCollapsed, toggleSidebar } = useSidebar();
   const collapsed = isCollapsed;
-  const [isTouchViewport, setIsTouchViewport] = React.useState(false);
   const { user, isAuthenticated, openAuthModal } = useAuth();
 
   const isActive = (href) => {
@@ -74,34 +73,8 @@ export default function Sidebar() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [collapsed, toggleSidebar]);
 
-  // A CSS breakpoint alone is not enough here: browser zoom can make a desktop
-  // viewport look narrow and leave the mobile backdrop above the whole app.
-  // Only touch-first narrow devices need a click-blocking drawer backdrop.
-  React.useEffect(() => {
-    if (typeof window.matchMedia !== "function") return undefined;
-    const media = window.matchMedia("(max-width: 767px) and (pointer: coarse)");
-    const update = () => setIsTouchViewport(media.matches);
-    update();
-    media.addEventListener?.("change", update);
-    return () => media.removeEventListener?.("change", update);
-  }, []);
-
-  const closeMobileDrawer = () => {
-    if (isTouchViewport && !collapsed) toggleSidebar();
-  };
-
   return (
     <>
-      {/* Mobile Backdrop Overlay */}
-      {isTouchViewport && !collapsed && (
-        <div
-          role="presentation"
-          aria-hidden="true"
-          onClick={toggleSidebar}
-          className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-30 md:hidden transition-opacity"
-        />
-      )}
-
       <aside
         role="navigation"
         aria-label="Thanh điều hướng chính"
@@ -158,7 +131,6 @@ export default function Sidebar() {
             <Link
               key={item.name}
               href={item.href}
-              onClick={closeMobileDrawer}
               title={collapsed ? item.name : undefined}
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-150",
