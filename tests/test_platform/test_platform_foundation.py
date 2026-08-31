@@ -59,6 +59,20 @@ def test_job_state_is_durable_cancellable_and_retryable(tmp_path: Path) -> None:
     assert retried is not None and retried["status"] == JobStatus.QUEUED.value
 
 
+def test_queued_job_cancels_immediately_before_worker_claim(tmp_path: Path) -> None:
+    _, jobs = _services(tmp_path)
+    project_id, actor_id = str(uuid4()), str(uuid4())
+    job = jobs.create(project_id=project_id, owner_user_id=actor_id, job_type="benchmark_run", request={})
+
+    assert jobs.waiting_for_gpu(job["id"])
+    assert jobs.cancel(project_id, job["id"])
+    cancelled = jobs.get(project_id, job["id"])
+    assert cancelled is not None
+    assert cancelled["status"] == JobStatus.CANCELLED.value
+    assert cancelled["stage"] == JobStatus.CANCELLED.value
+    assert jobs.start(job["id"]) is False
+
+
 def test_attacked_export_contains_required_portable_files(tmp_path: Path) -> None:
     artifacts, _ = _services(tmp_path)
     project_id, actor_id = str(uuid4()), str(uuid4())

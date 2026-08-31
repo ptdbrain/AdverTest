@@ -189,6 +189,18 @@ class PlatformJobService:
                 return False
             if record.status in _TERMINAL:
                 return True
+            # No worker owns a queued/GPU-starting job yet.  Finalise it now
+            # instead of leaving the UI in an indefinite CANCEL_REQUESTED
+            # state while an external GPU is still cold-starting.
+            if record.status == JobStatus.QUEUED.value:
+                record.cancel_requested = True
+                return self._finish(
+                    session,
+                    record,
+                    JobStatus.CANCELLED.value,
+                    "JOB_CANCELLED",
+                    "Cancelled before worker claim",
+                )
             record.cancel_requested = True
             self._append_event(
                 session,
