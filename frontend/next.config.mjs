@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const apiOrigin = process.env.API_ORIGIN || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 const nextConfig = {
   images: {
     remotePatterns: [
@@ -11,7 +13,7 @@ const nextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "http://localhost:8000/api/:path*",
+        destination: `${apiOrigin}/api/:path*`,
       },
     ];
   },

@@ -1,4 +1,7 @@
-const BUILD_TIME_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+// An empty public URL intentionally means "same origin".  Production uses
+// Next's server-side rewrite so browser sessions are first-party cookies,
+// rather than cookies set by a cross-site onrender.com API request.
+const BUILD_TIME_API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
 // `NEXT_PUBLIC_*` is normally inlined by Next.js at build time.  The Render
 // Docker service is configured at runtime, so let its entrypoint provide an
@@ -7,7 +10,7 @@ const BUILD_TIME_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1
 export function getApiBase() {
   if (typeof window !== "undefined") {
     const runtimeBase = window.__ADVERTEST_RUNTIME_CONFIG__?.apiUrl;
-    if (runtimeBase) return runtimeBase.replace(/\/$/, "");
+    if (typeof runtimeBase === "string") return runtimeBase.replace(/\/$/, "");
   }
   return BUILD_TIME_API_BASE.replace(/\/$/, "");
 }
