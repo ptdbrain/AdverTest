@@ -17,7 +17,17 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 def _set_browser_session(response: Response, token: str) -> None:
     settings = get_settings()
-    response.set_cookie(key=settings.auth_cookie_name, value=token, httponly=True, secure=settings.auth_cookie_secure, samesite=settings.auth_cookie_samesite, max_age=24 * 3600)
+    response.set_cookie(
+        key=settings.auth_cookie_name,
+        value=token,
+        httponly=True,
+        # The public UI is hosted on a different site from the API. Production
+        # therefore needs a cross-site cookie, which browsers only accept when
+        # it is both SameSite=None and Secure.
+        secure=settings.auth_cookie_secure or settings.app_env == "production",
+        samesite="none" if settings.app_env == "production" else settings.auth_cookie_samesite,
+        max_age=24 * 3600,
+    )
 
 
 @router.post("/register", response_model=BrowserSessionOut, status_code=status.HTTP_201_CREATED)
@@ -115,5 +125,10 @@ async def logout_user() -> Response:
     """End the browser session by expiring its HttpOnly cookie."""
     settings = get_settings()
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
-    response.delete_cookie(key=settings.auth_cookie_name, httponly=True, secure=settings.auth_cookie_secure, samesite=settings.auth_cookie_samesite)
+    response.delete_cookie(
+        key=settings.auth_cookie_name,
+        httponly=True,
+        secure=settings.auth_cookie_secure or settings.app_env == "production",
+        samesite="none" if settings.app_env == "production" else settings.auth_cookie_samesite,
+    )
     return response

@@ -4,6 +4,8 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from src.api.routers import auth
+from src.config import Settings
 from src.main import app
 
 
@@ -36,3 +38,18 @@ def test_optional_browser_session_is_not_an_error_when_logged_out() -> None:
     response = client.get("/api/v1/auth/session")
     assert response.status_code == 200
     assert response.json() is None
+
+
+def test_production_session_cookie_is_cross_site_and_secure(monkeypatch) -> None:
+    monkeypatch.setattr(
+        auth,
+        "get_settings",
+        lambda: Settings(app_env="production", auth_cookie_secure=False),
+    )
+    response = TestClient(app).post(
+        "/api/v1/auth/register",
+        json={"email": f"production-{uuid4().hex}@example.test", "password": "correct-horse", "display_name": "Production User"},
+    )
+    cookie = response.headers["set-cookie"]
+    assert "SameSite=none" in cookie
+    assert "Secure" in cookie
