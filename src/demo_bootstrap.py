@@ -232,4 +232,9 @@ def _is_drive_export_bundle(root: Path) -> bool:
     except (OSError, json.JSONDecodeError):
         return False
     rows = [line for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()]
-    return payload.get("sample_count") == 100 and len(rows) == 100 and bool(payload.get("task_id"))
+    return (
+        payload.get("sample_count") == 100
+        and len(rows) == 100
+        and bool(payload.get("task_id"))
+        and payload.get("anonymized") is True
+    )

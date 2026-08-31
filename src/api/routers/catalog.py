@@ -81,6 +81,11 @@ async def list_models() -> list[ModelCatalogItem]:
 async def list_datasets(task_id: str | None = None) -> list[DatasetCatalogItem]:
     items = []
     for dataset in load_datasets().values():
+        # The public product catalog is deliberately limited to the three
+        # reviewed Drive exports.  Other registered loaders are implementation
+        # details or developer fixtures and must not be selectable from UI.
+        if dataset.name not in _CATALOG_SAMPLE_COUNTS:
+            continue
         item = dataset.describe()
         params = _demo_dataset_params(dataset.name)
         item["dataset_params"] = params

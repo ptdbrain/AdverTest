@@ -49,7 +49,8 @@ async def test_model_and_dataset_catalogs(client):
     assert "blob_detector" in {item["name"] for item in models.json()}
     assert "pointpillars" in {item["name"] for item in models.json()}
     assert "bevfusion" not in {item["name"] for item in models.json()}
-    assert "synthetic_shapes" in {item["name"] for item in datasets.json()}
+    assert {item["name"] for item in datasets.json()} == {"kitti", "cityscapes_segmentation", "nuscenes"}
+    assert all(item["sample_count"] == 100 and item["anonymized"] for item in datasets.json())
 
 
 @pytest.mark.asyncio

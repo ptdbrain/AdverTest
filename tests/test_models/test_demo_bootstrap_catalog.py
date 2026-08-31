@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from src.demo_bootstrap import (
     ensure_anonymized_catalog_bundle,
     ensure_demo_checkpoint,
@@ -75,7 +77,7 @@ def test_drive_export_bundle_requires_the_reviewed_100_sample_contract(tmp_path:
     prefix = "catalog/datasets/kitti2d-100/v1/"
     storage.put_bytes(
         f"{prefix}dataset.json",
-        b'{"task_id": "detection2d", "sample_count": 100}',
+        b'{"task_id": "detection2d", "sample_count": 100, "anonymized": true}',
         mime_type="application/json",
     )
     manifest = b"".join(f'{{"sample_id": "{index:06d}"}}\n'.encode() for index in range(100))
@@ -91,3 +93,23 @@ def test_drive_export_bundle_requires_the_reviewed_100_sample_contract(tmp_path:
 
     assert root == tmp_path / "data" / "catalog" / "kitti2d-100"
     assert (root / "manifest.jsonl").read_bytes() == manifest
+
+
+def test_drive_export_bundle_rejects_a_100_sample_descriptor_without_anonymization(tmp_path: Path) -> None:
+    storage = LocalArtifactStorage(str(tmp_path / "objects"))
+    prefix = "catalog/datasets/kitti2d-100/v1/"
+    storage.put_bytes(
+        f"{prefix}dataset.json",
+        b'{"task_id": "detection2d", "sample_count": 100}',
+        mime_type="application/json",
+    )
+    manifest = b"".join(f'{{"sample_id": "{index:06d}"}}\n'.encode() for index in range(100))
+    storage.put_bytes(f"{prefix}manifest.jsonl", manifest, mime_type="application/json")
+
+    with pytest.raises(RuntimeError, match="valid 100-sample descriptor"):
+        ensure_drive_export_bundle(
+            storage=storage,
+            storage_prefix=prefix,
+            data_root=str(tmp_path / "data"),
+            bundle_name="kitti2d-100",
+        )
