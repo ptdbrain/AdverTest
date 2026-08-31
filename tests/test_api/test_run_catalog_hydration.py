@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from fastapi import HTTPException
+
 from src.api.routers import runs
 from src.pipeline.runner import RunConfig
-from fastapi import HTTPException
 
 
 class _Settings:
