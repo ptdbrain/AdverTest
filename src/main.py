@@ -32,6 +32,7 @@ from src.api.routers import (
     jobs,
     live_inference,
     platform_datasets,
+    projects,
     risk_rubric,
     runs,
     sessions,
@@ -135,6 +136,7 @@ app.include_router(admin.router, prefix="/api/v1")
 app.include_router(catalog.router, prefix="/api/v1")
 app.include_router(runs.router, prefix="/api/v1")
 app.include_router(datasets.router, prefix="/api/v1")
+app.include_router(projects.router, prefix="/api/v1")
 app.include_router(artifacts.router, prefix="/api/v1")
 app.include_router(checkpoints.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")

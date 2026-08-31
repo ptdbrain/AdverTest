@@ -41,7 +41,7 @@ import {
   CLASS_LABELS_DATA,
 } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { getApiBase, getCatalogDatasets, getModelVersions } from "@/lib/api";
+import { createProject, getApiBase, getCatalogDatasets, getModelVersions, listProjects } from "@/lib/api";
 import ProjectAssetPicker from "@/components/ProjectAssetPicker";
 import ClassMappingCard from "@/components/ClassMappingCard";
 
@@ -56,6 +56,10 @@ export default function ConfigureProblemPage() {
   const [catalogDatasets, setCatalogDatasets] = useState([]);
   const [catalogModels, setCatalogModels] = useState([]);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
+  const [projects, setProjects] = useState([]);
+  const [projectId, setProjectId] = useState("");
+  const [newProjectName, setNewProjectName] = useState("");
+  const [projectError, setProjectError] = useState("");
 
   const [classMapping, setClassMapping] = useState({});
   const [expName, setExpName] = useState("EXP-2025-0512-001");
@@ -79,6 +83,15 @@ export default function ConfigureProblemPage() {
         }
       })
       .catch((err) => console.warn("Could not load sessions:", err));
+  }, []);
+
+  useEffect(() => {
+    listProjects().then((items) => {
+      setProjects(items);
+      const saved = window.localStorage.getItem("advertest.activeProjectId");
+      const selected = items.find((item) => item.id === saved) || items[0];
+      if (selected) setProjectId(selected.id);
+    }).catch(() => setProjectError("Đăng nhập để tạo project và upload asset riêng."));
   }, []);
 
   // When choosing an existing session, auto-fill its configuration
@@ -184,7 +197,16 @@ export default function ConfigureProblemPage() {
 
   const currentDataset = filteredDatasets.find((d) => d.id === selectedDatasetId) || filteredDatasets[0] || AVAILABLE_DATASETS[0];
   const currentModel = filteredModels.find((m) => m.id === selectedModelId) || filteredModels[0] || AVAILABLE_MODELS[0];
-  const projectId = process.env.NEXT_PUBLIC_DEFAULT_PROJECT_ID || "advertest-default";
+  const createNewProject = async () => {
+    setProjectError("");
+    try {
+      const created = await createProject({ name: newProjectName });
+      setProjects((items) => [...items, created]);
+      setProjectId(created.id);
+      window.localStorage.setItem("advertest.activeProjectId", created.id);
+      setNewProjectName("");
+    } catch (error) { setProjectError(error.message); }
+  };
 
   // Derive Model Classes and Dataset Classes for Label Mapping Matrix
   const modelClasses = currentModel.architecture === "pointpillars"
@@ -611,8 +633,11 @@ export default function ConfigureProblemPage() {
 
         {/* RIGHT COLUMN: Experiment Summary & Hyperparameters (1 Column) */}
         <div className="space-y-5">
-          <Card title="Asset của project" subtitle={`Project: ${projectId}`}>
+          <Card title="Asset của project" subtitle={projectId ? `Project: ${projectId}` : "Chọn hoặc tạo project để upload asset"}>
             <div className="space-y-4">
+              <label className="block text-sm font-medium">Project<select className="mt-1 block w-full rounded border border-slate-300 p-2" value={projectId} onChange={(event) => { setProjectId(event.target.value); window.localStorage.setItem("advertest.activeProjectId", event.target.value); }}><option value="">Chọn project…</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+              <div className="flex gap-2"><input className="min-w-0 flex-1 rounded border border-slate-300 p-2 text-sm" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} placeholder="Tên project mới" /><Button size="sm" disabled={!newProjectName.trim()} onClick={createNewProject}>Tạo project</Button></div>
+              {projectError && <p role="alert" className="text-xs text-amber-700">{projectError}</p>}
               <ProjectAssetPicker projectId={projectId} taskId={selectedTask} kind="model" modelFamilyId={currentModel.architecture} onComplete={() => getModelVersions().then(setCatalogModels).catch(() => {})} />
               <ProjectAssetPicker projectId={projectId} taskId={selectedTask} kind="dataset" onComplete={() => getCatalogDatasets({ task_id: selectedTask }).then(setCatalogDatasets).catch(() => {})} />
               <p className="text-[11px] text-slate-500">Upload dùng API project-scoped; server quyết định validation và trạng thái READY.</p>

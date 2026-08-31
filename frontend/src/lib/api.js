@@ -69,6 +69,14 @@ export function getCurrentUser() {
   return apiFetch("/api/v1/auth/session");
 }
 
+export function listProjects() {
+  return apiFetch("/api/v1/projects");
+}
+
+export function createProject(payload) {
+  return apiFetch("/api/v1/projects", { method: "POST", body: JSON.stringify(payload) });
+}
+
 export function logoutUser() {
   return apiFetch("/api/v1/auth/logout", { method: "POST" });
 }
