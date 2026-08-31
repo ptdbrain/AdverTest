@@ -86,9 +86,11 @@ async def lifespan(app: FastAPI):
         if kitti_root is not None:
             os.environ["ADVERTEST_KITTI_ROOT"] = str(kitti_root)
             print(f"Demo KITTI ready: {kitti_root}")
-    # Production now uses the reviewed 100-sample Drive export.  The API
-    # preflights jobs, so it materialises the same bundles as the GPU worker.
-    if settings.bootstrap_drive_export_catalog or settings.app_env == "production":
+    # The Render API is the control plane: it must become healthy before any
+    # optional object downloads. Cloud Run workers hydrate benchmark bundles
+    # when they claim a job. Keeping this opt-in also prevents Render's port
+    # scanner from timing out while several catalog bundles download.
+    if settings.bootstrap_drive_export_catalog:
         catalog_roots = ensure_drive_export_catalog(
             storage=storage or get_platform_storage(),
             data_root=settings.data_root,
