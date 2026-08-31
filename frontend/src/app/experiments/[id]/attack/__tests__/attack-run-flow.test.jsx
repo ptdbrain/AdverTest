@@ -85,7 +85,7 @@ describe("ConfigureAttackPage real run handoff", () => {
       title: "KITTI thật từ backend",
       task_id: "detection2d",
     }]);
-    getCatalogAttacks.mockResolvedValueOnce([
+    getCatalogAttacks.mockResolvedValue([
       { name: "depth_fog", available: true },
       { name: "pgd", available: true },
     ]);
@@ -116,6 +116,7 @@ describe("ConfigureAttackPage real run handoff", () => {
     getRunSamples.mockResolvedValueOnce([sample]);
 
     render(<ConfigureAttackPage />);
+    await waitFor(() => expect(getCatalogAttacks).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole("button", { name: /Bắt đầu chạy suy luận/i }));
 
     await waitFor(() => expect(createRun).toHaveBeenCalledTimes(1));
@@ -160,7 +161,7 @@ describe("ConfigureAttackPage real run handoff", () => {
       title: "KITTI",
       task_id: "detection2d",
     }]);
-    getCatalogAttacks.mockResolvedValueOnce([
+    getCatalogAttacks.mockResolvedValue([
       { name: "depth_fog", available: true },
       { name: "pgd", available: true },
     ]);
@@ -172,6 +173,7 @@ describe("ConfigureAttackPage real run handoff", () => {
     getRunSamples.mockResolvedValueOnce([sample]);
 
     render(<ConfigureAttackPage />);
+    await waitFor(() => expect(getCatalogAttacks).toHaveBeenCalledTimes(1));
 
     // Switch to Individual Mode
     fireEvent.click(screen.getByTestId("mode-individual-btn"));
