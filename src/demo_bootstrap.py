@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from src.storage.base import ArtifactStorage
@@ -176,13 +177,20 @@ def ensure_drive_export_bundle(
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="advertest-drive-export-", dir=destination.parent) as temporary:
         staged = Path(temporary) / bundle_name
-        for key in keys:
+        def fetch_one(key: str) -> None:
             relative = key.removeprefix(prefix)
             if not relative or relative.startswith("/") or ".." in Path(relative).parts:
                 raise RuntimeError(f"unsafe Drive export object key: {key!r}")
             output = staged / relative
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_bytes(storage.get_bytes(key))
+
+        # A Drive export has 100 small independent objects.  Serial reads make
+        # a cold Render instance hold the preflight request for minutes, while
+        # a bounded pool preserves the same descriptor/manifest validation and
+        # avoids an unbounded connection burst against object storage.
+        with ThreadPoolExecutor(max_workers=min(12, max(1, len(keys)))) as pool:
+            list(pool.map(fetch_one, keys))
         if not _is_drive_export_bundle(staged):
             raise RuntimeError("Drive export bundle lacks a valid 100-sample descriptor or manifest")
         os.replace(staged, destination)
