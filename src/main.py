@@ -72,7 +72,11 @@ async def lifespan(app: FastAPI):
             storage_key=settings.demo_model_storage_key,
         )
         print(f"Demo checkpoint ready: {checkpoint}")
-    if settings.bootstrap_demo_kitti:
+    # The legacy demo export is intentionally absent from production object
+    # storage. Production preflights the reviewed Drive catalog below instead;
+    # attempting this optional bootstrap here would prevent the API from
+    # starting whenever the legacy prefix has been retired.
+    if settings.bootstrap_demo_kitti and settings.app_env != "production":
         kitti_root = ensure_demo_kitti(
             enabled=True,
             storage=storage or get_platform_storage(),
