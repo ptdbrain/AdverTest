@@ -4,6 +4,11 @@
 @source "../../src/**/*.{js,ts,jsx,tsx,mdx}";
 
 @layer base {
+  html {
+    min-height: 100%;
+    background-color: var(--app-bg);
+  }
+
   :root {
     --app-bg: #F8FAFC;
     --app-surface: #FFFFFF;
@@ -35,12 +40,14 @@
   }
 
   body {
+    min-height: 100vh;
     background-color: var(--app-bg);
     color: var(--app-text);
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 13px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    overflow-x: clip;
   }
 }
 

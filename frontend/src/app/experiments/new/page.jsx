@@ -98,8 +98,8 @@ export default function ConfigureProblemPage() {
 
 
   // The experiment form must show the deployable catalog, not the old design
-  // mock data.  Dataset `demo` means an anonymised bundle is mounted by the
-  // worker; model `runnable` means its checkpoint has passed the run gate.
+  // mock data. An anonymised dataset is eligible for selection; model
+  // `runnable` means its checkpoint has passed the run gate.
   useEffect(() => {
     let isMounted = true;
     setIsLoadingCatalog(true);
@@ -165,12 +165,8 @@ export default function ConfigureProblemPage() {
       description: `${dataset.modality} · ${dataset.ground_truth_status || "ground truth có sẵn"}`,
       sampleCount: dataset.sample_count,
       samples: dataset.sample_count != null ? `${dataset.sample_count} ảnh` : "chưa có ảnh",
-      isLocal: Boolean(dataset.demo && dataset.anonymized),
-      reason: dataset.demo && dataset.anonymized
-        ? null
-        : !dataset.anonymized
-          ? "Chưa anonymize"
-          : "Chưa có bundle trên worker",
+      isLocal: Boolean(dataset.anonymized),
+      reason: dataset.anonymized ? null : "Chưa anonymize",
       classLabels: Object.entries(dataset.class_map || {}).map(([id, name]) => ({ id, name })),
     }));
     return liveDatasets.length ? liveDatasets : fallbackDatasets;
@@ -281,6 +277,15 @@ export default function ConfigureProblemPage() {
           { label: "Cấu hình bài toán", href: "/experiments/new" },
           { label: "Tạo thí nghiệm mới" },
         ]}
+        actions={
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Quay lại tổng quan
+          </Link>
+        }
       />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
