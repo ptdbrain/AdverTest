@@ -1,0 +1,13 @@
+{
+  "input_dir": "data/anonymized/kitti-smoke",
+  "input_format": "kitti",
+  "attack_name": "depth_fog",
+  "attack_params": {
+    "depth_policy": "linear_prior"
+  },
+  "severities": [1, 3, 5],
+  "seed": 20260804,
+  "output_dir": "data/attacked",
+  "preview": true,
+  "limit": 3
+}

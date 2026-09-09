@@ -1,0 +1,23 @@
+{
+  "dataset_name": "synthetic_shapes",
+  "dataset_params": {
+    "n_samples": 4,
+    "image_size": 96,
+    "seed": 20260730
+  },
+  "surrogate": {
+    "name": "blob_detector",
+    "device": "cpu",
+    "objective": "untargeted"
+  },
+  "algorithm": "dpatch",
+  "target_label": null,
+  "patch_size": 32,
+  "area_fraction": 0.15,
+  "iterations": 20,
+  "learning_rate": 0.03,
+  "eot": true,
+  "seed": 20260730,
+  "train_limit": 4,
+  "output_dir": "data/patches"
+}

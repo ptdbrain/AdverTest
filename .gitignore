@@ -1,0 +1,127 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+.worktrees/
+*.swp
+*.swo
+*~
+
+# Local tooling config
+.mcp.json
+
+# OS
+.DS_Store
+Thumbs.db
+*:Zone.Identifier
+
+# Data (never commit large data) — except the tiny KITTI demo subset that
+# both local development and the public demo deployment load by default
+# (ADVERTEST_KITTI_ROOT → data/datasets/kitti-demo5).  It must ship in git so
+# the Docker build context (Render builds from the repo) contains it.
+# The 100-image kitti2d_100 bundle and the YOLO11s baseline checkpoint are also
+# committed so Render can run real inference without requiring ephemeral uploads.
+/data/*
+!/data/datasets/
+/data/datasets/*
+!/data/datasets/kitti-demo5/
+!/data/drive_export_100/
+!/data/checkpoints/
+/data/checkpoints/*
+!/data/checkpoints/surrogates/
+/data/checkpoints/surrogates/*
+!/data/checkpoints/surrogates/yolo11s.pt
+!/data/checkpoints/sam2/
+!/data/checkpoints/sam2/*.pt
+
+# Model weights + training runs — allow only the committed baseline checkpoint.
+# IMPORTANT: Do NOT use /runs/ here (a trailing-slash directory rule prevents
+# all negations inside it). Instead we match specific content to allow selective
+# un-ignore of runs/train/yolo_b0.
+/runs/train/sam2_b0/
+/runs/train/sam2_r1/
+/runs/train/yolo_r1/
+/runs/train/yolo_r2_fog/
+/runs/train/yolo_r2_sensor/
+/runs/detect/
+/runs/val/
+/runs/predict/
+/runs/*.pt
+/runs/train/yolo_b0/*.pt
+!/runs/train/sam2_r1/
+!/runs/train/sam2_r1/*.pt
+!/runs/train/yolo_r1/
+!/runs/train/yolo_r1/run-yolo11s-robust-r1-1786164287/
+!/runs/train/yolo_r1/run-yolo11s-robust-r1-1786164287/*.pt
+!/runs/train/yolo_r1/run-yolo11s-robust-r1-1786164287/training_summary.json
+
+# Logs
+/logs/
+*.log
+
+# Test coverage
+htmlcov/
+.coverage
+coverage.xml
+.pytest-tmp-final/
+.pytest-tmp-*/
+.audit-pytest-*/
+.pytest-*/
+.pytest-*.log
+.pytest-*.err
+.tmp.driveupload/
+
+# Docker
+docker-compose.override.yml
+
+# Node (frontend)
+node_modules/
+.next/
+out/
+.nuxt/
+
+# Build
+*.pyc
+*.pyo
+
+# AI logs — tracked structure, ignored content
+.ai-log/*.jsonl
+.ai-log/archive/
+advertest-plan.md
+
+# Models
+/models/
+
+# Results
+/results/
+
+# Local test scratch
+.pytest_temp/
+/scratch/
+.superpowers/
+
+# Kaggle downloads and generated notebook artifacts.
+kaggle/
+notebooks/
+notebooks/*.zip
+notebooks/.ipynb_checkpoints/
+notebooks/kaggle-round2-fleet.ipynb
+notebooks/ziyfWn3x

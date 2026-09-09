@@ -1,0 +1,22 @@
+{
+  "input_dir": "data/anonymized/kitti-de",
+  "input_format": "kitti",
+  "attack_name": "mi_fgsm",
+  "attack_params": {
+    "steps": 5,
+    "momentum": 1.0
+  },
+  "severities": [
+    3
+  ],
+  "seed": 20260731,
+  "surrogate": {
+    "name": "yolo11",
+    "checkpoint": "checkpoints/surrogates/yolo11s.pt",
+    "device": "cpu",
+    "objective": "untargeted"
+  },
+  "output_dir": "data/attacked",
+  "preview": true,
+  "limit": 2
+}

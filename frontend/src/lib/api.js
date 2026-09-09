@@ -1,0 +1,759 @@
+// An empty public URL intentionally means "same origin": the browser calls
+// this Next server and its /api rewrite proxies to the backend, keeping the
+// session cookie first-party.  A cross-site API URL (e.g. browser on
+// http://localhost:3000, API on http://127.0.0.1:8000) never receives the
+// SameSite=Lax session cookie, so every authenticated call returns 401.
+// Deployments that need a cross-site API set NEXT_PUBLIC_API_URL (production
+// then issues a SameSite=None; Secure cookie).
+const BUILD_TIME_API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+
+// `NEXT_PUBLIC_*` is normally inlined by Next.js at build time.  The Render
+// Docker service is configured at runtime, so let its entrypoint provide an
+// optional public runtime value instead.  This also keeps local development
+// working without a runtime-config.js file.
+export function getApiBase() {
+  if (typeof window !== "undefined") {
+    // In the browser, always route through the same-origin Next.js server proxy
+    // unless an explicit runtime configuration is injected on window.
+    // This preserves first-party cookies and avoids CORS preflight failures.
+    const runtimeBase = window.__ADVERTEST_RUNTIME_CONFIG__?.apiUrl;
+    if (typeof runtimeBase === "string" && runtimeBase) return runtimeBase.replace(/\/$/, "");
+    return "";
+  }
+  return BUILD_TIME_API_BASE.replace(/\/$/, "");
+}
+
+export function artifactUrl(pathValue) {
+  if (!pathValue) return "";
+  if (/^https?:\/\//i.test(pathValue)) return pathValue;
+  const base = getApiBase();
+  const normalized = pathValue.startsWith("/") ? pathValue : `/${pathValue}`;
+  return `${base}${normalized}`;
+}
+
+export async function apiFetch(path, options = {}) {
+  const url = `${getApiBase()}${path}`;
+  const headers = { "Content-Type": "application/json", ...options.headers };
+
+  const res = await fetch(url, {
+    ...options,
+    credentials: "include",
+    headers,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const detail =
+      typeof body.detail === "string"
+        ? body.detail
+        : body.detail
+          ? JSON.stringify(body.detail)
+          : res.status === 500
+            ? "Máy chủ đang xử lý tác vụ nặng hoặc tạm thời khởi động lại (HTTP 500). Vui lòng thử lại sau giây lát."
+            : res.status === 502
+              ? "Cổng kết nối máy chủ tạm thời gián đoạn (HTTP 502). Vui lòng thử lại sau giây lát."
+              : `API error ${res.status}`;
+    throw new Error(detail);
+  }
+  if (res.status === 204) return undefined;
+  return res.json();
+}
+
+export function loginUser(credentialsOrEmail, passwordArg) {
+  const payload =
+    typeof credentialsOrEmail === "object" ? credentialsOrEmail : { email: credentialsOrEmail, password: passwordArg };
+  return apiFetch("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function registerUser(payloadOrEmail, passwordArg, displayNameArg) {
+  const payload =
+    typeof payloadOrEmail === "object"
+      ? payloadOrEmail
+      : { email: payloadOrEmail, password: passwordArg, display_name: displayNameArg };
+  return apiFetch("/api/v1/auth/register", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getCurrentUser() {
+  return apiFetch("/api/v1/auth/session");
+}
+
+export function listProjects() {
+  return apiFetch("/api/v1/projects");
+}
+
+export function createProject(payload) {
+  return apiFetch("/api/v1/projects", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function getActiveProjectId() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem("advertest.activeProjectId") || "";
+}
+
+function projectPath(path, projectId = getActiveProjectId()) {
+  if (!projectId) return path;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}project_id=${encodeURIComponent(projectId)}`;
+}
+
+export function logoutUser() {
+  return apiFetch("/api/v1/auth/logout", { method: "POST" });
+}
+
+/** Upload a project artifact using the server's resumable-session contract. */
+export async function uploadProjectArtifact(projectId, file, kind) {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const basePath = `/api/v1/projects/${encodeURIComponent(projectId)}`;
+  const session = await apiFetch(`${basePath}/artifact-upload-sessions`, {
+    method: "POST",
+    body: JSON.stringify({
+      kind,
+      original_filename: file.name,
+      mime_type: file.type || "application/octet-stream",
+      expected_size_bytes: file.size,
+    }),
+  });
+  await apiFetch(`${basePath}/artifact-upload-sessions/${encodeURIComponent(session.upload_session_id)}/content`, {
+    method: "PUT",
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  return apiFetch(`${basePath}/artifact-upload-sessions/${encodeURIComponent(session.upload_session_id)}/complete`, {
+    method: "POST",
+    body: JSON.stringify({ sha256, size_bytes: file.size }),
+  });
+}
+
+export function registerProjectCheckpoint(projectId, artifactId, taskId, modelFamilyId) {
+  return apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/checkpoints`, {
+    method: "POST",
+    body: JSON.stringify({ artifact_id: artifactId, task_id: taskId, model_family_id: modelFamilyId }),
+  });
+}
+
+export function registerProjectDataset(projectId, artifactId, displayName, taskId) {
+  return apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/dataset-versions`, {
+    method: "POST",
+    body: JSON.stringify({ artifact_id: artifactId, display_name: displayName, task_id: taskId }),
+  });
+}
+
+export function listProjectCheckpoints(projectId) {
+  return apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/checkpoints`);
+}
+
+export function listProjectDatasetVersions(projectId) {
+  return apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/dataset-versions`);
+}
+
+export async function downloadProjectArtifact(projectId, artifactId) {
+  const { url } = await apiFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/download-url`,
+    { method: "POST" },
+  );
+  window.location.assign(artifactUrl(url));
+}
+
+export function getCatalogAttacks(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return apiFetch(`/api/v1/catalog/attacks${qs ? `?${qs}` : ""}`);
+}
+
+export function getCatalogModels() {
+  return apiFetch("/api/v1/catalog/models");
+}
+
+export function getCatalogDatasets(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return apiFetch(`/api/v1/catalog/datasets${qs ? `?${qs}` : ""}`);
+}
+
+export function getModelVersions() {
+  return apiFetch("/api/v1/model-versions");
+}
+export function getPerceptionModes() {
+  return apiFetch("/api/v1/perception-modes");
+}
+export function getModelFamilies(taskId) {
+  return apiFetch(`/api/v1/model-families?task_id=${encodeURIComponent(taskId)}`);
+}
+export function getBaseCheckpoints(taskId, familyId) {
+  return apiFetch(
+    `/api/v1/base-checkpoints?task_id=${encodeURIComponent(taskId)}&model_family_id=${encodeURIComponent(familyId)}`,
+  );
+}
+export function getDefenceCheckpoints(taskId) {
+  return apiFetch(`/api/v1/defence-checkpoints?task_id=${encodeURIComponent(taskId)}`);
+}
+export function getRunDefenceCandidates(runId, projectId) {
+  return apiFetch(projectPath(`/api/v1/runs/${encodeURIComponent(runId)}/defence-candidates`, projectId));
+}
+export function createDefenceRun(baselineRunId, checkpointId, projectId) {
+  return apiFetch(projectPath("/api/v1/defence-runs", projectId), {
+    method: "POST",
+    body: JSON.stringify({ baseline_run_id: baselineRunId, checkpoint_id: checkpointId }),
+  });
+}
+
+export function estimateRun(config) {
+  return apiFetch("/api/v1/runs/estimate", {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+}
+
+export function preflightRun(config, projectId) {
+  return apiFetch(projectPath("/api/v1/runs/preflight", projectId), {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+}
+
+export function createRun(config, projectId) {
+  return apiFetch(projectPath("/api/v1/runs", projectId), {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+}
+
+export function createInferenceExperiment(payload) {
+  return apiFetch("/api/v1/inference-experiments", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listRuns(projectId) {
+  return apiFetch(projectPath("/api/v1/runs", projectId));
+}
+
+export function getRun(runId, projectId) {
+  return apiFetch(projectPath(`/api/v1/runs/${encodeURIComponent(runId)}`, projectId));
+}
+
+export function getRunReport(runId, projectId) {
+  return apiFetch(projectPath(`/api/v1/runs/${encodeURIComponent(runId)}/report`, projectId));
+}
+
+export function getRunSamples(runId, params = {}, projectId) {
+  const query = new URLSearchParams(params);
+  const activeProjectId = projectId || getActiveProjectId();
+  if (activeProjectId) query.set("project_id", activeProjectId);
+  return apiFetch(`/api/v1/runs/${encodeURIComponent(runId)}/samples${query.size ? `?${query}` : ""}`);
+}
+
+export function getRunAnalyticsSummary(runId, projectId) {
+  return apiFetch(projectPath(`/api/v1/analytics/runs/${encodeURIComponent(runId)}/summary`, projectId));
+}
+
+export function getRunAnalyticsAttacks(runId, projectId) {
+  return apiFetch(projectPath(`/api/v1/analytics/runs/${encodeURIComponent(runId)}/attacks`, projectId));
+}
+
+export function getRunAnalyticsClasses(runId, projectId) {
+  return apiFetch(projectPath(`/api/v1/analytics/runs/${encodeURIComponent(runId)}/classes`, projectId));
+}
+
+export function getRunAnalyticsDistance(runId, projectId) {
+  return apiFetch(projectPath(`/api/v1/analytics/runs/${encodeURIComponent(runId)}/distance`, projectId));
+}
+
+export function getProjectAnalytics(projectId) {
+  return apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/analytics`);
+}
+
+export function getProjectRunsComparison(projectId, runIds) {
+  const query = encodeURIComponent((runIds || []).join(","));
+  return apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/runs-comparison?run_ids=${query}`);
+}
+
+export function cancelRun(runId, projectId) {
+  return apiFetch(projectPath(`/api/v1/runs/${encodeURIComponent(runId)}/cancel`, projectId), { method: "POST" });
+}
+
+export function connectRunWebSocket(runId, onEvent) {
+  const base = getApiBase();
+  const wsBase = base
+    ? base.replace(/^http/, "ws")
+    : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`;
+  const ws = new WebSocket(`${wsBase}/api/v1/runs/${runId}/events/ws`);
+  ws.onmessage = (e) => {
+    try {
+      onEvent(JSON.parse(e.data));
+    } catch {}
+  };
+  return ws;
+}
+
+export function getReviews(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return apiFetch(`/api/v1/reviews${qs ? `?${qs}` : ""}`);
+}
+
+export function resolveReview(reviewId, decision, decisionNote, resolvedBy, batchClusterId = null, projectId) {
+  const payload = {
+    decision,
+    decision_note: decisionNote,
+    resolved_by: resolvedBy,
+  };
+  if (batchClusterId) {
+    payload.batch_cluster_id = batchClusterId;
+  }
+  return apiFetch(projectPath(`/api/v1/reviews/${reviewId}`, projectId), {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function triggerAutoFlag(runId, threshold = 30, projectId) {
+  const path = `/api/v1/runs/${runId}/flag-reviews?threshold=${threshold}`;
+  return apiFetch(projectPath(path, projectId), {
+    method: "POST",
+  });
+}
+
+/* ---- Per-sample review & adversarial dataset (workflow steps 12-13) ---- */
+export function getSampleReviews(runId, decision, projectId) {
+  const query = decision ? `?decision=${encodeURIComponent(decision)}` : "";
+  return apiFetch(projectPath(`/api/v1/runs/${encodeURIComponent(runId)}/sample-reviews${query}`, projectId));
+}
+
+export function upsertSampleReviews(runId, reviews, projectId) {
+  return apiFetch(projectPath(`/api/v1/runs/${encodeURIComponent(runId)}/sample-reviews`, projectId), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reviews }),
+  });
+}
+
+export function createAdversarialDataset(runId, projectId) {
+  return apiFetch(projectPath(`/api/v1/runs/${encodeURIComponent(runId)}/adversarial-dataset`, projectId), {
+    method: "POST",
+  });
+}
+
+export function listAttackConfigs(projectId) {
+  return apiFetch(`/api/v1/attack-configs?project_id=${encodeURIComponent(projectId)}`);
+}
+
+export function createAttackConfig(projectId, config) {
+  return apiFetch(`/api/v1/attack-configs?project_id=${encodeURIComponent(projectId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+}
+
+export function updateAttackConfig(configId, config) {
+  return apiFetch(`/api/v1/attack-configs/${encodeURIComponent(configId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+}
+
+export function deleteAttackConfig(configId) {
+  return apiFetch(`/api/v1/attack-configs/${encodeURIComponent(configId)}`, {
+    method: "DELETE",
+  });
+}
+
+/* ---- Risk Rubric & HITL Triage ---- */
+export function getRiskRubric() {
+  return apiFetch("/api/v1/risk-rubric");
+}
+
+export function assessReviewRisk(reviewId) {
+  return apiFetch(`/api/v1/risk-rubric/assess?review_id=${encodeURIComponent(reviewId)}`, {
+    method: "POST",
+  });
+}
+
+export function getRiskSessionSummary(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return apiFetch(`/api/v1/risk-rubric/session-summary${qs ? `?${qs}` : ""}`);
+}
+
+export function autoGroupFailureClusters(runId = null) {
+  const url = runId
+    ? `/api/v1/failure-clusters/auto-group?run_id=${encodeURIComponent(runId)}`
+    : "/api/v1/failure-clusters/auto-group";
+  return apiFetch(url, { method: "POST" });
+}
+
+export function createRetrainingBacklog(name) {
+  return apiFetch("/api/v1/retraining-backlogs", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function addRetrainingBacklogItem(backlogId, failureId) {
+  return apiFetch(`/api/v1/retraining-backlogs/${backlogId}/items`, {
+    method: "POST",
+    body: JSON.stringify({ failure_id: failureId }),
+  });
+}
+
+export function approveRetrainingBacklog(backlogId) {
+  return apiFetch(`/api/v1/retraining-backlogs/${backlogId}/approve`, {
+    method: "POST",
+  });
+}
+
+// ── Session Management ──────────────────────────────────
+export function listSessions(projectId) {
+  return apiFetch(projectPath("/api/v1/sessions", projectId));
+}
+
+export function getSession(sessionId, projectId) {
+  return apiFetch(projectPath(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, projectId));
+}
+
+export function createOrUpdateSession(sessionData) {
+  return apiFetch("/api/v1/sessions", {
+    method: "POST",
+    body: JSON.stringify(sessionData),
+  });
+}
+
+export function addRunToSession(sessionId, runRecord, projectId) {
+  return apiFetch(projectPath(`/api/v1/sessions/${encodeURIComponent(sessionId)}/runs`, projectId), {
+    method: "POST",
+    body: JSON.stringify(runRecord),
+  });
+}
+
+export function deleteRunFromSession(sessionId, runId) {
+  return apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function updateRunNote(sessionId, runId, note, projectId) {
+  return apiFetch(projectPath(`/api/v1/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/note`, projectId), {
+    method: "PATCH",
+    body: JSON.stringify({ note }),
+  });
+}
+
+export function endSession(sessionId) {
+  return apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}/end`, { method: "POST" });
+}
+
+/* ---- Recipe API ---- */
+export function getRecipePresets() {
+  return apiFetch("/api/v1/catalog/recipes/presets");
+}
+
+export function randomizeRecipe(nSteps = 3, group = null, seed = 42) {
+  return apiFetch("/api/v1/attack-recipes/randomize", {
+    method: "POST",
+    body: JSON.stringify({ n_steps: nSteps, group, seed }),
+  });
+}
+
+export function sweepRecipe(attackId, severityRange = [1, 2, 3, 4, 5]) {
+  return apiFetch("/api/v1/attack-recipes/sweep", {
+    method: "POST",
+    body: JSON.stringify({ attack_id: attackId, severity_range: severityRange }),
+  });
+}
+
+export function previewRecipe(payload) {
+  return apiFetch("/api/v1/attack-recipes/preview", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function validateRecipe(recipePayload) {
+  return apiFetch("/api/v1/attack-recipes/validate", {
+    method: "POST",
+    body: JSON.stringify(recipePayload),
+  });
+}
+
+/* ---- Failure Clusters ---- */
+export function getFailureClusters() {
+  return apiFetch("/api/v1/failure-clusters");
+}
+
+export function createFailureCluster(name, memberIds, defenseProfileId = null) {
+  return apiFetch("/api/v1/failure-clusters", {
+    method: "POST",
+    body: JSON.stringify({ name, member_ids: memberIds, defense_profile_id: defenseProfileId }),
+  });
+}
+
+export function getFailureCluster(clusterId) {
+  return apiFetch(`/api/v1/failure-clusters/${clusterId}`);
+}
+
+/* ---- Model Lineage & Gate Evidence ---- */
+export function getModelVersionLineage(versionId) {
+  return apiFetch(`/api/v1/model-versions/${versionId}/lineage`);
+}
+
+export function getModelVersionBenchmarkHistory(versionId) {
+  return apiFetch(`/api/v1/model-versions/${versionId}/benchmark-history`);
+}
+
+export function getModelVersionGateEvidence(versionId) {
+  return apiFetch(`/api/v1/model-versions/${versionId}/gate-evidence`);
+}
+
+/* ---- Model Comparisons ---- */
+export function createModelComparison(baselineRunId, candidateRunId) {
+  return apiFetch("/api/v1/model-comparisons", {
+    method: "POST",
+    body: JSON.stringify({ baseline_run_id: baselineRunId, candidate_run_id: candidateRunId }),
+  });
+}
+
+export function getModelComparison(comparisonId) {
+  return apiFetch(`/api/v1/model-comparisons/${comparisonId}`);
+}
+
+export function getModelComparisonFailures(comparisonId) {
+  return apiFetch(`/api/v1/model-comparisons/${comparisonId}/failures`);
+}
+
+export function exportModelComparison(comparisonId, format = "json") {
+  return apiFetch(`/api/v1/model-comparisons/${comparisonId}/export?format=${format}`);
+}
+
+/* ---- Closed-Loop ---- */
+export function startClosedLoop(runId) {
+  return apiFetch("/api/v1/closed-loop/start", {
+    method: "POST",
+    body: JSON.stringify({ run_id: runId }),
+  });
+}
+
+export function advanceClosedLoop(loopId, target, artifactId) {
+  return apiFetch(`/api/v1/closed-loop/${loopId}/advance`, {
+    method: "POST",
+    body: JSON.stringify({ target, artifact_id: artifactId }),
+  });
+}
+
+export function getClosedLoop(loopId) {
+  return apiFetch(`/api/v1/closed-loop/${loopId}`);
+}
+
+/* ---- Defense Profiles ---- */
+export function createDefenseProfile(profile) {
+  return apiFetch("/api/v1/defense-profiles", {
+    method: "POST",
+    body: JSON.stringify(profile),
+  });
+}
+
+export function getDefenseProfile(profileId) {
+  return apiFetch(`/api/v1/defense-profiles/${profileId}`);
+}
+
+/* ---- Status / Evidence ---- */
+export function getStatusEvidence() {
+  return apiFetch("/api/v1/status/evidence");
+}
+
+/* ---- Upload & Dataset Import ---- */
+export function createUploadBatch(payload) {
+  return apiFetch("/api/v1/uploads/batches", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function getUploadBatch(batchId) {
+  return apiFetch(`/api/v1/uploads/batches/${encodeURIComponent(batchId)}`);
+}
+
+export function saveBatchAnnotation(batchId, sampleId, payload) {
+  return apiFetch(
+    `/api/v1/uploads/batches/${encodeURIComponent(batchId)}/annotations/${encodeURIComponent(sampleId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function finalizeUploadBatch(batchId) {
+  return apiFetch(`/api/v1/uploads/batches/${encodeURIComponent(batchId)}/finalize`, { method: "POST" });
+}
+
+export function uploadImage(file, batchId = null, taskId = "detection2d", sampleId = null, onProgress = null) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${getApiBase()}/api/v1/uploads/images`);
+    request.setRequestHeader("Content-Type", "application/octet-stream");
+    request.setRequestHeader("x-filename", file.name);
+    request.setRequestHeader("x-task-id", taskId);
+    if (batchId) request.setRequestHeader("x-upload-batch-id", batchId);
+    if (sampleId) request.setRequestHeader("x-sample-id", sampleId);
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+    };
+    request.onerror = () => reject(new Error("Network error while uploading image."));
+    request.onload = () => {
+      let payload = {};
+      try {
+        payload = JSON.parse(request.responseText || "{}");
+      } catch {}
+      if (request.status >= 200 && request.status < 300) resolve(payload);
+      else
+        reject(
+          new Error(
+            typeof payload.detail === "string"
+              ? payload.detail
+              : JSON.stringify(payload.detail || `Upload failed with status ${request.status}`),
+          ),
+        );
+    };
+    request.send(file);
+  });
+}
+
+export function uploadCheckpoint(
+  file,
+  { taskId, familyId, displayName, role = "base", parentCheckpointId = null, trainingDatasetVersionId = null } = {},
+  onProgress = null,
+) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${getApiBase()}/api/v1/checkpoints/uploads`);
+    request.setRequestHeader("Content-Type", "application/octet-stream");
+    request.setRequestHeader("x-filename", file.name);
+    request.setRequestHeader("x-task-id", taskId || "");
+    request.setRequestHeader("x-model-family-id", familyId || "");
+    request.setRequestHeader("x-display-name", displayName || file.name);
+    request.setRequestHeader("x-checkpoint-role", role);
+    if (parentCheckpointId) request.setRequestHeader("x-parent-checkpoint-id", parentCheckpointId);
+    if (trainingDatasetVersionId) request.setRequestHeader("x-training-dataset-version-id", trainingDatasetVersionId);
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+    };
+    request.onerror = () => reject(new Error("Network error while uploading checkpoint."));
+    request.onload = () => {
+      let payload = {};
+      try {
+        payload = JSON.parse(request.responseText || "{}");
+      } catch {}
+      if (request.status >= 200 && request.status < 300) resolve(payload);
+      else
+        reject(
+          new Error(
+            typeof payload.detail === "string"
+              ? payload.detail
+              : JSON.stringify(payload.detail || `Upload failed with status ${request.status}`),
+          ),
+        );
+    };
+    request.send(file);
+  });
+}
+
+export function getCheckpoint(checkpointId) {
+  return apiFetch(`/api/v1/checkpoints/${encodeURIComponent(checkpointId)}`);
+}
+export function getCheckpointValidationEvents(checkpointId) {
+  return apiFetch(`/api/v1/checkpoints/${encodeURIComponent(checkpointId)}/validation-events`);
+}
+
+export function importFolderDataset({
+  root,
+  name,
+  logicalSourceId,
+  inputFormat = "advertest",
+  anonymizationManifest = "manifest.jsonl",
+  maxSamples = 50,
+  taskId = "detection2d",
+}) {
+  return apiFetch("/api/v1/datasets/import", {
+    method: "POST",
+    body: JSON.stringify({
+      root,
+      name,
+      logical_source_id: logicalSourceId,
+      input_format: inputFormat,
+      anonymization_manifest: anonymizationManifest,
+      max_samples: maxSamples,
+      task_id: taskId,
+    }),
+  });
+}
+
+export function startFolderDatasetImport({
+  root,
+  name,
+  logicalSourceId,
+  inputFormat = "advertest",
+  anonymizationManifest = "manifest.jsonl",
+  maxSamples = 50,
+  taskId = "detection2d",
+}) {
+  return apiFetch("/api/v1/datasets/import-jobs", {
+    method: "POST",
+    body: JSON.stringify({
+      root,
+      name,
+      logical_source_id: logicalSourceId,
+      input_format: inputFormat,
+      anonymization_manifest: anonymizationManifest,
+      max_samples: maxSamples,
+      task_id: taskId,
+    }),
+  });
+}
+
+export function getFolderDatasetImportJob(jobId) {
+  return apiFetch(`/api/v1/datasets/import-jobs/${encodeURIComponent(jobId)}`);
+}
+
+/* ---- Authentication & Google SSO ---- */
+export function loginGoogleSSO(payload) {
+  return apiFetch("/api/v1/auth/google", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getGoogleAuthConfig() {
+  return apiFetch("/api/v1/auth/google/config");
+}
+
+export function getAuthMe() {
+  return apiFetch("/api/v1/auth/session");
+}
+
+/* ---- Settings & W&B Integration ---- */
+export function getWandbSettings() {
+  return apiFetch("/api/v1/settings/wandb");
+}
+
+export function saveWandbSettings(payload) {
+  return apiFetch("/api/v1/settings/wandb", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function testWandbConnection(payload) {
+  return apiFetch("/api/v1/settings/wandb/test", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateUserProfile(payload) {
+  return apiFetch("/api/v1/settings/profile", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}

@@ -1,0 +1,43 @@
+{
+  "name": "advertest-gpu-worker",
+  "machineType": "zones/asia-southeast1-a/machineTypes/g2-standard-4",
+  "disks": [
+    {
+      "boot": true,
+      "autoDelete": true,
+      "initializeParams": {
+        "sourceImage": "projects/cos-cloud/global/images/family/cos-stable",
+        "diskType": "zones/asia-southeast1-a/diskTypes/pd-ssd",
+        "diskSizeGb": "100"
+      }
+    }
+  ],
+  "networkInterfaces": [
+    {
+      "network": "global/networks/default",
+      "accessConfigs": [{"name": "External NAT", "type": "ONE_TO_ONE_NAT"}]
+    }
+  ],
+  "serviceAccounts": [
+    {
+      "email": "advertest-worker@ai20k-build.iam.gserviceaccount.com",
+      "scopes": ["https://www.googleapis.com/auth/cloud-platform"]
+    }
+  ],
+  "guestAccelerators": [
+    {
+      "acceleratorType": "zones/asia-southeast1-a/acceleratorTypes/nvidia-l4",
+      "acceleratorCount": 1
+    }
+  ],
+  "scheduling": {"onHostMaintenance": "TERMINATE", "automaticRestart": true},
+  "metadata": {
+    "items": [
+      {"key": "install-nvidia-driver", "value": "True"},
+      {
+        "key": "gce-container-declaration",
+        "value": "spec:\n  containers:\n  - name: advertest-gpu-worker\n    image: asia-southeast1-docker.pkg.dev/ai20k-build/advertest/gce-worker:gpu-dispatch-v7\n    env:\n    - name: GOOGLE_CLOUD_PROJECT\n      value: ai20k-build\n    - name: GCP_PUBSUB_SUBSCRIPTION\n      value: projects/ai20k-build/subscriptions/advertest-gce-worker\n    - name: MODEL_DEVICE\n      value: cuda:0\n    - name: MODEL_HALF_PRECISION\n      value: 'true'\n    - name: GPU_IDLE_SHUTDOWN_SECONDS\n      value: '900'\n    - name: OBJECT_STORAGE_BACKEND\n      value: s3\n    - name: OBJECT_STORAGE_BUCKET\n      value: advertest-prod-artifacts\n    - name: OBJECT_STORAGE_ENDPOINT_URL\n      value: https://storage.googleapis.com\n    - name: OBJECT_STORAGE_REGION\n      value: auto\n  restartPolicy: Always\n"
+      }
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "input_dir": "data/kitti/Kitti/raw/training",
+  "output_dir": "data/anonymized/kitti-smoke",
+  "input_format": "kitti",
+  "face_detector": {
+    "checkpoint": "checkpoints/anonymization/yolo11n-face.onnx",
+    "confidence": 0.1,
+    "iou": 0.5,
+    "image_size": 640,
+    "expansion": 0.3,
+    "tile_overlap": 0.2
+  },
+  "plate_detector": {
+    "checkpoint": "checkpoints/anonymization/yolov8n-license-plate.onnx",
+    "confidence": 0.1,
+    "iou": 0.5,
+    "image_size": 640,
+    "expansion": 0.2,
+    "tile_overlap": 0.2
+  },
+  "method": "gaussian_mosaic",
+  "blur_ratio": 0.25,
+  "mosaic_divisor": 8,
+  "sample_ids": [
+    "000002",
+    "000003",
+    "000008",
+    "000010",
+    "000011"
+  ],
+  "device": "cpu"
+}

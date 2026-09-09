@@ -1,0 +1,28 @@
+{
+  "input_dir": "data/anonymized/kitti-de",
+  "input_format": "kitti",
+  "surrogate": {
+    "name": "yolo11",
+    "checkpoint": "checkpoints/surrogates/yolo11s.pt",
+    "device": "cpu",
+    "objective": "vanishing",
+    "target_label": "Pedestrian"
+  },
+  "algorithm": "thys_patch",
+  "source_label": "Pedestrian",
+  "target_label": "Pedestrian",
+  "patch_size": 32,
+  "area_fraction": 0.15,
+  "iterations": 12,
+  "learning_rate": 0.03,
+  "tv_weight": 2.5,
+  "nps_weight": 0.01,
+  "eot": true,
+  "seed": 20260731,
+  "train_limit": 2,
+  "sample_ids": [
+    "000010",
+    "000011"
+  ],
+  "output_dir": "data/patches"
+}

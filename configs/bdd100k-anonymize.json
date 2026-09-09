@@ -1,0 +1,13 @@
+{
+  "input_dir": "data/bdd100k",
+  "output_dir": "data/anonymized/bdd100k",
+  "input_format": "bdd100k",
+  "splits": ["train", "val"],
+  "face_detector": {
+    "checkpoint": "checkpoints/anonymization/yolo11n-face.onnx"
+  },
+  "plate_detector": {
+    "checkpoint": "checkpoints/anonymization/yolov8n-license-plate.onnx"
+  },
+  "device": "cuda"
+}

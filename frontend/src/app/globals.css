@@ -1,0 +1,381 @@
+@import "tailwindcss";
+
+@source "../**/*.{js,ts,jsx,tsx,mdx}";
+@source "../../src/**/*.{js,ts,jsx,tsx,mdx}";
+
+@layer base {
+  html {
+    min-height: 100%;
+    background-color: var(--app-bg);
+  }
+
+  :root {
+    color-scheme: light;
+    --app-bg: #f8fafc;
+    --app-surface: #ffffff;
+    --app-text: #0f172a;
+    --app-border: #e2e8f0;
+    --bg-main: #ffffff;
+    --bg-secondary: #f8fafc;
+    --bg-tertiary: #f1f5f9;
+    --border-color: #e2e8f0;
+    --border-subtle: #edf2f7;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --primary-light: #eff6ff;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --success: #16a34a;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --purple: #7c3aed;
+    --teal: #0ea5a8;
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --app-bg: #0b1220;
+    --app-surface: #111a2c;
+    --app-text: #e2e8f0;
+    --app-border: #24344d;
+    --bg-main: #111a2c;
+    --bg-secondary: #0d1524;
+    --bg-tertiary: #1a2740;
+    --border-color: #24344d;
+    --border-subtle: #1c2a41;
+    --primary: #3b82f6;
+    --primary-hover: #60a5fa;
+    --primary-light: rgba(59, 130, 246, 0.16);
+    --text-primary: #e2e8f0;
+    --text-secondary: #b3c2d8;
+    --text-muted: #8494ad;
+    --success: #4ade80;
+    --danger: #f87171;
+    --warning: #fbbf24;
+    --purple: #a78bfa;
+    --teal: #2dd4bf;
+  }
+
+  body {
+    min-height: 100vh;
+    background-color: var(--app-bg);
+    color: var(--app-text);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: clip;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Dark-theme remapping for hardcoded Tailwind utilities.
+   Most views still style surfaces with `bg-white`/`text-slate-*` instead of
+   tokens; these unlayered rules only activate under [data-theme="dark"] so
+   light mode is untouched. Unlayered rules win over Tailwind's utilities. */
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+[data-theme="dark"] select option {
+  background-color: #111a2c;
+  color: #e2e8f0;
+}
+
+[data-theme="dark"] .bg-white {
+  background-color: var(--app-surface);
+}
+[data-theme="dark"] .bg-slate-50 {
+  background-color: var(--bg-secondary);
+}
+[data-theme="dark"] .bg-slate-100 {
+  background-color: var(--bg-tertiary);
+}
+[data-theme="dark"] .bg-slate-200 {
+  background-color: #334155;
+}
+[data-theme="dark"] .bg-blue-50 {
+  background-color: rgba(59, 130, 246, 0.15);
+}
+[data-theme="dark"] .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.15);
+}
+[data-theme="dark"] .bg-emerald-50 {
+  background-color: rgba(16, 185, 129, 0.15);
+}
+[data-theme="dark"] .bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.15);
+}
+[data-theme="dark"] .bg-purple-50 {
+  background-color: rgba(139, 92, 246, 0.15);
+}
+[data-theme="dark"] .bg-teal-50 {
+  background-color: rgba(20, 184, 166, 0.15);
+}
+[data-theme="dark"] .bg-orange-50 {
+  background-color: rgba(249, 115, 22, 0.15);
+}
+
+[data-theme="dark"] .border-slate-50,
+[data-theme="dark"] .border-slate-100,
+[data-theme="dark"] .border-slate-200 {
+  border-color: #223047;
+}
+[data-theme="dark"] .border-slate-300 {
+  border-color: #33455f;
+}
+
+[data-theme="dark"] .text-slate-900 {
+  color: #f1f5f9;
+}
+[data-theme="dark"] .text-slate-800 {
+  color: #e2e8f0;
+}
+[data-theme="dark"] .text-slate-700 {
+  color: #cbd5e1;
+}
+[data-theme="dark"] .text-slate-600 {
+  color: #9fb0c6;
+}
+[data-theme="dark"] .text-slate-500 {
+  color: #94a3b8;
+}
+[data-theme="dark"] .text-slate-400 {
+  color: #64748b;
+}
+[data-theme="dark"] .text-\[\#0F172A\] {
+  color: #e2e8f0;
+}
+[data-theme="dark"] .text-\[\#253858\] {
+  color: #cbd5e1;
+}
+[data-theme="dark"] .text-\[\#153E9D\] {
+  color: #93c5fd;
+}
+
+/* Hover states stay readable on dark surfaces too. */
+[data-theme="dark"] .hover\:bg-slate-50:hover,
+[data-theme="dark"] .hover\:bg-slate-100:hover {
+  background-color: var(--bg-tertiary);
+}
+[data-theme="dark"] .hover\:bg-slate-200:hover {
+  background-color: #334155;
+}
+[data-theme="dark"] .hover\:bg-blue-50:hover {
+  background-color: rgba(59, 130, 246, 0.2);
+}
+[data-theme="dark"] .hover\:bg-red-50:hover {
+  background-color: rgba(239, 68, 68, 0.2);
+}
+[data-theme="dark"] .hover\:bg-emerald-50:hover {
+  background-color: rgba(16, 185, 129, 0.2);
+}
+[data-theme="dark"] .hover\:bg-amber-50:hover {
+  background-color: rgba(245, 158, 11, 0.2);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+/* Full Explicit Grid System & Breakpoint Utilities */
+.grid-cols-1 {
+  grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+}
+.grid-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+.grid-cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+.grid-cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+.grid-cols-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+}
+.grid-cols-6 {
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+}
+.grid-cols-7 {
+  grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+}
+.grid-cols-8 {
+  grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
+}
+.grid-cols-9 {
+  grid-template-columns: repeat(9, minmax(0, 1fr)) !important;
+}
+.grid-cols-12 {
+  grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+}
+
+.col-span-1 {
+  grid-column: span 1 / span 1 !important;
+}
+.col-span-2 {
+  grid-column: span 2 / span 2 !important;
+}
+.col-span-3 {
+  grid-column: span 3 / span 3 !important;
+}
+.col-span-4 {
+  grid-column: span 4 / span 4 !important;
+}
+.col-span-5 {
+  grid-column: span 5 / span 5 !important;
+}
+.col-span-6 {
+  grid-column: span 6 / span 6 !important;
+}
+.col-span-7 {
+  grid-column: span 7 / span 7 !important;
+}
+.col-span-8 {
+  grid-column: span 8 / span 8 !important;
+}
+.col-span-9 {
+  grid-column: span 9 / span 9 !important;
+}
+.col-span-10 {
+  grid-column: span 10 / span 10 !important;
+}
+.col-span-11 {
+  grid-column: span 11 / span 11 !important;
+}
+.col-span-12 {
+  grid-column: span 12 / span 12 !important;
+}
+
+@media (min-width: 640px) {
+  .sm\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .sm\:grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+  .sm\:grid-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .md\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .md\:grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+  .md\:grid-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+  .md\:grid-cols-5 {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+  .md\:col-span-2 {
+    grid-column: span 2 / span 2 !important;
+  }
+  .md\:col-span-3 {
+    grid-column: span 3 / span 3 !important;
+  }
+  .md\:col-span-4 {
+    grid-column: span 4 / span 4 !important;
+  }
+}
+
+@media (min-width: 1280px) {
+  .xl\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .xl\:grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+  .xl\:grid-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+  .xl\:grid-cols-5 {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+  .xl\:grid-cols-6 {
+    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  }
+  .xl\:grid-cols-7 {
+    grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+  }
+  .xl\:grid-cols-8 {
+    grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
+  }
+  .xl\:grid-cols-9 {
+    grid-template-columns: repeat(9, minmax(0, 1fr)) !important;
+  }
+  .xl\:grid-cols-12 {
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+  }
+
+  .xl\:col-span-1 {
+    grid-column: span 1 / span 1 !important;
+  }
+  .xl\:col-span-2 {
+    grid-column: span 2 / span 2 !important;
+  }
+  .xl\:col-span-3 {
+    grid-column: span 3 / span 3 !important;
+  }
+  .xl\:col-span-4 {
+    grid-column: span 4 / span 4 !important;
+  }
+  .xl\:col-span-5 {
+    grid-column: span 5 / span 5 !important;
+  }
+  .xl\:col-span-6 {
+    grid-column: span 6 / span 6 !important;
+  }
+  .xl\:col-span-7 {
+    grid-column: span 7 / span 7 !important;
+  }
+  .xl\:col-span-8 {
+    grid-column: span 8 / span 8 !important;
+  }
+  .xl\:col-span-9 {
+    grid-column: span 9 / span 9 !important;
+  }
+  .xl\:col-span-10 {
+    grid-column: span 10 / span 10 !important;
+  }
+  .xl\:col-span-11 {
+    grid-column: span 11 / span 11 !important;
+  }
+  .xl\:col-span-12 {
+    grid-column: span 12 / span 12 !important;
+  }
+}
